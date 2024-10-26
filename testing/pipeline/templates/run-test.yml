@@ -57,7 +57,7 @@ jobs:
                         --arg AKS_CLUSTER_NAME "$AKS_CLUSTER_NAME" \
                         --arg ARC_CLUSTER_NAME "$ARC_CLUSTER_NAME" \
                         --arg K8S_CONFIG_VERSION "$K8S_CONFIG_VERSION" \
-                        '{subscriptionId: $SUB_ID, resourceGroup: $RG, aksClusterName: $AKS_CLUSTER_NAME, arcClusterName: $ARC_CLUSTER_NAME, extensionVersion: {"k8s-configuration": $K8S_CONFIG_VERSION, connectedk8s: "1.0.0"}}')
+                        '{subscriptionId: $SUB_ID, resourceGroup: $RG, aksClusterName: $AKS_CLUSTER_NAME, arcClusterName: $ARC_CLUSTER_NAME, extensionVersion: {"connectedk8s": $K8S_CONFIG_VERSION}}')
         echo $JSON_STRING > settings.json
         cat settings.json
     workingDirectory: $(TEST_PATH)
@@ -72,15 +72,6 @@ jobs:
   - bash: |
       curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
     displayName: "Upgrade az to latest version"
-  - task: AzureCLI@2
-    displayName: Bootstrap
-    inputs:
-      azureSubscription: AzureResourceConnection
-      scriptType: pscore
-      scriptLocation: inlineScript
-      inlineScript: |
-        .\Bootstrap.ps1 -CI
-      workingDirectory: $(TEST_PATH)
             
   - task: AzureCLI@2
     displayName: Run the Test Suite for ${{ parameters.path }}
@@ -89,7 +80,7 @@ jobs:
       scriptType: pscore
       scriptLocation: inlineScript
       inlineScript: |
-        .\Test.ps1 -CI -Path ${{ parameters.path }} -Type k8s-configuration
+        .\Test.ps1 -CI -Path ${{ parameters.path }} -Type connectedk8s
       workingDirectory: $(TEST_PATH)
     continueOnError: true
 
@@ -99,14 +90,3 @@ jobs:
       testResultsFiles: '**/testing/results/*.xml'
       failTaskOnFailedTests: true
     condition: succeededOrFailed()
-
-  - task: AzureCLI@2
-    displayName: Cleanup
-    inputs:
-      azureSubscription: AzureResourceConnection
-      scriptType: pscore
-      scriptLocation: inlineScript
-      inlineScript: |
-        .\Cleanup.ps1 -CI
-      workingDirectory: $(TEST_PATH)
-    condition: always()
