@@ -6,8 +6,13 @@ Describe 'Basic Onboarding Scenario' {
         # Print the path of the PS script root
         Write-Host "PSScriptRoot: $PSScriptRoot"
 
-        . $PSScriptRoot/Constants.ps1
-        . $PSScriptRoot/Helper.ps1
+        try {
+            . "$PSScriptRoot/Constants.ps1"
+            . "$PSScriptRoot/Helper.ps1"
+        } catch {
+            Write-Error "Failed to load script files: $_"
+            throw
+        }
     }
 
     It 'Check if basic onboarding works correctly' {
