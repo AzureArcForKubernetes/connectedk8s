@@ -7,8 +7,7 @@ Describe 'Basic Onboarding Scenario' {
         Write-Host "PSScriptRoot: $PSScriptRoot"
 
         try {
-            . "$PSScriptRoot/Constants.ps1"
-            . "$PSScriptRoot/Helper.ps1"
+            . $PSScriptRoot/../helper/Constants.ps1
         } catch {
             Write-Error "Failed to load script files: $_"
             throw
