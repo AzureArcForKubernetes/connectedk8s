@@ -4,4 +4,4 @@ $FAILED_MESSAGE = "Failed to install the extension"
 
 $POD_RUNNING = "Running"
 
-$MAX_RETRY_ATTEMPTS = 15
+$MAX_RETRY_ATTEMPTS = 10

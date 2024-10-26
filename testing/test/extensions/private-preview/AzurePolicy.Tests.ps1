@@ -1,8 +1,8 @@
-Describe 'Azure Monitor Testing' {
+Describe 'Azure Policy Testing' {
     BeforeAll {
-        $extensionType = "microsoft.azuremonitor.containers"
-        $extensionName = "azuremonitor-containers"
-        $extensionAgentName = "omsagent"
+        $extensionType = "microsoft.policyinsights"
+        $extensionName = "policy"
+        $extensionAgentName = "azure-policy"
         $extensionAgentNamespace = "kube-system"
         
         . $PSScriptRoot/../../helper/Constants.ps1

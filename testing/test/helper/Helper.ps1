@@ -7,23 +7,6 @@ function Get-ExtensionData {
     return $output.items | Where-Object { $_.metadata.name -eq $extensionName }
 }
 
-function Has-ExtensionData {
-    param(
-        [string]$extensionName
-    )
-    $extensionData = Get-ExtensionData $extensionName
-    if ($extensionData) {
-        return $true
-    }
-    return $false
-}
-
-
-function Has-Identity-Provisioned {
-    $output = kubectl get azureclusteridentityrequests -n azure-arc container-insights-clusteridentityrequest -o json | ConvertFrom-Json
-    return ($null -ne $output.status.expirationTime) -and ($null -ne $output.status.tokenReference.dataName) -and ($null -ne $output.status.tokenReference.secretName)
-}
-
 function Get-ExtensionStatus {
     param(
         [string]$extensionName
@@ -61,12 +44,4 @@ function Get-ExtensionConfigurationSettings {
         return $extensionData.spec.parameter."$configKey"
     }
     return $null
-}
-
-function Check-Error {
-    param(
-        [string]$output
-    )
-    $hasError = $output -CMatch "ERROR"
-    return $hasError
 }
