@@ -1,5 +1,11 @@
 Describe 'Basic Onboarding Scenario' {
     BeforeAll {
+        # Print all files in PS script root
+        Get-ChildItem -Path $PSScriptRoot
+
+        # Print the path of the PS script root
+        Write-Host "PSScriptRoot: $PSScriptRoot"
+
         . $PSScriptRoot/Constants.ps1
         . $PSScriptRoot/Helper.ps1
     }
