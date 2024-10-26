@@ -32,8 +32,6 @@ if ($Type -eq 'connectedk8s') {
         Write-Host "Removing the old connectedk8s extension..."
         az extension remove -n connectedk8s
         Write-Host "Installing connectedk8s version $connectedk8sVersion..."
-        # List the files in the bin directory
-        Get-ChildItem -Path $PSScriptRoot/bin
         az extension add --source ./bin/connectedk8s-$connectedk8sVersion-py2.py3-none-any.whl
     }
     $testFilePaths = "$PSScriptRoot/test/configurations"

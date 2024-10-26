@@ -39,9 +39,6 @@ jobs:
       azdev --version
       azdev setup -c ../azure-cli -r $(CLI_REPO_PATH) -e $(EXTENSION_NAME)
       azdev extension build $(EXTENSION_NAME)
-
-      #List the extension build file
-      ls $(CLI_REPO_PATH)/dist
     workingDirectory: $(CLI_REPO_PATH)
     displayName: "Setup and Build Extension with azdev"
       

@@ -1,17 +1,6 @@
 Describe 'Basic Onboarding Scenario' {
     BeforeAll {
-        # Print all files in PS script root
-        Get-ChildItem -Path $PSScriptRoot
-
-        # Print the path of the PS script root
-        Write-Host "PSScriptRoot: $PSScriptRoot"
-
-        try {
-            . $PSScriptRoot/../helper/Constants.ps1
-        } catch {
-            Write-Error "Failed to load script files: $_"
-            throw
-        }
+        . $PSScriptRoot/../helper/Constants.ps1
     }
 
     It 'Check if basic onboarding works correctly' {

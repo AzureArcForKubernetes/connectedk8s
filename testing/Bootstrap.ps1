@@ -28,5 +28,3 @@ if (!$?) {
 
 
 Copy-Item $HOME/.kube/config -Destination $PSScriptRoot/tmp/KUBECONFIG 
-
-

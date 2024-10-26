@@ -22,8 +22,8 @@ stages:
   jobs:
   - template: ./templates/run-test.yml
     parameters:
-      jobName: OnboardingTests
-      path: ./test/configurations/Onboarding.Tests.ps1
+      jobName: BasicOnboardingTest
+      path: ./test/configurations/BasicOnboarding.Tests.ps1
   - job: BuildPublishExtension
     pool:
       vmImage: 'ubuntu-20.04'
