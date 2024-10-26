@@ -5,7 +5,7 @@ Describe 'Basic Onboarding Scenario' {
     }
 
     It 'Check if basic onboarding works correctly' {
-        az connectedk8s connect -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --no-wait
+        az connectedk8s connect -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --no-wait
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 

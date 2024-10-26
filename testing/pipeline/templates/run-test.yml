@@ -17,11 +17,13 @@ jobs:
       chmod +x ./kubectl
       sudo mv ./kubectl /usr/local/bin/kubectl
       kubectl version --client
-    displayName: "Setup the VM with helm3 and kubectl" 
+    displayName: "Setup the VM with helm3 and kubectl"
+
   - task: UsePythonVersion@0
     displayName: 'Use Python 3.6'
     inputs:
       versionSpec: 3.6
+
   - bash: |
       set -ev
       echo "Building extension ${EXTENSION_NAME}..."
@@ -46,6 +48,7 @@ jobs:
       cp * $(TEST_PATH)/bin
     workingDirectory: $(CLI_REPO_PATH)/dist
     displayName: "Copy the Built .whl to Extension Test Path"
+
   - bash: |
         RAND_STR=$RANDOM
         AKS_CLUSTER_NAME="${BASE_CLUSTER_NAME}-${RAND_STR}-aks"
@@ -62,6 +65,7 @@ jobs:
         cat settings.json
     workingDirectory: $(TEST_PATH)
     displayName: "Generate a settings.json file"
+
   - bash : |
       echo "Downloading the kind script"
       curl -Lo ./kind https://kind.sigs.k8s.io/dl/v0.24.0/kind-linux-amd64
@@ -72,6 +76,16 @@ jobs:
   - bash: |
       curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
     displayName: "Upgrade az to latest version"
+
+  - task: AzureCLI@2
+    displayName: Bootstrap
+    inputs:
+      azureSubscription: AzureResourceConnection
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        .\Bootstrap.ps1 -CI
+      workingDirectory: $(TEST_PATH)
             
   - task: AzureCLI@2
     displayName: Run the Test Suite for ${{ parameters.path }}
