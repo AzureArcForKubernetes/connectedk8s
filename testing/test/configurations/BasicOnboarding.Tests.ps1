@@ -25,7 +25,7 @@ Describe 'Basic Onboarding Scenario' {
     }
 
     It "Deletes the configuration from the cluster" {
-        az connectedk8s delete -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --force
+        az connectedk8s delete -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --force -y
         $? | Should -BeTrue
 
         # Configuration should be removed from the resource model
