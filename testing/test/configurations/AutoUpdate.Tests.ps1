@@ -28,7 +28,7 @@ Describe 'Auto Upgrade Scenario' {
     }
 
     It 'Enable auto-upgrade using update cmd' {
-        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --auto-upgrade
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --auto-upgrade true
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 
