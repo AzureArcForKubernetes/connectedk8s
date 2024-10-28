@@ -28,7 +28,7 @@ Describe 'Basic Onboarding Scenario' {
     }
 
     It 'Disable auto-upgrade' {
-        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --auto-update false
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --auto-upgrade false
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 
