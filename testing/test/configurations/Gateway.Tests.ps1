@@ -2,7 +2,7 @@ Describe 'Onboarding with Gateway Scenario' {
     BeforeAll {
         . $PSScriptRoot/../helper/Constants.ps1
 
-        $gatewayResourceId = "/subscriptions/15c06b1b-01d6-407b-bb21-740b8617dea3/resourceGroups/connectedk8sCLITestResources/providers/Microsoft.HybridCompute/gateways/gateway-test"
+        $gatewayResourceId = "/subscriptions/15c06b1b-01d6-407b-bb21-740b8617dea3/resourceGroups/connectedk8sCLITestResources/providers/Microsoft.HybridCompute/gateways/gateway-test-cli"
     }
 
     It 'Check if onboarding works with gateway enabled' {
@@ -32,7 +32,7 @@ Describe 'Onboarding with Gateway Scenario' {
     }
 
     It 'Disable the gateway' {
-        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --disable-gateway --no-wait
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --disable-gateway --no-wait
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 
@@ -56,7 +56,7 @@ Describe 'Onboarding with Gateway Scenario' {
     }
 
     It 'Update the cluster to use gateway again using update cmd' {
-        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --gateway-resource-id $gatewayResourceId --no-wait
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --gateway-resource-id $gatewayResourceId --no-wait
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 
@@ -82,7 +82,7 @@ Describe 'Onboarding with Gateway Scenario' {
     }
 
     It 'Disable the gateway' {
-        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --disable-gateway --no-wait
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --disable-gateway --no-wait
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 
