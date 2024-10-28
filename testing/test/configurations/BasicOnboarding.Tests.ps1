@@ -24,7 +24,7 @@ Describe 'Basic Onboarding Scenario' {
         $n | Should -BeLessOrEqual $MAX_RETRY_ATTEMPTS
     }
 
-    It "Deletes the configuration from the cluster" {
+    It "Delete the connected instance" {
         az connectedk8s delete -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --force -y
         $? | Should -BeTrue
 
