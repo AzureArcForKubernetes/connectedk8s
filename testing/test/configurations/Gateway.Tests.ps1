@@ -32,7 +32,7 @@ Describe 'Onboarding with Gateway Scenario' {
     }
 
     It 'Disable the gateway' {
-        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --disable-gateway --no-wait
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --disable-gateway
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 
@@ -56,7 +56,7 @@ Describe 'Onboarding with Gateway Scenario' {
     }
 
     It 'Update the cluster to use gateway again using update cmd' {
-        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --gateway-resource-id $gatewayResourceId --no-wait
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --gateway-resource-id $gatewayResourceId
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 
@@ -82,7 +82,7 @@ Describe 'Onboarding with Gateway Scenario' {
     }
 
     It 'Disable the gateway' {
-        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --disable-gateway --no-wait
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --disable-gateway
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 
