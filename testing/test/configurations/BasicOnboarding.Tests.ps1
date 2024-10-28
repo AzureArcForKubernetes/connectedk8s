@@ -15,7 +15,7 @@ Describe 'Basic Onboarding Scenario' {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
             $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
             $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $autoUpdate = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("autoUpdate").GetString()
+            $autoUpdate = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentAutoUpgrade").GetString()
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Auto Update: $autoUpdate"
             if ($provisioningState -eq $SUCCEEDED -and $autoUpdate -eq "Enabled") {
@@ -39,7 +39,7 @@ Describe 'Basic Onboarding Scenario' {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
             $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
             $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $autoUpdate = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("autoUpdate").GetString()
+            $autoUpdate = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentAutoUpgrade").GetString()
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Auto Update: $autoUpdate"
             if ($provisioningState -eq $SUCCEEDED -and $autoUpdate -eq "Disabled") {
