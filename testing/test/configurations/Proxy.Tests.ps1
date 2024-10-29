@@ -4,7 +4,7 @@ Describe 'Proxy Scenario' {
     }
 
     It 'Check if basic onboarding works correctly with proxy enabled' {
-        az connectedk8s connect -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --no-proxy logcollector --no-wait
+        az connectedk8s connect -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --proxy-skip-range logcollector --no-wait
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 
