@@ -16,9 +16,9 @@ Describe 'Proxy Scenario' {
             $provisioningState = ($output | ConvertFrom-Json).provisioningState
             Write-Host "Provisioning State: $provisioningState"
             if ($provisioningState -eq $SUCCEEDED) {
-                $helmOutput = helm get values -n azure-arc-release azure-arc -o yaml | grep isProxyEnabled
-                Write-Host "Helm Output: $helmOutput"
-                if ($helmOutput -match "isProxyEnabled: true") {
+                $isProxyEnabled = helm get values -n azure-arc-release azure-arc -o yaml | grep isProxyEnabled
+                Write-Host "$isProxyEnabled"
+                if ($isProxyEnabled -match "isProxyEnabled: true") {
                     break
                 }
             }
@@ -41,9 +41,9 @@ Describe 'Proxy Scenario' {
             $provisioningState = ($output | ConvertFrom-Json).provisioningState
             Write-Host "Provisioning State: $provisioningState"
             if ($provisioningState -eq $SUCCEEDED) {
-                $helmOutput = helm get values -n azure-arc-release azure-arc -o yaml | grep isProxyEnabled
-                Write-Host "Helm Output: $helmOutput"
-                if ($helmOutput -match "isProxyEnabled: false") {
+                $isProxyEnabled = helm get values -n azure-arc-release azure-arc -o yaml | grep isProxyEnabled
+                Write-Host "$isProxyEnabled"
+                if ($isProxyEnabled -match "isProxyEnabled: false") {
                     break
                 }
                 break
