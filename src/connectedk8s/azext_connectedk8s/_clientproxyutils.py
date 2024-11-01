@@ -116,9 +116,13 @@ def fetch_and_post_at_to_csp(cmd, api_server_port, tenant_id, kid, clientproxy_p
     token_data = {"token_type": "pop", "key_id": kid, "req_cnf": req_cnf}
     profile = Profile(cli_ctx=cmd.cli_ctx)
     try:
-        credential, _, _ = profile.get_login_credentials(subscription_id=profile.get_subscription()["id"],
-                                                         resource=consts.KAP_1P_Server_App_Scope)
-        accessToken = credential.get_token(consts.KAP_1P_Server_App_Scope, data=token_data)
+        credential, _, _ = profile.get_login_credentials(
+            subscription_id=profile.get_subscription()["id"],
+            resource=consts.KAP_1P_Server_App_Scope,
+        )
+        accessToken = credential.get_token(
+            consts.KAP_1P_Server_App_Scope, data=token_data
+        )
         jwtToken = accessToken.token
     except Exception as e:
         telemetry.set_exception(

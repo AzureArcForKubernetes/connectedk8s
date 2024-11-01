@@ -37,7 +37,7 @@ if not os.path.isfile(config_path):
     CONFIG["customLocationsOid"] = ""
     CONFIG["location"] = "eastus2euap"
 else:
-    with open(config_path, "r") as f:
+    with open(config_path) as f:
         CONFIG = json.load(f)
     for key in CONFIG:
         if not CONFIG[key]:

@@ -217,14 +217,10 @@ def executing_cluster_diagnostic_checks_job(
         )
 
         print(
-            "Step: {}: Chart path for Cluster Diagnostic Checks Job: {}".format(
-                azext_utils.get_utctimestring(), chart_path
-            )
+            f"Step: {azext_utils.get_utctimestring()}: Chart path for Cluster Diagnostic Checks Job: {chart_path}"
         )
         print(
-            "Step: {}: Creating Cluster Diagnostic Checks job".format(
-                azext_utils.get_utctimestring()
-            )
+            f"Step: {azext_utils.get_utctimestring()}: Creating Cluster Diagnostic Checks job"
         )
         helm_install_release_cluster_diagnostic_checks(
             chart_path,
@@ -427,24 +423,22 @@ def helm_install_release_cluster_diagnostic_checks(
         "cluster-diagnostic-checks",
         chart_path,
         "--namespace",
-        "{}".format(consts.Release_Install_Namespace),
+        f"{consts.Release_Install_Namespace}",
         "--create-namespace",
         "--output",
         "json",
     ]
     # To set some other helm parameters through file
-    cmd_helm_install.extend(["--set", "global.location={}".format(location)])
-    cmd_helm_install.extend(["--set", "global.azureCloud={}".format(azure_cloud)])
+    cmd_helm_install.extend(["--set", f"global.location={location}"])
+    cmd_helm_install.extend(["--set", f"global.azureCloud={azure_cloud}"])
     if https_proxy:
-        cmd_helm_install.extend(["--set", "global.httpsProxy={}".format(https_proxy)])
+        cmd_helm_install.extend(["--set", f"global.httpsProxy={https_proxy}"])
     if http_proxy:
-        cmd_helm_install.extend(["--set", "global.httpProxy={}".format(http_proxy)])
+        cmd_helm_install.extend(["--set", f"global.httpProxy={http_proxy}"])
     if no_proxy:
-        cmd_helm_install.extend(["--set", "global.noProxy={}".format(no_proxy)])
+        cmd_helm_install.extend(["--set", f"global.noProxy={no_proxy}"])
     if proxy_cert:
-        cmd_helm_install.extend(
-            ["--set-file", "global.proxyCert={}".format(proxy_cert)]
-        )
+        cmd_helm_install.extend(["--set-file", f"global.proxyCert={proxy_cert}"])
 
     if kube_config:
         cmd_helm_install.extend(["--kubeconfig", kube_config])
@@ -453,7 +447,7 @@ def helm_install_release_cluster_diagnostic_checks(
 
     # Change --timeout format for helm client to understand
     onboarding_timeout = onboarding_timeout + "s"
-    cmd_helm_install.extend(["--wait", "--timeout", "{}".format(onboarding_timeout)])
+    cmd_helm_install.extend(["--wait", "--timeout", f"{onboarding_timeout}"])
 
     response_helm_install = Popen(cmd_helm_install, stdout=PIPE, stderr=PIPE)
     _, error_helm_install = response_helm_install.communicate()

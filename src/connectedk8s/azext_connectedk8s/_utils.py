@@ -100,7 +100,7 @@ def validate_connect_rp_location(cmd, location):
 
 
 def validate_custom_token(cmd, resource_group_name, location):
-    print("Step: {}: Validating custom access token".format(get_utctimestring()))
+    print(f"Step: {get_utctimestring()}: Validating custom access token")
     if os.getenv("AZURE_ACCESS_TOKEN"):
         if os.getenv("AZURE_SUBSCRIPTION_ID") is None:
             telemetry.set_exception(
@@ -134,7 +134,7 @@ def validate_custom_token(cmd, resource_group_name, location):
                     summary="Unable to fetch location from resource group",
                 )
                 raise ValidationError(
-                    "Unable to fetch location from resource group: '{}'".format(str(ex))
+                    f"Unable to fetch location from resource group: '{str(ex)}'"
                 )
         return True, location
     return False, location
@@ -149,7 +149,7 @@ def get_chart_path(
     chart_name="azure-arc-k8sagents",
     new_path=True,
 ):
-    print("Step: {}: Determine Helmchart Export Path".format(get_utctimestring()))
+    print(f"Step: {get_utctimestring()}: Determine Helmchart Export Path")
     # Exporting Helm chart
     chart_export_path = os.path.join(
         os.path.expanduser("~"), ".azure", chart_folder_name
@@ -159,10 +159,8 @@ def get_chart_path(
             shutil.rmtree(chart_export_path)
     except OSError:
         logger.warning(
-            "Unable to cleanup the {} already present on the machine. In case of failure, please cleanup "
-            "the directory '{}' and try again.".format(
-                chart_folder_name, chart_export_path
-            )
+            f"Unable to cleanup the {chart_folder_name} already present on the machine. In case of failure, please cleanup "
+            f"the directory '{chart_export_path}' and try again."
         )
 
     pull_helm_chart(
@@ -201,9 +199,7 @@ def pull_helm_chart(
     chart_url = registry_path.split(":")[0]
     chart_version = registry_path.split(":")[1]
     print(
-        "Step: {}: Pulling HelmChart: {}, Version: {}".format(
-            get_utctimestring(), chart_url, chart_version
-        )
+        f"Step: {get_utctimestring()}: Pulling HelmChart: {chart_url}, Version: {chart_version}"
     )
 
     if new_path:
@@ -252,9 +248,7 @@ def pull_helm_chart(
                 telemetry.set_exception(
                     exception=error,
                     fault_type=consts.Pull_HelmChart_Fault_Type,
-                    summary="Unable to pull {} helm charts from the registry".format(
-                        chart_name
-                    ),
+                    summary=f"Unable to pull {chart_name} helm charts from the registry",
                 )
                 raise CLIInternalError(
                     f"Unable to pull {chart_name} helm chart from the registry"
@@ -413,8 +407,7 @@ def check_cluster_DNS(
             )
             diagnoser_output.append(
                 "An exception has occured while performing the DNS check on the cluster. "
-                "Exception: {}".format(str(e))
-                + "\n"
+                f"Exception: {str(e)}" + "\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -429,8 +422,7 @@ def check_cluster_DNS(
         )
         diagnoser_output.append(
             "An exception has occured while performing the DNS check on the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+            f"Exception: {str(e)}" + "\n"
         )
 
     return consts.Diagnostic_Check_Incomplete, storage_space_available
@@ -485,7 +477,7 @@ def check_cluster_outbound_connectivity(
                     'This will affect the "cluster-connect" feature. If you are planning to use '
                     '"cluster-connect" functionality, please ensure outbound connectivity to the '
                     "above endpoint.\n",
-                    Cluster_Connect_Precheck_Endpoint_Url
+                    Cluster_Connect_Precheck_Endpoint_Url,
                 )
                 telemetry.set_user_fault()
                 telemetry.set_exception(
@@ -637,8 +629,7 @@ def check_cluster_outbound_connectivity(
             )
             diagnoser_output.append(
                 "An exception has occured while performing the outbound connectivity check on the cluster. "
-                "Exception: {}".format(str(e))
-                + "\n"
+                f"Exception: {str(e)}" + "\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -654,8 +645,7 @@ def check_cluster_outbound_connectivity(
         )
         diagnoser_output.append(
             "An exception has occured while performing the outbound connectivity check on the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+            f"Exception: {str(e)}" + "\n"
         )
 
     return consts.Diagnostic_Check_Incomplete, storage_space_available
@@ -663,9 +653,7 @@ def check_cluster_outbound_connectivity(
 
 def create_folder_diagnosticlogs(time_stamp, folder_name):
     print(
-        "Step: {}: Creating folder for Cluster Diagnostic Checks Logs".format(
-            get_utctimestring()
-        )
+        f"Step: {get_utctimestring()}: Creating folder for Cluster Diagnostic Checks Logs"
     )
     try:
         # Fetching path to user directory to create the arc diagnostic folder
@@ -724,7 +712,7 @@ def create_folder_diagnosticlogs(time_stamp, folder_name):
 
 
 def add_helm_repo(kube_config, kube_context, helm_client_location):
-    print("Step: {}: Adding Helm Repo".format(get_utctimestring()))
+    print(f"Step: {get_utctimestring()}: Adding Helm Repo")
     repo_name = os.getenv("HELMREPONAME")
     repo_url = os.getenv("HELMREPOURL")
     cmd_helm_repo = [helm_client_location, "repo", "add", repo_name, repo_url]
@@ -745,23 +733,17 @@ def add_helm_repo(kube_config, kube_context, helm_client_location):
 
 
 def get_helm_registry(cmd, config_dp_endpoint, release_train_custom=None):
-    print(
-        "Step: {}: Getting HelmPackagePath from Arc DataPlane".format(
-            get_utctimestring()
-        )
-    )
+    print(f"Step: {get_utctimestring()}: Getting HelmPackagePath from Arc DataPlane")
     # Setting uri
     api_version = "2019-11-01-preview"
     chart_location_url_segment = (
-        "azure-arc-k8sagents/GetLatestHelmPackagePath?api-version={}".format(
-            api_version
-        )
+        f"azure-arc-k8sagents/GetLatestHelmPackagePath?api-version={api_version}"
     )
     release_train = os.getenv("RELEASETRAIN") if os.getenv("RELEASETRAIN") else "stable"
-    chart_location_url = "{}/{}".format(config_dp_endpoint, chart_location_url_segment)
+    chart_location_url = f"{config_dp_endpoint}/{chart_location_url_segment}"
     if release_train_custom:
         release_train = release_train_custom
-    uri_parameters = ["releaseTrain={}".format(release_train)]
+    uri_parameters = [f"releaseTrain={release_train}"]
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     headers = None
     if os.getenv("AZURE_ACCESS_TOKEN"):
@@ -804,10 +786,10 @@ def get_helm_values(
     # Setting uri
     api_version = "2024-07-01-preview"
     chart_location_url_segment = (
-        "azure-arc-k8sagents/GetHelmSettings?api-version={}".format(api_version)
+        f"azure-arc-k8sagents/GetHelmSettings?api-version={api_version}"
     )
     release_train = os.getenv("RELEASETRAIN") if os.getenv("RELEASETRAIN") else "stable"
-    chart_location_url = "{}/{}".format(config_dp_endpoint, chart_location_url_segment)
+    chart_location_url = f"{config_dp_endpoint}/{chart_location_url_segment}"
     dp_request_identity = request_body.identity
     id = request_body.id
     request_body = request_body.serialize()
@@ -817,7 +799,7 @@ def get_helm_values(
     request_body = json.dumps(request_body)
     if release_train_custom:
         release_train = release_train_custom
-    uri_parameters = ["releaseTrain={}".format(release_train)]
+    uri_parameters = [f"releaseTrain={release_train}"]
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     headers = None
     if os.getenv("AZURE_ACCESS_TOKEN"):
@@ -859,9 +841,9 @@ def health_check_dp(cmd, config_dp_endpoint):
     # Setting uri
     api_version = "2024-07-01-preview"
     chart_location_url_segment = (
-        "azure-arc-k8sagents/healthCheck?api-version={}".format(api_version)
+        f"azure-arc-k8sagents/healthCheck?api-version={api_version}"
     )
-    chart_location_url = "{}/{}".format(config_dp_endpoint, chart_location_url_segment)
+    chart_location_url = f"{config_dp_endpoint}/{chart_location_url_segment}"
     uri_parameters = []
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     headers = None
@@ -931,7 +913,7 @@ def arm_exception_handler(ex, fault_type, summary, return_if_not_found=False):
         raise AzureResponseError(
             "Authentication error occured while making ARM request: "
             + str(ex)
-            + "\nSummary: {}".format(summary)
+            + f"\nSummary: {summary}"
         )
 
     if isinstance(ex, TokenExpiredError):
@@ -939,7 +921,7 @@ def arm_exception_handler(ex, fault_type, summary, return_if_not_found=False):
         raise AzureResponseError(
             "Token expiration error occured while making ARM request: "
             + str(ex)
-            + "\nSummary: {}".format(summary)
+            + f"\nSummary: {summary}"
         )
 
     if isinstance(ex, HttpOperationError):
@@ -953,12 +935,12 @@ def arm_exception_handler(ex, fault_type, summary, return_if_not_found=False):
             raise AzureInternalError(
                 "Http operation error occured while making ARM request: "
                 + str(ex)
-                + "\nSummary: {}".format(summary)
+                + f"\nSummary: {summary}"
             )
         raise AzureResponseError(
             "Http operation error occured while making ARM request: "
             + str(ex)
-            + "\nSummary: {}".format(summary)
+            + f"\nSummary: {summary}"
         )
 
     if isinstance(ex, MSRestValidationError):
@@ -966,7 +948,7 @@ def arm_exception_handler(ex, fault_type, summary, return_if_not_found=False):
         raise AzureResponseError(
             "Validation error occured while making ARM request: "
             + str(ex)
-            + "\nSummary: {}".format(summary)
+            + f"\nSummary: {summary}"
         )
 
     if isinstance(ex, HttpResponseError):
@@ -980,12 +962,12 @@ def arm_exception_handler(ex, fault_type, summary, return_if_not_found=False):
             raise AzureInternalError(
                 "Http response error occured while making ARM request: "
                 + str(ex)
-                + "\nSummary: {}".format(summary)
+                + f"\nSummary: {summary}"
             )
         raise AzureResponseError(
             "Http response error occured while making ARM request: "
             + str(ex)
-            + "\nSummary: {}".format(summary)
+            + f"\nSummary: {summary}"
         )
 
     if isinstance(ex, ResourceNotFoundError) and return_if_not_found:
@@ -993,9 +975,7 @@ def arm_exception_handler(ex, fault_type, summary, return_if_not_found=False):
 
     telemetry.set_exception(exception=ex, fault_type=fault_type, summary=summary)
     raise ClientRequestError(
-        "Error occured while making ARM request: "
-        + str(ex)
-        + "\nSummary: {}".format(summary)
+        "Error occured while making ARM request: " + str(ex) + f"\nSummary: {summary}"
     )
 
 
@@ -1058,9 +1038,7 @@ def get_values_file():
 
 def ensure_namespace_cleanup():
     print(
-        "Step: {}: Confirming '{}' namespace got deleted.".format(
-            get_utctimestring(), consts.Arc_Namespace
-        )
+        f"Step: {get_utctimestring()}: Confirming '{consts.Arc_Namespace}' namespace got deleted."
     )
     api_instance = kube_client.CoreV1Api()
     timeout = time.time() + 180
@@ -1097,7 +1075,7 @@ def delete_arc_agents(
     is_arm64_cluster=False,
     no_hooks=False,
 ):
-    print("Step: {}: Uninstalling Arc Agents' Helm release".format(get_utctimestring()))
+    print(f"Step: {get_utctimestring()}: Uninstalling Arc Agents' Helm release")
     if no_hooks:
         cmd_helm_delete = [
             helm_client_location,
@@ -1139,8 +1117,8 @@ def delete_arc_agents(
         err_msg = (
             "Error occured while cleaning up arc agents. Helm release deletion failed: "
             + error_helm_delete.decode("ascii")
-            + " Please run 'helm delete azure-arc --namespace {}' to ensure that "
-            "the release is deleted.".format(release_namespace)
+            + f" Please run 'helm delete azure-arc --namespace {release_namespace}' to ensure that "
+            "the release is deleted."
         )
         raise CLIInternalError(err_msg)
     ensure_namespace_cleanup()
@@ -1150,9 +1128,7 @@ def delete_arc_agents(
 
 def cleanup_release_install_namespace_if_exists():
     print(
-        "Step: {}: Clean up release namespace '{}'.".format(
-            get_utctimestring(), consts.Release_Install_Namespace
-        )
+        f"Step: {get_utctimestring()}: Clean up release namespace '{consts.Release_Install_Namespace}'."
     )
     api_instance = kube_client.CoreV1Api()
     try:
@@ -1166,10 +1142,9 @@ def cleanup_release_install_namespace_if_exists():
             ex,
             consts.Get_Kubernetes_Helm_Release_Namespace_Fault_Type,
             error_message="Unable to fetch details about existense of kubernetes "
-            "namespace: {}".format(consts.Release_Install_Namespace),
-            summary="Unable to fetch kubernetes " "namespace: {}".format(
-                consts.Release_Install_Namespace
-            ),
+            f"namespace: {consts.Release_Install_Namespace}",
+            summary="Unable to fetch kubernetes "
+            f"namespace: {consts.Release_Install_Namespace}",
         )
 
     # If namespace exists, delete it
@@ -1179,12 +1154,10 @@ def cleanup_release_install_namespace_if_exists():
         kubernetes_exception_handler(
             ex,
             consts.Delete_Kubernetes_Helm_Release_Namespace_Fault_Type,
-            error_message="Unable to clean-up kubernetes " "namespace: {}".format(
-                consts.Release_Install_Namespace
-            ),
-            summary="Unable to delete kubernetes " "namespace: {}".format(
-                consts.Release_Install_Namespace
-            ),
+            error_message="Unable to clean-up kubernetes "
+            f"namespace: {consts.Release_Install_Namespace}",
+            summary="Unable to delete kubernetes "
+            f"namespace: {consts.Release_Install_Namespace}",
         )
 
 
@@ -1216,19 +1189,19 @@ def helm_install_release(
         "azure-arc",
         chart_path,
         "--set",
-        "global.kubernetesDistro={}".format(kubernetes_distro),
+        f"global.kubernetesDistro={kubernetes_distro}",
         "--set",
-        "global.kubernetesInfra={}".format(kubernetes_infra),
+        f"global.kubernetesInfra={kubernetes_infra}",
         "--set",
-        "global.onboardingPrivateKey={}".format(private_key_pem),
+        f"global.onboardingPrivateKey={private_key_pem}",
         "--set",
         "systemDefaultValues.spnOnboarding=false",
         "--set",
-        "global.azureEnvironment={}".format(cloud_name),
+        f"global.azureEnvironment={cloud_name}",
         "--set",
         "systemDefaultValues.clusterconnect-agent.enabled=true",
         "--namespace",
-        "{}".format(consts.Release_Install_Namespace),
+        f"{consts.Release_Install_Namespace}",
         "--create-namespace",
         "--output",
         "json",
@@ -1254,29 +1227,17 @@ def helm_install_release(
             cmd_helm_install.extend(
                 [
                     "--set",
-                    "systemDefaultValues.azureResourceManagerEndpoint={}".format(
-                        resource_manager
-                    ),
+                    f"systemDefaultValues.azureResourceManagerEndpoint={resource_manager}",
                     "--set",
-                    "systemDefaultValues.azureArcAgents.config_dp_endpoint_override={}".format(
-                        config_endpoint
-                    ),
+                    f"systemDefaultValues.azureArcAgents.config_dp_endpoint_override={config_endpoint}",
                     "--set",
-                    "systemDefaultValues.clusterconnect-agent.notification_dp_endpoint_override={}".format(
-                        notification_endpoint
-                    ),
+                    f"systemDefaultValues.clusterconnect-agent.notification_dp_endpoint_override={notification_endpoint}",
                     "--set",
-                    "systemDefaultValues.clusterconnect-agent.relay_endpoint_suffix_override={}".format(
-                        relay_endpoint
-                    ),
+                    f"systemDefaultValues.clusterconnect-agent.relay_endpoint_suffix_override={relay_endpoint}",
                     "--set",
-                    "systemDefaultValues.clusteridentityoperator.his_endpoint_override={}".format(
-                        his_endpoint
-                    ),
+                    f"systemDefaultValues.clusteridentityoperator.his_endpoint_override={his_endpoint}",
                     "--set",
-                    "systemDefaultValues.activeDirectoryEndpoint={}".format(
-                        active_directory
-                    ),
+                    f"systemDefaultValues.activeDirectoryEndpoint={active_directory}",
                 ]
             )
         else:
@@ -1295,9 +1256,7 @@ def helm_install_release(
         cmd_helm_install.extend(
             [
                 "--set",
-                "systemDefaultValues.customLocations.oid={}".format(
-                    custom_locations_oid
-                ),
+                f"systemDefaultValues.customLocations.oid={custom_locations_oid}",
             ]
         )
     # Disable cluster connect if private link is enabled
@@ -1315,9 +1274,7 @@ def helm_install_release(
     if not no_wait:
         # Change --timeout format for helm client to understand
         onboarding_timeout = onboarding_timeout + "s"
-        cmd_helm_install.extend(
-            ["--wait", "--timeout", "{}".format(onboarding_timeout)]
-        )
+        cmd_helm_install.extend(["--wait", "--timeout", f"{onboarding_timeout}"])
     response_helm_install = Popen(cmd_helm_install, stdout=PIPE, stderr=PIPE)
     _, error_helm_install = response_helm_install.communicate()
     if response_helm_install.returncode != 0:
@@ -1346,11 +1303,7 @@ def helm_install_release(
 def get_release_namespace(
     kube_config, kube_context, helm_client_location, release_name="azure-arc"
 ):
-    print(
-        "Step: {}: Get namespace of release: {}".format(
-            get_utctimestring(), release_name
-        )
-    )
+    print(f"Step: {get_utctimestring()}: Get namespace of release: {release_name}")
     cmd_helm_release = [
         helm_client_location,
         "list",
@@ -1453,16 +1406,14 @@ def try_list_node_fix():
         V1ContainerImage.names = V1ContainerImage.names.setter(names)
     except Exception as ex:
         logger.debug(
-            "Error while trying to monkey patch the fix for list_node(): {}".format(
-                str(ex)
-            )
+            f"Error while trying to monkey patch the fix for list_node(): {str(ex)}"
         )
 
 
 def check_provider_registrations(
     cli_ctx, subscription_id, is_gateway_enabled, is_workload_identity_enabled
 ):
-    print("Step: {}: Checking Provider Registrations".format(get_utctimestring()))
+    print(f"Step: {get_utctimestring()}: Checking Provider Registrations")
     try:
         rp_client = resource_providers_client(cli_ctx, subscription_id)
         cc_registration_state = rp_client.get(
@@ -1470,19 +1421,13 @@ def check_provider_registrations(
         ).registration_state
         if cc_registration_state not in consts.allowed_rp_registration_states:
             telemetry.set_exception(
-                exception="{} provider is not registered".format(
-                    consts.Connected_Cluster_Provider_Namespace
-                ),
+                exception=f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered",
                 fault_type=consts.CC_Provider_Namespace_Not_Registered_Fault_Type,
-                summary="{} provider is not registered".format(
-                    consts.Connected_Cluster_Provider_Namespace
-                ),
+                summary=f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered",
             )
             err_msg = (
-                "{} provider is not registered. Please register it using 'az provider register -n 'Microsoft."
-                "Kubernetes' before running the connect command.".format(
-                    consts.Connected_Cluster_Provider_Namespace
-                )
+                f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered. Please register it using 'az provider register -n 'Microsoft."
+                "Kubernetes' before running the connect command."
             )
             raise ValidationError(err_msg)
         kc_registration_state = rp_client.get(
@@ -1491,27 +1436,19 @@ def check_provider_registrations(
         if kc_registration_state not in consts.allowed_rp_registration_states:
             if is_workload_identity_enabled:
                 telemetry.set_exception(
-                    exception="{} provider is not registered".format(
-                        consts.Kubernetes_Configuration_Provider_Namespace
-                    ),
+                    exception=f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered",
                     fault_type=consts.Kubernetes_Configuration_Provider_Namespace_Not_Registered_Fault_Type,
-                    summary="{} provider is not registered".format(
-                        consts.Kubernetes_Configuration_Provider_Namespace
-                    ),
+                    summary=f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered",
                 )
                 err_msg = (
-                    "{} provider is not registered. Please register it using 'az provider register -n 'Microsoft."
-                    "KubernetesConfiguration' before running the connect command.".format(
-                        consts.Kubernetes_Configuration_Provider_Namespace
-                    )
+                    f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered. Please register it using 'az provider register -n 'Microsoft."
+                    "KubernetesConfiguration' before running the connect command."
                 )
                 raise ValidationError(err_msg)
 
             telemetry.set_user_fault()
             logger.warning(
-                "{} provider is not registered".format(
-                    consts.Kubernetes_Configuration_Provider_Namespace
-                )
+                f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered"
             )
         if is_gateway_enabled:
             hc_registration_state = rp_client.get(
@@ -1519,28 +1456,20 @@ def check_provider_registrations(
             ).registration_state
             if hc_registration_state not in consts.allowed_rp_registration_states:
                 telemetry.set_exception(
-                    exception="{} provider is not registered".format(
-                        consts.Hybrid_Compute_Provider_Namespace
-                    ),
+                    exception=f"{consts.Hybrid_Compute_Provider_Namespace} provider is not registered",
                     fault_type=consts.HC_Provider_Namespace_Not_Registered_Fault_Type,
-                    summary="{} provider is not registered".format(
-                        consts.Hybrid_Compute_Provider_Namespace
-                    ),
+                    summary=f"{consts.Hybrid_Compute_Provider_Namespace} provider is not registered",
                 )
                 err_msg = (
-                    "{} provider is not registered. Please register it using 'az provider register -n 'Microsoft."
-                    "HybridCompute' before running the connect command.".format(
-                        consts.Hybrid_Compute_Provider_Namespace
-                    )
+                    f"{consts.Hybrid_Compute_Provider_Namespace} provider is not registered. Please register it using 'az provider register -n 'Microsoft."
+                    "HybridCompute' before running the connect command."
                 )
                 raise ValidationError(err_msg)
     except ValidationError as e:
         raise e
     except Exception as ex:
         logger.warning(
-            "Couldn't check the required provider's registration status. Error: {}".format(
-                str(ex)
-            )
+            f"Couldn't check the required provider's registration status. Error: {str(ex)}"
         )
 
 
@@ -1561,7 +1490,7 @@ def can_create_clusterrolebindings():
     except Exception as ex:
         warn_msg = (
             "Couldn't check for the permission to create clusterrolebindings on this k8s cluster. "
-            "Error: {}".format(str(ex))
+            f"Error: {str(ex)}"
         )
         logger.warning(warn_msg)
         return "Unknown"
@@ -1574,9 +1503,7 @@ def validate_node_api_response(api_instance, node_api_response):
             return node_api_response
         except Exception as ex:
             logger.debug(
-                "Error occcured while listing nodes on this kubernetes cluster: {}".format(
-                    str(ex)
-                )
+                f"Error occcured while listing nodes on this kubernetes cluster: {str(ex)}"
             )
             return None
     else:
@@ -1648,9 +1575,9 @@ def get_metadata(arm_endpoint, api_version="2022-09-01"):
 def parse_helm_values(helm_content_values, cmd_helm):
     for helm_param, helm_value in helm_content_values.items():
         if helm_param == "global.proxyCert":
-            cmd_helm.extend(["--set-file", "{}={}".format(helm_param, helm_value)])
+            cmd_helm.extend(["--set-file", f"{helm_param}={helm_value}"])
             continue
-        cmd_helm.extend(["--set", "{}={}".format(helm_param, helm_value)])
+        cmd_helm.extend(["--set", f"{helm_param}={helm_value}"])
 
     return cmd_helm
 

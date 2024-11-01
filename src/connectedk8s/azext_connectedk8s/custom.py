@@ -187,11 +187,7 @@ def create_connectedk8s(
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
 
-    print(
-        "Step: {}: Escape Proxy Settings, if passed in".format(
-            utils.get_utctimestring()
-        )
-    )
+    print(f"Step: {utils.get_utctimestring()}: Escape Proxy Settings, if passed in")
 
     # Escaping comma, forward slash present in https proxy urls, needed for helm params.
     https_proxy = escape_proxy_settings(https_proxy)
@@ -283,7 +279,7 @@ def create_connectedk8s(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-    print("Step: {}: Do node validations".format(utils.get_utctimestring()))
+    print(f"Step: {utils.get_utctimestring()}: Do node validations")
     utils.try_list_node_fix()
     api_instance = kube_client.CoreV1Api()
     node_api_response = utils.validate_node_api_response(api_instance, None)
@@ -322,11 +318,7 @@ def create_connectedk8s(
     try:
         # if aks_hci lowbandwidth scenario skip, otherwise continue to perform pre-onboarding check
         if not lowbandwidth:
-            print(
-                "Step: {}: Starting Pre-onboarding-check".format(
-                    utils.get_utctimestring()
-                )
-            )
+            print(f"Step: {utils.get_utctimestring()}: Starting Pre-onboarding-check")
             batchv1_api_instance = kube_client.BatchV1Api()
             storage_space_available = True
 
@@ -382,12 +374,8 @@ def create_connectedk8s(
                 )
 
     except Exception as e:
-        ex_msg = "An exception occured while trying to execute pre-onboarding diagnostic checks : {}".format(
-            str(e)
-        )
-        summ_msg = "An exception occured while trying to execute pre-onboarding diagnostic checks : {}".format(
-            str(e)
-        )
+        ex_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {str(e)}"
+        summ_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {str(e)}"
         telemetry.set_exception(
             exception=ex_msg,
             fault_type=consts.Pre_Onboarding_Diagnostic_Checks_Execution_Failed,
@@ -395,7 +383,7 @@ def create_connectedk8s(
         )
         err_msg = (
             "An exception has occured while trying to execute pre-onboarding diagnostic checks : "
-            "{}".format(str(e))
+            f"{str(e)}"
         )
         raise CLIInternalError(err_msg)
 
@@ -445,14 +433,12 @@ def create_connectedk8s(
 
     if lowbandwidth is False:
         print(
-            "Step: {}: The required pre-checks for onboarding have succeeded.".format(
-                utils.get_utctimestring()
-            )
+            f"Step: {utils.get_utctimestring()}: The required pre-checks for onboarding have succeeded."
         )
     else:
         print(
-            "Step: {}: Skipped onboarding pre-checks for AKS-HCI low bandwidth scenario. "
-            "Continuing...".format(utils.get_utctimestring())
+            f"Step: {utils.get_utctimestring()}: Skipped onboarding pre-checks for AKS-HCI low bandwidth scenario. "
+            "Continuing..."
         )
 
     if not required_node_exists:
@@ -469,9 +455,7 @@ def create_connectedk8s(
         )
 
     print(
-        "Step: {}: Checking if user can create ClusterRoleBindings".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Checking if user can create ClusterRoleBindings"
     )
     crb_permission = utils.can_create_clusterrolebindings()
     if not crb_permission or crb_permission == "Unknown":
@@ -489,9 +473,7 @@ def create_connectedk8s(
         raise ValidationError(err_msg)
 
     print(
-        "Step: {}: Determining Cluster Distribution and Infrastructure".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Determining Cluster Distribution and Infrastructure"
     )
     # Get kubernetes cluster info
     if distribution == "generic":
@@ -528,9 +510,7 @@ def create_connectedk8s(
 
     # Validate location
     print(
-        "Step: {}: Checking Connect RP is available in the Location passed in.".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Checking Connect RP is available in the Location passed in."
     )
     utils.validate_connect_rp_location(cmd, location)
     resourceClient = cf_resource_groups(cmd.cli_ctx, subscription_id=subscription_id)
@@ -538,9 +518,7 @@ def create_connectedk8s(
     # Validate location of private link scope resource. Throws error only if there is a location mismatch
     if enable_private_link is True:
         print(
-            "Step: {}: Validate location of PrviateLinkScope passed in.".format(
-                utils.get_utctimestring()
-            )
+            f"Step: {utils.get_utctimestring()}: Validate location of PrviateLinkScope passed in."
         )
         try:
             pls_arm_id_arr = private_link_scope_resource_id.split("/")
@@ -572,10 +550,8 @@ def create_connectedk8s(
                         summary="Pls resource does not exist",
                     )
                     err_msg = (
-                        "The private link scope resource '{}' does not exist. Please ensure that "
-                        "you pass a valid ARM Resource Id.".format(
-                            private_link_scope_resource_id
-                        )
+                        f"The private link scope resource '{private_link_scope_resource_id}' does not exist. Please ensure that "
+                        "you pass a valid ARM Resource Id."
                     )
                     raise ArgumentUsageError(err_msg)
             logger.warning(
@@ -585,9 +561,7 @@ def create_connectedk8s(
 
     # Check Previous Azure-Arc release's Existance
     print(
-        "Step: {}: Check if an earlier azure-arc release exists".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Check if an earlier azure-arc release exists"
     )
     release_namespace = utils.get_release_namespace(
         kube_config, kube_context, helm_client_location
@@ -595,9 +569,7 @@ def create_connectedk8s(
 
     if release_namespace:
         print(
-            "Step: {}: Found an earlier instance of azure-arc release".format(
-                utils.get_utctimestring()
-            )
+            f"Step: {utils.get_utctimestring()}: Found an earlier instance of azure-arc release"
         )
         # Loading config map
         api_instance = kube_client.CoreV1Api()
@@ -608,8 +580,8 @@ def create_connectedk8s(
         except Exception as e:  # pylint: disable=broad-except
             not_found_msg = (
                 "The helm release 'azure-arc' is present but azure-arc namespace/configmap is missing "
-                "is missing. Please run 'helm delete azure-arc --namespace {} --no-hooks' to cleanup the release "
-                "before onboarding the cluster again.".format(release_namespace)
+                f"is missing. Please run 'helm delete azure-arc --namespace {release_namespace} --no-hooks' to cleanup the release "
+                "before onboarding the cluster again."
             )
             utils.kubernetes_exception_handler(
                 e,
@@ -769,9 +741,7 @@ def create_connectedk8s(
             )
             err_msg = (
                 "The kubernetes cluster you are trying to onboard is already onboarded to "
-                "the resource group '{}' with resource name '{}'.".format(
-                    configmap_rg_name, configmap_cluster_name
-                )
+                f"the resource group '{configmap_rg_name}' with resource name '{configmap_cluster_name}'."
             )
             raise ArgumentUsageError(err_msg)
         # else case
@@ -798,8 +768,9 @@ def create_connectedk8s(
                 summary="Connected cluster resource already exists",
             )
             err_msg = (
-                "The connected cluster resource {} already exists ".format(cluster_name)
-                + " in the " "resource group {} ".format(resource_group_name)
+                f"The connected cluster resource {cluster_name} already exists "
+                + " in the "
+                f"resource group {resource_group_name} "
                 + "and corresponds to a different Kubernetes cluster."
             )
             reco_msg = (
@@ -812,9 +783,7 @@ def create_connectedk8s(
             crd_cleanup_force_delete(kubectl_client_location, kube_config, kube_context)
 
     print(
-        "Step: {}: Check if ResourceGroup exists.  Try to create if it doesn't".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Check if ResourceGroup exists.  Try to create if it doesn't"
     )
     # Resource group Creation
     if (
@@ -836,9 +805,7 @@ def create_connectedk8s(
                 "Failed to create the resource group",
             )
 
-    print(
-        "Step: {}: Generating Public-Private Key pair".format(utils.get_utctimestring())
-    )
+    print(f"Step: {utils.get_utctimestring()}: Generating Public-Private Key pair")
 
     # Generate public-private key pair
     try:
@@ -880,7 +847,7 @@ def create_connectedk8s(
             )
         oidc_profile = set_oidc_issuer_profile(enable_oidc_issuer, self_hosted_issuer)
 
-    print("Step: {}: Generating ARM Request Payload".format(utils.get_utctimestring()))
+    print(f"Step: {utils.get_utctimestring()}: Generating ARM Request Payload")
     # Generate request payload
     cc = generate_request_payload(
         location,
@@ -899,11 +866,7 @@ def create_connectedk8s(
         arc_agent_profile,
     )
 
-    print(
-        "Step: {}: Azure resource provisioning has begun.".format(
-            utils.get_utctimestring()
-        )
-    )
+    print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
     # Create connected cluster resource
     put_cc_response = create_cc_resource(
         client, resource_group_name, cluster_name, cc, no_wait
@@ -911,9 +874,7 @@ def create_connectedk8s(
     dp_request_payload = put_cc_response.result()
     put_cc_response = LongRunningOperation(cmd.cli_ctx)(put_cc_response)
     print(
-        "Step: {}: Azure resource provisioning has finished.".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Azure resource provisioning has finished."
     )
 
     # Checking if custom locations rp is registered and fetching oid if it is registered
@@ -967,9 +928,7 @@ def create_connectedk8s(
             ][protectedSetting]
 
     print(
-        "Step: {}: Starting to install Azure arc agents on the Kubernetes cluster.".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Starting to install Azure arc agents on the Kubernetes cluster."
     )
     # Install azure-arc agents
     utils.helm_install_release(
@@ -1005,19 +964,14 @@ def create_connectedk8s(
     """
     if (enable_oidc_issuer and self_hosted_issuer == "") or enable_workload_identity:
         print(
-            "Step: {}: Wait for Agent State to reach terminal state, with timeout of {}".format(
-                utils.get_utctimestring(), consts.Agent_State_Timeout
-            )
+            f"Step: {utils.get_utctimestring()}: Wait for Agent State to reach terminal state, with timeout of {consts.Agent_State_Timeout}"
         )
         if poll_for_agent_state(cmd, resource_group_name, cluster_name):
             connected_cluster = get_connectedk8s_2024_07_01(
                 cmd, resource_group_name, cluster_name
             )
             print(
-                "Step: {}: Agent state has reached terminal state of {}.".format(
-                    utils.get_utctimestring(),
-                    connected_cluster.arc_agent_profile.agent_state,
-                )
+                f"Step: {utils.get_utctimestring()}: Agent state has reached terminal state of {connected_cluster.arc_agent_profile.agent_state}."
             )
         else:
             raise CLIInternalError(
@@ -1121,7 +1075,7 @@ def validate_env_file_dogfood(values_file):
             recommendation="Please set the environment variable 'HELMVALUESPATH' to point to the file.",
         )
 
-    with open(values_file, "r") as f:
+    with open(values_file) as f:
         try:
             env_dict = yaml.safe_load(f)
         except Exception as e:
@@ -1169,7 +1123,7 @@ def validate_env_file_dogfood(values_file):
 
 
 def set_kube_config(kube_config):
-    print("Step: {}: Setting KubeConfig".format(utils.get_utctimestring()))
+    print(f"Step: {utils.get_utctimestring()}: Setting KubeConfig")
     if kube_config:
         # Trim kubeconfig. This is required for windows os.
         if kube_config.startswith("'") or kube_config.startswith('"'):
@@ -1189,9 +1143,7 @@ def escape_proxy_settings(proxy_setting):
 
 
 def check_kube_connection():
-    print(
-        "Step: {}: Checking Connectivity to Cluster".format(utils.get_utctimestring())
-    )
+    print(f"Step: {utils.get_utctimestring()}: Checking Connectivity to Cluster")
     api_instance = kube_client.VersionApi()
     try:
         api_response = api_instance.get_code()
@@ -1207,9 +1159,7 @@ def check_kube_connection():
 
 def install_helm_client():
     print(
-        "Step: {}: Install Helm client if it does not exist".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Install Helm client if it does not exist"
     )
     # Return helm client path set by user
     if os.getenv("HELM_CLIENT_PATH"):
@@ -1303,9 +1253,7 @@ def install_helm_client():
                 fault_type=consts.Create_HelmExe_Fault_Type,
                 summary="Unable to create helm executable",
             )
-            reco_str = "Please ensure that you delete the directory '{}' before trying again.".format(
-                download_dir
-            )
+            reco_str = f"Please ensure that you delete the directory '{download_dir}' before trying again."
             raise ClientRequestError(
                 "Failed to create helm executable." + str(e), recommendation=reco_str
             )
@@ -1319,9 +1267,7 @@ def install_helm_client():
                 fault_type=consts.Extract_HelmExe_Fault_Type,
                 summary="Unable to extract helm executable",
             )
-            reco_str = "Please ensure that you delete the directory '{}' before trying again.".format(
-                download_dir
-            )
+            reco_str = f"Please ensure that you delete the directory '{download_dir}' before trying again."
             raise ClientRequestError(
                 "Failed to extract helm executable." + str(e), recommendation=reco_str
             )
@@ -1350,8 +1296,8 @@ def connected_cluster_exists(client, resource_group_name, cluster_name):
 
 def get_default_config_dp_endpoint(cmd, location):
     cloud_based_domain = cmd.cli_ctx.cloud.endpoints.active_directory.split(".")[2]
-    config_dp_endpoint = "https://{}.dp.kubernetesconfiguration.azure.{}".format(
-        location, cloud_based_domain
+    config_dp_endpoint = (
+        f"https://{location}.dp.kubernetesconfiguration.azure.{cloud_based_domain}"
     )
     return config_dp_endpoint
 
@@ -1830,7 +1776,7 @@ def delete_connectedk8s(
         kube_config, kube_context, helm_client_location
     )
 
-    print("Step: {}: Do node validations".format(utils.get_utctimestring()))
+    print(f"Step: {utils.get_utctimestring()}: Do node validations")
     utils.try_list_node_fix()
     api_instance = kube_client.CoreV1Api()
     node_api_response = utils.validate_node_api_response(api_instance, None)
@@ -1838,7 +1784,7 @@ def delete_connectedk8s(
 
     # Check forced delete flag
     if force_delete:
-        print("Step: {}: Performing Force Delete".format(utils.get_utctimestring()))
+        print(f"Step: {utils.get_utctimestring()}: Performing Force Delete")
         kubectl_client_location = install_kubectl_client()
 
         delete_cc_resource(client, resource_group_name, cluster_name, no_wait).result()
@@ -1870,8 +1816,8 @@ def delete_connectedk8s(
     except Exception as e:  # pylint: disable=broad-except
         err_msg = (
             "The helm release 'azure-arc' is present but the azure-arc namespace/configmap "
-            "is missing. Please run 'helm delete azure-arc --namepace {} --no-hooks' to cleanup the release "
-            "before onboarding the cluster again.".format(release_namespace)
+            f"is missing. Please run 'helm delete azure-arc --namepace {release_namespace} --no-hooks' to cleanup the release "
+            "before onboarding the cluster again."
         )
         utils.kubernetes_exception_handler(
             e,
@@ -1892,9 +1838,7 @@ def delete_connectedk8s(
         and configmap.data["AZURE_RESOURCE_NAME"].lower() == cluster_name.lower()
         and configmap.data["AZURE_SUBSCRIPTION_ID"].lower() == subscription_id.lower()
     ):
-        armid = "/subscriptions/{}/resourceGroups/{}/providers/Microsoft.Kubernetes/connectedClusters/{}".format(
-            subscription_id, resource_group_name, cluster_name
-        )
+        armid = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}"
         arm_hash = hashlib.sha256(armid.lower().encode("utf-8")).hexdigest()
 
         if check_proxy_kubeconfig(kube_config, kube_context, arm_hash):
@@ -1937,9 +1881,7 @@ def delete_connectedk8s(
         is_arm64_cluster,
     )
 
-    print(
-        "Step: {}: Delete of Connected Cluster ended.".format(utils.get_utctimestring())
-    )
+    print(f"Step: {utils.get_utctimestring()}: Delete of Connected Cluster ended.")
 
 
 def create_cc_resource(client, resource_group_name, cluster_name, cc, no_wait):
@@ -1975,7 +1917,7 @@ def patch_cc_resource(client, resource_group_name, cluster_name, cc):
 
 
 def delete_cc_resource(client, resource_group_name, cluster_name, no_wait):
-    print("Step: {}: Deleting ARM resource".format(utils.get_utctimestring()))
+    print(f"Step: {utils.get_utctimestring()}: Deleting ARM resource")
     try:
         return sdk_no_wait(
             no_wait,
@@ -2324,7 +2266,9 @@ def update_connected_cluster(
     for helm_parameter, helm_value in helm_content_values.items():
         if "redacted" in helm_value:
             _, feature, protectedSetting = helm_value.split(":")
-            helm_content_values[helm_parameter] = configuration_protected_settings[feature][protectedSetting]
+            helm_content_values[helm_parameter] = configuration_protected_settings[
+                feature
+            ][protectedSetting]
 
     # Disable proxy if disable_proxy flag is set
     if disable_proxy:
@@ -2347,9 +2291,7 @@ def update_connected_cluster(
     )
 
     print(
-        "Step: {}: Starting to update Azure arc agents on the Kubernetes cluster.".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Starting to update Azure arc agents on the Kubernetes cluster."
     )
     # Perform helm upgrade
     utils.helm_update_agent(
@@ -2377,19 +2319,14 @@ def update_connected_cluster(
     """
     if (enable_oidc_issuer and self_hosted_issuer == "") or enable_workload_identity:
         print(
-            "Step: {}: Wait for Agent State to reach terminal state, with timeout of {}".format(
-                utils.get_utctimestring(), consts.Agent_State_Timeout
-            )
+            f"Step: {utils.get_utctimestring()}: Wait for Agent State to reach terminal state, with timeout of {consts.Agent_State_Timeout}"
         )
         if poll_for_agent_state(cmd, resource_group_name, cluster_name):
             connected_cluster = get_connectedk8s_2024_07_01(
                 cmd, resource_group_name, cluster_name
             )
             print(
-                "Step: {}: Agent state has reached terminal state of {}.".format(
-                    utils.get_utctimestring(),
-                    connected_cluster.arc_agent_profile.agent_state,
-                )
+                f"Step: {utils.get_utctimestring()}: Agent state has reached terminal state of {connected_cluster.arc_agent_profile.agent_state}."
             )
         else:
             raise CLIInternalError(
@@ -2466,8 +2403,8 @@ def upgrade_agents(
         except Exception as e:  # pylint: disable=broad-except
             not_found_msg = (
                 "The helm release 'azure-arc' is present but the azure-arc namespace/configmap is "
-                "missing. Please run 'helm delete azure-arc --namespace {} --no-hooks' to cleanup the release "
-                "before onboarding the cluster again.".format(release_namespace)
+                f"missing. Please run 'helm delete azure-arc --namespace {release_namespace} --no-hooks' to cleanup the release "
+                "before onboarding the cluster again."
             )
             utils.kubernetes_exception_handler(
                 e,
@@ -2662,7 +2599,7 @@ def upgrade_agents(
         "--atomic",
         "--wait",
         "--timeout",
-        "{}".format(upgrade_timeout),
+        f"{upgrade_timeout}",
     ]
 
     proxy_enabled_param_added = False
@@ -2678,18 +2615,16 @@ def upgrade_agents(
             ):
                 value = escape_proxy_settings(value)
                 if value and not proxy_enabled_param_added:
-                    cmd_helm_upgrade.extend(
-                        ["--set", "global.isProxyEnabled={}".format(True)]
-                    )
+                    cmd_helm_upgrade.extend(["--set", f"global.isProxyEnabled={True}"])
                     proxy_enabled_param_added = True
             if key == "global.kubernetesDistro" and value == "default":
                 value = "generic"
             if key == "global.kubernetesInfra":
                 infra_added = True
-            cmd_helm_upgrade.extend(["--set", "{}={}".format(key, value)])
+            cmd_helm_upgrade.extend(["--set", f"{key}={value}"])
 
     if not proxy_enabled_param_added:
-        cmd_helm_upgrade.extend(["--set", "global.isProxyEnabled={}".format(False)])
+        cmd_helm_upgrade.extend(["--set", f"global.isProxyEnabled={False}"])
 
     if not infra_added:
         cmd_helm_upgrade.extend(
@@ -2746,8 +2681,8 @@ def validate_release_namespace(
         except Exception as e:  # pylint: disable=broad-except
             not_found_msg = (
                 "The helm release 'azure-arc' is present but the azure-arc namespace/configmap is "
-                "missing. Please run 'helm delete azure-arc --namespace {} --no-hooks' to cleanup the release "
-                "before onboarding the cluster again.".format(release_namespace)
+                f"missing. Please run 'helm delete azure-arc --namespace {release_namespace} --no-hooks' to cleanup the release "
+                "before onboarding the cluster again."
             )
             utils.kubernetes_exception_handler(
                 e,
@@ -3052,9 +2987,7 @@ def enable_features(
         cmd_helm_upgrade.extend(
             [
                 "--set",
-                "systemDefaultValues.guard.skipAuthzCheck={}".format(
-                    azrbac_skip_authz_check
-                ),
+                f"systemDefaultValues.guard.skipAuthzCheck={azrbac_skip_authz_check}",
             ]
         )
     if enable_cluster_connect:
@@ -3068,9 +3001,7 @@ def enable_features(
         cmd_helm_upgrade.extend(
             [
                 "--set",
-                "systemDefaultValues.customLocations.oid={}".format(
-                    custom_locations_oid
-                ),
+                f"systemDefaultValues.customLocations.oid={custom_locations_oid}",
             ]
         )
 
@@ -3112,7 +3043,7 @@ def disable_features(
     confirmation_message = (
         "Disabling few of the features may adversely impact dependent resources. Learn more "
         "about this at https://aka.ms/ArcK8sDependentResources. \n"
-        + "Are you sure you want to disable these features: {}".format(features)
+        + f"Are you sure you want to disable these features: {features}"
     )
     utils.user_confirmation(confirmation_message, yes)
 
@@ -3367,21 +3298,21 @@ def load_kubernetes_configuration(filename):
     try:
         with open(filename) as stream:
             return yaml.safe_load(stream)
-    except (IOError, OSError) as ex:
+    except OSError as ex:
         if getattr(ex, "errno", 0) == errno.ENOENT:
             telemetry.set_exception(
                 exception=ex,
                 fault_type=consts.Kubeconfig_Failed_To_Load_Fault_Type,
-                summary="{} does not exist".format(filename),
+                summary=f"{filename} does not exist",
             )
-            raise FileOperationError("{} does not exist".format(filename))
+            raise FileOperationError(f"{filename} does not exist")
     except (yaml.parser.ParserError, UnicodeDecodeError) as ex:
         telemetry.set_exception(
             exception=ex,
             fault_type=consts.Kubeconfig_Failed_To_Load_Fault_Type,
-            summary="Error parsing {} ({})".format(filename, str(ex)),
+            summary=f"Error parsing {filename} ({str(ex)})",
         )
-        raise FileOperationError("Error parsing {} ({})".format(filename, str(ex)))
+        raise FileOperationError(f"Error parsing {filename} ({str(ex)})")
 
 
 def print_or_merge_credentials(path, kubeconfig, overwrite_existing, context_name):
@@ -3464,9 +3395,7 @@ def merge_kubernetes_configurations(
         telemetry.set_exception(
             exception="Failed to load additional configuration",
             fault_type=consts.Failed_To_Load_K8s_Configuration_Fault_Type,
-            summary="failed to load additional configuration from {}".format(
-                addition_file
-            ),
+            summary=f"failed to load additional configuration from {addition_file}",
         )
         raise CLIInternalError(
             f"Failed to load additional configuration from {addition_file}"
@@ -3482,9 +3411,7 @@ def merge_kubernetes_configurations(
 
     # check that ~/.kube/config is only read- and writable by its owner
     if platform.system() != "Windows":
-        existing_file_perms = "{:o}".format(
-            stat.S_IMODE(os.lstat(existing_file).st_mode)
-        )
+        existing_file_perms = f"{stat.S_IMODE(os.lstat(existing_file).st_mode):o}"
         if not existing_file_perms.endswith("600"):
             logger.warning(
                 '%s has permissions "%s".\nIt should be readable and writable only by its owner.',
@@ -3504,7 +3431,7 @@ def merge_kubernetes_configurations(
             raise CLIInternalError(f"Exception while merging the kubeconfig file: {e}")
 
     current_context = addition.get("current-context", "UNKNOWN")
-    msg = 'Merged "{}" as current context in {}'.format(current_context, existing_file)
+    msg = f'Merged "{current_context}" as current context in {existing_file}'
     print(msg)
 
 
@@ -4130,8 +4057,8 @@ def client_side_proxy(
                 else:
                     temp_context_name = context_name
                 msg = (
-                    "Start sending kubectl requests on '{}' context using kubeconfig "
-                    "at {}".format(temp_context_name, path)
+                    f"Start sending kubectl requests on '{temp_context_name}' context using kubeconfig "
+                    f"at {path}"
                 )
                 print(msg)
 
@@ -4152,8 +4079,8 @@ def client_side_proxy(
 
 def check_cl_registration_and_get_oid(cmd, cl_oid, subscription_id):
     print(
-        "Step: {}: Checking Microsoft.ExtendedLocation RP Registration state for this Subscription, and get OID, "
-        "if registered ".format(utils.get_utctimestring())
+        f"Step: {utils.get_utctimestring()}: Checking Microsoft.ExtendedLocation RP Registration state for this Subscription, and get OID, "
+        "if registered "
     )
     enable_custom_locations = True
     custom_locations_oid = ""
@@ -4197,9 +4124,7 @@ def get_custom_locations_oid(cmd, cl_oid):
         # https://learn.microsoft.com/en-us/azure/azure-arc/kubernetes/
         # custom-locations#enable-custom-locations-on-your-cluster
         # Get Application Object for the CL App Id
-        app_object = graph_client.service_principal_list(
-            filter="appId eq '{}'".format(app_id)
-        )
+        app_object = graph_client.service_principal_list(filter=f"appId eq '{app_id}'")
         # If we successfully obtained it
         if len(app_object) != 0:
             # If a CL OID was input and it did not match the one we fetched, log a warning
@@ -4657,9 +4582,7 @@ def troubleshoot(
 
 def install_kubectl_client():
     print(
-        "Step: {}: Install Kubectl client if it does not exist".format(
-            utils.get_utctimestring()
-        )
+        f"Step: {utils.get_utctimestring()}: Install Kubectl client if it does not exist"
     )
     # Return kubectl client path set by user
     try:
@@ -4705,7 +4628,7 @@ def install_kubectl_client():
 
 
 def crd_cleanup_force_delete(kubectl_client_location, kube_config, kube_context):
-    print("Step: {}: Deleting Arc CRDs".format(utils.get_utctimestring()))
+    print(f"Step: {utils.get_utctimestring()}: Deleting Arc CRDs")
     timeout_for_crd_deletion = "20s"
     for crds in consts.CRD_FOR_FORCE_DELETE:
         cmd_helm_delete = [
@@ -4716,7 +4639,7 @@ def crd_cleanup_force_delete(kubectl_client_location, kube_config, kube_context)
             "--ignore-not-found",
             "--wait",
             "--timeout",
-            "{}".format(timeout_for_crd_deletion),
+            f"{timeout_for_crd_deletion}",
         ]
         if kube_config:
             cmd_helm_delete.extend(["--kubeconfig", kube_config])
@@ -4766,11 +4689,7 @@ def crd_cleanup_force_delete(kubectl_client_location, kube_config, kube_context)
 
 
 def check_operation_support(operation_name, agent_version):
-    error_summary = (
-        "This CLI version does not support {} for Agents older than v1.14".format(
-            operation_name
-        )
-    )
+    error_summary = f"This CLI version does not support {operation_name} for Agents older than v1.14"
     # Version check for stable release train (agent_version will be in X.Y.Z format as opposed to X.Y.Z-NONSTABLE)
     if "-" not in agent_version and (
         version.parse(agent_version) < version.parse("1.14.0")
