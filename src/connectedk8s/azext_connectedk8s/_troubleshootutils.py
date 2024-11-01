@@ -106,7 +106,7 @@ def fetch_kubectl_cluster_info(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to store the cluster info in the "
-                f"arc_diagnostic_logs folder. Exception: {str(e)}" + "\n"
+                f"arc_diagnostic_logs folder. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -122,7 +122,7 @@ def fetch_kubectl_cluster_info(
         )
         diagnoser_output.append(
             "An exception has occured while trying to store the cluster info in the "
-            f"arc_diagnostic_logs folder. Exception: {str(e)}" + "\n"
+            f"arc_diagnostic_logs folder. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Failed, storage_space_available
@@ -188,8 +188,7 @@ def fetch_connected_cluster_resource(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to store the get output of connected "
-                f"cluster resource in diagnostic logs folder. Exception: {str(e)}"
-                + "\n"
+                f"cluster resource in diagnostic logs folder. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -205,7 +204,7 @@ def fetch_connected_cluster_resource(
         )
         diagnoser_output.append(
             "An exception has occured while trying to store the get output of connected cluster "
-            f"resource in diagnostic logs folder. Exception: {str(e)}" + "\n"
+            f"resource in diagnostic logs folder. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Failed, storage_space_available
@@ -280,7 +279,7 @@ def retrieve_arc_agents_logs(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to fetch the azure arc agents logs from "
-                f"the cluster. Exception: {str(e)}" + "\n"
+                f"the cluster. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -296,7 +295,7 @@ def retrieve_arc_agents_logs(
         )
         diagnoser_output.append(
             "An exception has occured while trying to fetch the azure arc agents logs from the "
-            f"cluster. Exception: {str(e)}" + "\n"
+            f"cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Failed, storage_space_available
@@ -388,7 +387,7 @@ def retrieve_arc_agents_event_logs(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to fetch the events occured in "
-                f"azure-arc namespace from the cluster. Exception: {str(e)}" + "\n"
+                f"azure-arc namespace from the cluster. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -404,7 +403,7 @@ def retrieve_arc_agents_event_logs(
         )
         diagnoser_output.append(
             "An exception has occured while trying to fetch the events occured in "
-            f"azure-arc namespace from the cluster. Exception: {str(e)}" + "\n"
+            f"azure-arc namespace from the cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Failed, storage_space_available
@@ -464,7 +463,7 @@ def retrieve_deployments_logs(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to fetch the azure arc deployment logs "
-                f"from the cluster. Exception: {str(e)}" + "\n"
+                f"from the cluster. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -480,7 +479,7 @@ def retrieve_deployments_logs(
         )
         diagnoser_output.append(
             "An exception has occured while trying to fetch the azure arc deployment logs from "
-            f"the cluster. Exception: {str(e)}" + "\n"
+            f"the cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Failed, storage_space_available
@@ -563,7 +562,7 @@ def retrieve_arc_workload_identity_pod_logs(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to fetch the azure arc agents logs from "
-                f"the cluster. Exception: {str(e)}" + "\n"
+                f"the cluster. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -579,7 +578,7 @@ def retrieve_arc_workload_identity_pod_logs(
         )
         diagnoser_output.append(
             "An exception has occured while trying to fetch the azure arc agents logs from the "
-            f"cluster. Exception: {str(e)}" + "\n"
+            f"cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Failed, storage_space_available
@@ -671,8 +670,7 @@ def retrieve_arc_workload_identity_event_logs(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to fetch the events occured in "
-                f"arc-workload-identity namespace from the cluster. Exception: {str(e)}"
-                + "\n"
+                f"arc-workload-identity namespace from the cluster. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -688,8 +686,7 @@ def retrieve_arc_workload_identity_event_logs(
         )
         diagnoser_output.append(
             "An exception has occured while trying to fetch the events occured in "
-            f"arc-workload-identity namespace from the cluster. Exception: {str(e)}"
-            + "\n"
+            f"arc-workload-identity namespace from the cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Failed, storage_space_available
@@ -753,7 +750,7 @@ def retrieve_arc_workload_identity_deployments_logs(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to fetch the arc-workload-identity deployment logs "
-                f"from the cluster. Exception: {str(e)}" + "\n"
+                f"from the cluster. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -769,7 +766,7 @@ def retrieve_arc_workload_identity_deployments_logs(
         )
         diagnoser_output.append(
             "An exception has occured while trying to fetch the arc-workload-identity deployment logs from "
-            f"the cluster. Exception: {str(e)}" + "\n"
+            f"the cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Failed, storage_space_available
@@ -987,7 +984,7 @@ def check_agent_state(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to check the azure arc agents state in "
-                f"the cluster. Exception: {str(e)}" + "\n"
+                f"the cluster. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -1003,7 +1000,7 @@ def check_agent_state(
         )
         diagnoser_output.append(
             "An exception has occured while trying to check the azure arc agents state in the "
-            f"cluster. Exception: {str(e)}" + "\n"
+            f"cluster. Exception: {e}\n"
         )
 
     return (
@@ -1058,7 +1055,7 @@ def check_agent_version(connected_cluster, azure_arc_agent_version):
         )
         diagnoser_output.append(
             "An exception has occured while trying to check the azure arc agents version in the "
-            f"cluster. Exception: {str(e)}" + "\n"
+            f"cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Incomplete
@@ -1170,7 +1167,7 @@ def check_diagnoser_container(
         )
         diagnoser_output.append(
             "An exception has occured while trying to perform diagnoser container check on the "
-            f"cluster. Exception: {str(e)}" + "\n"
+            f"cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Incomplete, storage_space_available
@@ -1242,7 +1239,7 @@ def executing_diagnoser_job(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to fetch Field:'isProxyEnabled' from get "
-                f"helm values. Exception: {str(e)}" + "\n"
+                f"helm values. Exception: {e}\n"
             )
             return
     try:
@@ -1263,7 +1260,7 @@ def executing_diagnoser_job(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to fetch Field:'isCustomCert' from get "
-                f"helm values. Exception: {str(e)}" + "\n"
+                f"helm values. Exception: {e}\n"
             )
             return
     try:
@@ -1284,7 +1281,7 @@ def executing_diagnoser_job(
             )
             diagnoser_output.append(
                 "An exception has occured while trying to fetch Field:'proxyCert' from get helm "
-                f"values. Exception: {str(e)}" + "\n"
+                f"values. Exception: {e}\n"
             )
             return
 
@@ -1562,7 +1559,7 @@ def executing_diagnoser_job(
         )
         diagnoser_output.append(
             "An exception has occured while trying to execute the diagnoser job in the cluster. "
-            f"Exception: {str(e)}" + "\n"
+            f"Exception: {e}\n"
         )
         return
 
@@ -1613,7 +1610,7 @@ def check_msi_certificate_presence(corev1_api_instance):
         )
         diagnoser_output.append(
             "An exception has occured while performing the msi certificate check on the "
-            f"cluster. Exception: {str(e)}" + "\n"
+            f"cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Incomplete
@@ -1708,7 +1705,7 @@ def check_probable_cluster_security_policy(
         )
         diagnoser_output.append(
             "An exception has occured while trying to performing kube aad proxy presence and pod "
-            f"security policy presence check in the cluster. Exception: {str(e)}" + "\n"
+            f"security policy presence check in the cluster. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Incomplete
@@ -1765,7 +1762,7 @@ def check_kap_cert(corev1_api_instance):
         )
         diagnoser_output.append(
             "An exception occured while trying to check the presence of kube aad proxy "
-            f"certificate. Exception: {str(e)}" + "\n"
+            f"certificate. Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Incomplete
@@ -1814,7 +1811,7 @@ def check_msi_expiry(connected_cluster):
         )
         diagnoser_output.append(
             "An exception has occured while performing msi expiry check on the cluster. "
-            f"Exception: {str(e)}" + "\n"
+            f"Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Incomplete
@@ -1869,7 +1866,7 @@ def describe_non_ready_agent_log(
             )
             diagnoser_output.append(
                 "An exception has occured while storing stuck agent logs in the user local "
-                f"machine. Exception: {str(e)}" + "\n"
+                f"machine. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -1885,7 +1882,7 @@ def describe_non_ready_agent_log(
         )
         diagnoser_output.append(
             "An exception has occured while storing stuck agent logs in the user local machine. "
-            f"Exception: {str(e)}" + "\n"
+            f"Exception: {e}\n"
         )
 
     return storage_space_available
@@ -1964,7 +1961,7 @@ def get_secrets_azure_arc(
             )
             diagnoser_output.append(
                 "An exception has occured while storing azure arc secrets in the user local "
-                f"machine. Exception: {str(e)}" + "\n"
+                f"machine. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -1980,7 +1977,7 @@ def get_secrets_azure_arc(
         )
         diagnoser_output.append(
             "An exception has occured while storing azure arc secrets in the user local machine. "
-            f"Exception: {str(e)}" + "\n"
+            f"Exception: {e}\n"
         )
 
     return storage_space_available
@@ -2088,7 +2085,7 @@ def get_helm_values_azure_arc(
             )
             diagnoser_output.append(
                 "An exception has occured while storing helm values of azure-arc release in the "
-                f"user local machine. Exception: {str(e)}" + "\n"
+                f"user local machine. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -2104,7 +2101,7 @@ def get_helm_values_azure_arc(
         )
         diagnoser_output.append(
             "An exception has occured while storing helm values of azure-arc release in the user "
-            f"local machine. Exception: {str(e)}" + "\n"
+            f"local machine. Exception: {e}\n"
         )
 
     return storage_space_available
@@ -2196,7 +2193,7 @@ def get_helm_values_arc_workload_identity(
             )
             diagnoser_output.append(
                 "An exception has occured while storing helm values of wiextension release in the "
-                f"user local machine. Exception: {str(e)}" + "\n"
+                f"user local machine. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -2212,7 +2209,7 @@ def get_helm_values_arc_workload_identity(
         )
         diagnoser_output.append(
             "An exception has occured while storing helm values of wiextension release in the user "
-            f"local machine. Exception: {str(e)}" + "\n"
+            f"local machine. Exception: {e}\n"
         )
 
     return storage_space_available
@@ -2297,7 +2294,7 @@ def get_metadata_cr_snapshot(
             )
             diagnoser_output.append(
                 "An exception has occured while storing metadata CR details in the user local "
-                f"machine. Exception: {str(e)}" + "\n"
+                f"machine. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -2313,7 +2310,7 @@ def get_metadata_cr_snapshot(
         )
         diagnoser_output.append(
             "An exception has occured while storing metadata CR details in the user local "
-            f"machine. Exception: {str(e)}" + "\n"
+            f"machine. Exception: {e}\n"
         )
 
     return storage_space_available
@@ -2398,7 +2395,7 @@ def get_kubeaadproxy_cr_snapshot(
             )
             diagnoser_output.append(
                 "An exception has occured while storing kube-aad-proxy CR details in the user "
-                f"local machine. Exception: {str(e)}" + "\n"
+                f"local machine. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -2414,7 +2411,7 @@ def get_kubeaadproxy_cr_snapshot(
         )
         diagnoser_output.append(
             "An exception has occured while storing kube-aad-proxy CR details in the user local "
-            f"machine. Exception: {str(e)}" + "\n"
+            f"machine. Exception: {e}\n"
         )
 
     return storage_space_available
@@ -2501,14 +2498,14 @@ def get_signingkey_cr_snapshot(
             )
             diagnoser_output.append(
                 "An exception has occured while storing signingkey CR details in the user local "
-                f"machine. Exception: {str(e)}" + "\n"
+                f"machine. Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
     except Exception as e:
         logger.exception(
             "An exception has occured while storing signingkey CR details in the user "
-            "local machine." + "\n"
+            "local machine.\n"
         )
         telemetry.set_exception(
             exception=e,
@@ -2517,7 +2514,7 @@ def get_signingkey_cr_snapshot(
         )
         diagnoser_output.append(
             "An exception has occured while storing signingkey CR details in the user local "
-            f"machine. Exception: {str(e)}" + "\n"
+            f"machine. Exception: {e}\n"
         )
 
     return storage_space_available

@@ -118,7 +118,7 @@ def validate_custom_token(cmd, resource_group_name, location):
                     summary="Unable to fetch location from resource group",
                 )
                 raise ValidationError(
-                    f"Unable to fetch location from resource group: '{str(ex)}'"
+                    f"Unable to fetch location from resource group: '{ex}'"
                 )
         return True, location
     return False, location
@@ -391,7 +391,7 @@ def check_cluster_DNS(
             )
             diagnoser_output.append(
                 "An exception has occured while performing the DNS check on the cluster. "
-                f"Exception: {str(e)}" + "\n"
+                f"Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -406,7 +406,7 @@ def check_cluster_DNS(
         )
         diagnoser_output.append(
             "An exception has occured while performing the DNS check on the cluster. "
-            f"Exception: {str(e)}" + "\n"
+            f"Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Incomplete, storage_space_available
@@ -613,7 +613,7 @@ def check_cluster_outbound_connectivity(
             )
             diagnoser_output.append(
                 "An exception has occured while performing the outbound connectivity check on the cluster. "
-                f"Exception: {str(e)}" + "\n"
+                f"Exception: {e}\n"
             )
 
     # To handle any exception that may occur during the execution
@@ -629,7 +629,7 @@ def check_cluster_outbound_connectivity(
         )
         diagnoser_output.append(
             "An exception has occured while performing the outbound connectivity check on the cluster. "
-            f"Exception: {str(e)}" + "\n"
+            f"Exception: {e}\n"
         )
 
     return consts.Diagnostic_Check_Incomplete, storage_space_available
@@ -1389,7 +1389,7 @@ def try_list_node_fix():
         V1ContainerImage.names = V1ContainerImage.names.setter(names)
     except Exception as ex:
         logger.debug(
-            f"Error while trying to monkey patch the fix for list_node(): {str(ex)}"
+            f"Error while trying to monkey patch the fix for list_node(): {ex}"
         )
 
 
@@ -1452,7 +1452,7 @@ def check_provider_registrations(
         raise e
     except Exception as ex:
         logger.warning(
-            f"Couldn't check the required provider's registration status. Error: {str(ex)}"
+            f"Couldn't check the required provider's registration status. Error: {ex}"
         )
 
 
@@ -1473,7 +1473,7 @@ def can_create_clusterrolebindings():
     except Exception as ex:
         warn_msg = (
             "Couldn't check for the permission to create clusterrolebindings on this k8s cluster. "
-            f"Error: {str(ex)}"
+            f"Error: {ex}"
         )
         logger.warning(warn_msg)
         return "Unknown"
@@ -1486,7 +1486,7 @@ def validate_node_api_response(api_instance, node_api_response):
             return node_api_response
         except Exception as ex:
             logger.debug(
-                f"Error occcured while listing nodes on this kubernetes cluster: {str(ex)}"
+                f"Error occcured while listing nodes on this kubernetes cluster: {ex}"
             )
             return None
     else:
@@ -1549,7 +1549,7 @@ def get_metadata(arm_endpoint, api_version="2022-09-01"):
         msg = f"Failed to request ARM metadata {metadata_endpoint}."
         print(msg, file=sys.stderr)
         print(
-            f"Please ensure you have network connection. Error: {str(err)}",
+            f"Please ensure you have network connection. Error: {err}",
             file=sys.stderr,
         )
         arm_exception_handler(err, msg, "Failed to get ARM metadata")

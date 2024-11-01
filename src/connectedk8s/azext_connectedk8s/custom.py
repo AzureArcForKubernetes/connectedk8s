@@ -374,8 +374,8 @@ def create_connectedk8s(
                 )
 
     except Exception as e:
-        ex_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {str(e)}"
-        summ_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {str(e)}"
+        ex_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
+        summ_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         telemetry.set_exception(
             exception=ex_msg,
             fault_type=consts.Pre_Onboarding_Diagnostic_Checks_Execution_Failed,
@@ -383,7 +383,7 @@ def create_connectedk8s(
         )
         err_msg = (
             "An exception has occured while trying to execute pre-onboarding diagnostic checks : "
-            f"{str(e)}"
+            f"{e}"
         )
         raise CLIInternalError(err_msg)
 
@@ -3310,9 +3310,9 @@ def load_kubernetes_configuration(filename):
         telemetry.set_exception(
             exception=ex,
             fault_type=consts.Kubeconfig_Failed_To_Load_Fault_Type,
-            summary=f"Error parsing {filename} ({str(ex)})",
+            summary=f"Error parsing {filename} ({ex})",
         )
-        raise FileOperationError(f"Error parsing {filename} ({str(ex)})")
+        raise FileOperationError(f"Error parsing {filename} ({ex})")
 
 
 def print_or_merge_credentials(path, kubeconfig, overwrite_existing, context_name):
