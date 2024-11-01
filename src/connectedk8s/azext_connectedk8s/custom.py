@@ -4005,7 +4005,7 @@ def client_side_proxy(
 
     uri = (
         f"http://localhost:{client_proxy_port}/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}"
-        "/providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}/register?api-version=2020-10-01"
+        f"/providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}/register?api-version=2020-10-01"
     )
 
     # Posting hybrid connection details to proxy in order to get kubeconfig

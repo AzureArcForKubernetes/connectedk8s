@@ -1319,9 +1319,7 @@ def executing_diagnoser_job(
         k8s_client = client.ApiClient()
         # Attempting deletion of diagnoser resources to handle the scenario if any stale resources are present
         response_kubectl_delete_job = Popen(cmd_delete_job, stdout=PIPE, stderr=PIPE)
-        output_kubectl_delete_job, error_kubectl_delete_job = (
-            response_kubectl_delete_job.communicate()
-        )
+        _, error_kubectl_delete_job = response_kubectl_delete_job.communicate()
         # If any error occured while execution of delete command
         if response_kubectl_delete_job.returncode != 0:
             # Converting the string of multiple errors to list

@@ -175,9 +175,7 @@ def executing_cluster_diagnostic_checks_job(
             response_kubectl_delete_helm = Popen(
                 cmd_helm_delete, stdout=PIPE, stderr=PIPE
             )
-            output_kubectl_delete_helm, error_kubectl_delete_helm = (
-                response_kubectl_delete_helm.communicate()
-            )
+            _, error_kubectl_delete_helm = response_kubectl_delete_helm.communicate()
             # If any error occured while execution of delete command
             if response_kubectl_delete_helm.returncode != 0:
                 # Converting the string of multiple errors to list
