@@ -3,6 +3,7 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
+import contextlib
 import json
 import os
 import shutil
@@ -644,10 +645,8 @@ def create_folder_diagnosticlogs(time_stamp, folder_name):
         home_dir = os.path.expanduser("~")
         filepath = os.path.join(home_dir, ".azure", folder_name)
         # Creating Diagnostic folder and its subfolder with the given timestamp and cluster name to store all the logs
-        try:
+        with contextlib.suppress(FileExistsError):
             os.mkdir(filepath)
-        except FileExistsError:
-            pass
         filepath_with_timestamp = os.path.join(filepath, time_stamp)
         try:
             os.mkdir(filepath_with_timestamp)
@@ -1496,7 +1495,8 @@ def validate_node_api_response(api_instance, node_api_response):
 def az_cli(args_str):
     args = args_str.split()
     cli = get_default_cli()
-    cli.invoke(args, out_file=open(os.devnull, "w"))
+    with open(os.devnull, "w") as devnull:
+        cli.invoke(args, out_file=devnull)
     if cli.result.result:
         return cli.result.result
     if cli.result.error:
@@ -1595,11 +1595,12 @@ def helm_update_agent(
     user_values_location = os.path.join(
         os.path.expanduser("~"), ".azure", "userValues.txt"
     )
-    existing_user_values = open(user_values_location, "w+")
-    response_helm_values_get = Popen(
-        cmd_helm_values, stdout=existing_user_values, stderr=PIPE
-    )
-    _, error_helm_get_values = response_helm_values_get.communicate()
+    with open(user_values_location, "w+") as existing_user_values:
+        response_helm_values_get = Popen(
+            cmd_helm_values, stdout=existing_user_values, stderr=PIPE
+        )
+        _, error_helm_get_values = response_helm_values_get.communicate()
+
     if response_helm_values_get.returncode != 0:
         error = error_helm_get_values.decode("ascii")
         if "forbidden" in error or "timed out waiting for the condition" in error:
@@ -1646,17 +1647,13 @@ def helm_update_agent(
             fault_type=consts.Install_HelmRelease_Fault_Type,
             summary="Unable to install helm release",
         )
-        try:
+        with contextlib.suppress(OSError):
             os.remove(user_values_location)
-        except OSError:
-            pass
         raise CLIInternalError(
             str.format(consts.Update_Agent_Failure, helm_upgrade_error_message)
         )
 
     logger.info(str.format(consts.Update_Agent_Success, cluster_name))
-    try:
+    with contextlib.suppress(OSError):
         os.remove(user_values_location)
-    except OSError:
-        pass
     return

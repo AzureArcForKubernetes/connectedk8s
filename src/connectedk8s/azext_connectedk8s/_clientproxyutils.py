@@ -82,19 +82,19 @@ def fetch_pop_publickey_kid(api_server_port, clientproxy_process):
     poppublickey_uri = f"https://localhost:{api_server_port}/identity/poppublickey"
     # Needed to prevent skip tls warning from printing to the console
     original_stderr = sys.stderr
-    f = open(os.devnull, "w")
-    sys.stderr = f
+    with open(os.devnull, "w") as f:
+        sys.stderr = f
 
-    get_publickey_response = make_api_call_with_retries(
-        poppublickey_uri,
-        requestbody,
-        "get",
-        False,
-        consts.Get_PublicKey_Info_Fault_Type,
-        "Failed to fetch public key info from clientproxy",
-        "Failed to fetch public key info from client proxy",
-        clientproxy_process,
-    )
+        get_publickey_response = make_api_call_with_retries(
+            poppublickey_uri,
+            requestbody,
+            "get",
+            False,
+            consts.Get_PublicKey_Info_Fault_Type,
+            "Failed to fetch public key info from clientproxy",
+            "Failed to fetch public key info from client proxy",
+            clientproxy_process,
+        )
 
     sys.stderr = original_stderr
     publickey_info = json.loads(get_publickey_response.text)
@@ -143,18 +143,18 @@ def fetch_and_post_at_to_csp(cmd, api_server_port, tenant_id, kid, clientproxy_p
     post_at_uri = f"https://localhost:{api_server_port}/identity/at"
     # Needed to prevent skip tls warning from printing to the console
     original_stderr = sys.stderr
-    f = open(os.devnull, "w")
-    sys.stderr = f
-    post_at_response = make_api_call_with_retries(
-        post_at_uri,
-        jwtTokenData,
-        "post",
-        False,
-        consts.PublicKey_Export_Fault_Type,
-        "Failed to post access token to client proxy",
-        "Failed to post access token to client proxy",
-        clientproxy_process,
-    )
+    with open(os.devnull, "w") as f:
+        sys.stderr = f
+        post_at_response = make_api_call_with_retries(
+            post_at_uri,
+            jwtTokenData,
+            "post",
+            False,
+            consts.PublicKey_Export_Fault_Type,
+            "Failed to post access token to client proxy",
+            "Failed to post access token to client proxy",
+            clientproxy_process,
+        )
 
     sys.stderr = original_stderr
     return post_at_response

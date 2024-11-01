@@ -9,5 +9,6 @@ extend-select = [
   "I",   # isort
   "PIE", # flake8-pie
   "RUF", # ruff
+  "SIM", # flake8-simplify
   "UP",  # pyupgrade
 ]

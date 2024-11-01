@@ -3,6 +3,7 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
+import contextlib
 import datetime
 import json
 import os
@@ -228,15 +229,11 @@ def retrieve_arc_agents_logs(
                 arc_agent_logs_path = os.path.join(
                     filepath_with_timestamp, consts.Arc_Agents_Logs
                 )
-                try:
+                with contextlib.suppress(FileExistsError):
                     os.mkdir(arc_agent_logs_path)
-                except FileExistsError:
-                    pass
                 agent_name_logs_path = os.path.join(arc_agent_logs_path, agent_name)
-                try:
+                with contextlib.suppress(FileExistsError):
                     os.mkdir(agent_name_logs_path)
-                except FileExistsError:
-                    pass
                 # If the agent is not in Running state we wont be able to get logs of the containers
                 if each_agent_pod.status.phase != "Running":
                     continue
@@ -420,10 +417,8 @@ def retrieve_deployments_logs(
             deployments_path = os.path.join(
                 filepath_with_timestamp, consts.Arc_Deployment_Logs
             )
-            try:
+            with contextlib.suppress(FileExistsError):
                 os.mkdir(deployments_path)
-            except FileExistsError:
-                pass
             # To retrieve all the deployment that are present in the Cluster
             deployments_list = appv1_api_instance.list_namespaced_deployment(
                 "azure-arc"
@@ -505,17 +500,13 @@ def retrieve_arc_workload_identity_pod_logs(
                 arc_workload_identity_logs_path = os.path.join(
                     filepath_with_timestamp, consts.Arc_Workload_Identity_Pod_Logs
                 )
-                try:
+                with contextlib.suppress(FileExistsError):
                     os.mkdir(arc_workload_identity_logs_path)
-                except FileExistsError:
-                    pass
                 agent_name_logs_path = os.path.join(
                     arc_workload_identity_logs_path, agent_name
                 )
-                try:
+                with contextlib.suppress(FileExistsError):
                     os.mkdir(agent_name_logs_path)
-                except FileExistsError:
-                    pass
                 # If the agent is not in Running state we wont be able to get logs of the containers
                 if each_workload_identity_agent_pod.status.phase != "Running":
                     continue
@@ -705,10 +696,8 @@ def retrieve_arc_workload_identity_deployments_logs(
             deployments_path = os.path.join(
                 filepath_with_timestamp, consts.Arc_Workload_Identity_Deployment_Logs
             )
-            try:
+            with contextlib.suppress(FileExistsError):
                 os.mkdir(deployments_path)
-            except FileExistsError:
-                pass
             # To retrieve all the deployment that are present in the Cluster
             deployments_list = appv1_api_instance.list_namespaced_deployment(
                 "arc-workload-identity"
@@ -1209,11 +1198,8 @@ def executing_diagnoser_job(
         response_helm_values_get.communicate()
     )
     if response_helm_values_get.returncode != 0:
-        if "forbidden" in error_helm_get_values.decode(
-            "ascii"
-        ) or "timed out waiting for the condition" in error_helm_get_values.decode(
-            "ascii"
-        ):
+        error = error_helm_get_values.decode("ascii")
+        if "forbidden" in error or "timed out waiting for the condition" in error:
             telemetry.set_exception(
                 exception=error_helm_get_values.decode("ascii"),
                 fault_type=consts.Get_Helm_Values_Failed,
@@ -1308,9 +1294,8 @@ def executing_diagnoser_job(
         list_doc = yaml.safe_load_all(f)
         # We are creating 4 resources from a single yaml and troubleshoot_yaml_part points to the part of yaml we are
         #  referring to in 0 based index.
-        troubleshoot_yaml_part = 0
         # Using release_namespace wherever required
-        for each_yaml in list_doc:
+        for troubleshoot_yaml_part, each_yaml in enumerate(list_doc):
             # Changing the role, rolebinding and the job args namespace field to the release-namespace
             # Secret-reader role is used to fetch the secrets present in the release-namespace
             # Also we pass release-namespace in args to read secrets for helm command that we are using in the script.
@@ -1320,7 +1305,6 @@ def executing_diagnoser_job(
                 each_yaml["spec"]["template"]["spec"]["containers"][0]["args"][0] = (
                     release_namespace
                 )
-            troubleshoot_yaml_part += 1
             new_yaml.append(each_yaml)
     # Updating the yaml file
     with open(yaml_file_path, "w+") as f:
@@ -1650,11 +1634,8 @@ def check_probable_cluster_security_policy(
             response_helm_values_get.communicate()
         )
         if response_helm_values_get.returncode != 0:
-            if "forbidden" in error_helm_get_values.decode(
-                "ascii"
-            ) or "timed out waiting for the condition" in error_helm_get_values.decode(
-                "ascii"
-            ):
+            error = error_helm_get_values.decode("ascii")
+            if "forbidden" in error or "timed out waiting for the condition" in error:
                 telemetry.set_exception(
                     exception=error_helm_get_values.decode("ascii"),
                     fault_type=consts.Get_Helm_Values_Failed,
@@ -1830,10 +1811,8 @@ def describe_non_ready_agent_log(
             describe_stuck_agent_path = os.path.join(
                 filepath_with_timestamp, consts.Describe_Non_Ready_Arc_Agents
             )
-            try:
+            with contextlib.suppress(FileExistsError):
                 os.mkdir(describe_stuck_agent_path)
-            except FileExistsError:
-                pass
             # To retrieve the pod logs which is stuck
             api_response = corev1_api_instance.read_namespaced_pod(
                 name=agent_pod_name, namespace="azure-arc"

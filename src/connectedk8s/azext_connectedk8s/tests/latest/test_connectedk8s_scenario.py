@@ -3,6 +3,7 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
+import contextlib
 import json
 import os
 import platform
@@ -136,10 +137,8 @@ def install_kubectl_client():
         home_dir = os.path.expanduser("~")
         kubectl_filepath = os.path.join(home_dir, ".azure", "kubectl-client")
 
-        try:
+        with contextlib.suppress(FileExistsError):
             os.mkdir(kubectl_filepath)
-        except FileExistsError:
-            pass
 
         operating_system = platform.system().lower()
         # Setting path depending on the OS being used

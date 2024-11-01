@@ -3,6 +3,7 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 
+import contextlib
 import errno
 import hashlib
 import json
@@ -389,12 +390,10 @@ def create_connectedk8s(
 
     # Handling the user manual interrupt
     except KeyboardInterrupt:
-        try:
+        with contextlib.suppress(Exception):
             troubleshootutils.fetching_cli_output_logs(
                 filepath_with_timestamp, storage_space_available, 0
             )
-        except Exception:
-            pass
         raise ManualInterrupt("Process terminated externally.")
 
     # If the checks didnt pass then stop the onboarding
@@ -1643,9 +1642,7 @@ def check_proxy_kubeconfig(kube_config, kube_context, arm_hash):
 
 def check_aks_cluster(kube_config, kube_context):
     server_address = get_server_address(kube_config, kube_context)
-    if server_address.find(".azmk8s.io:") == -1:
-        return False
-    return True
+    return server_address.find(".azmk8s.io:") != -1
 
 
 def get_server_address(kube_config, kube_context):
@@ -3454,10 +3451,8 @@ def handle_merge(existing, addition, key, replace):
             else:
                 msg = "A different object named {} already exists in your kubeconfig file.\nOverwrite?"
                 overwrite = False
-                try:
+                with contextlib.suppress(NoTTYException):
                     overwrite = prompt_y_n(msg.format(i["name"]))
-                except NoTTYException:
-                    pass
                 if overwrite:
                     remove_flag = True
                 else:
@@ -3900,10 +3895,7 @@ def client_side_proxy(
     clientproxy_process=None,
 ):
     subscription_id = get_subscription_id(cmd.cli_ctx)
-    if token is not None:
-        auth_method = "Token"
-    else:
-        auth_method = "AAD"
+    auth_method = "Token" if token is not None else "AAD"
 
     # Fetching hybrid connection details from Userrp
     try:
@@ -3940,17 +3932,17 @@ def client_side_proxy(
             )
             raise CLIInternalError(f"Failed to start proxy process: {e}")
 
+        # refresh token approach if cli is using ADAL auth (for cli < 2.30.0)
         if (
             not utils.is_cli_using_msal_auth()
-        ):  # refresh token approach if cli is using ADAL auth (for cli < 2.30.0)
-            if user_type == "user":
-                identity_data = {}
-                identity_data["refreshToken"] = creds
-                identity_uri = f"https://localhost:{api_server_port}/identity/rt"
+        ) and user_type == "user":
+            identity_data = {}
+            identity_data["refreshToken"] = creds
+            identity_uri = f"https://localhost:{api_server_port}/identity/rt"
 
-                # Needed to prevent skip tls warning from printing to the console
-                original_stderr = sys.stderr
-                f = open(os.devnull, "w")
+            # Needed to prevent skip tls warning from printing to the console
+            original_stderr = sys.stderr
+            with open(os.devnull, "w") as f:
                 sys.stderr = f
 
                 clientproxyutils.make_api_call_with_retries(
@@ -3963,48 +3955,47 @@ def client_side_proxy(
                     "Failed to pass refresh token details to proxy.",
                     clientproxy_process,
                 )
-                sys.stderr = original_stderr
+            sys.stderr = original_stderr
 
-    if token is None:
-        if (
-            utils.is_cli_using_msal_auth()
-        ):  # jwt token approach if cli is using MSAL. This is for cli >= 2.30.0
-            kid = clientproxyutils.fetch_pop_publickey_kid(
-                api_server_port, clientproxy_process
-            )
-            post_at_response = clientproxyutils.fetch_and_post_at_to_csp(
-                cmd, api_server_port, tenant_id, kid, clientproxy_process
-            )
+    if token is None and (
+        utils.is_cli_using_msal_auth()
+    ):  # jwt token approach if cli is using MSAL. This is for cli >= 2.30.0
+        kid = clientproxyutils.fetch_pop_publickey_kid(
+            api_server_port, clientproxy_process
+        )
+        post_at_response = clientproxyutils.fetch_and_post_at_to_csp(
+            cmd, api_server_port, tenant_id, kid, clientproxy_process
+        )
 
-            if post_at_response.status_code != 200:
-                if (
-                    post_at_response.status_code == 500
-                    and "public key expired" in post_at_response.text
-                ):
-                    # pop public key must have been rotated
-                    telemetry.set_exception(
-                        exception=post_at_response.text,
-                        fault_type=consts.PoP_Public_Key_Expried_Fault_Type,
-                        summary="PoP public key has expired",
-                    )
-                    kid = clientproxyutils.fetch_pop_publickey_kid(
-                        api_server_port, clientproxy_process
-                    )  # fetch the rotated PoP public key
-                    # fetch and post the at corresponding to the new public key
-                    clientproxyutils.fetch_and_post_at_to_csp(
-                        cmd, api_server_port, tenant_id, kid, clientproxy_process
-                    )
-                else:
-                    telemetry.set_exception(
-                        exception=post_at_response.text,
-                        fault_type=consts.Post_AT_To_ClientProxy_Failed_Fault_Type,
-                        summary="Failed to post access token to client proxy",
-                    )
-                    clientproxyutils.close_subprocess_and_raise_cli_error(
-                        clientproxy_process,
-                        "Failed to post access token to client proxy"
-                        + post_at_response.text,
-                    )
+        if post_at_response.status_code != 200:
+            if (
+                post_at_response.status_code == 500
+                and "public key expired" in post_at_response.text
+            ):
+                # pop public key must have been rotated
+                telemetry.set_exception(
+                    exception=post_at_response.text,
+                    fault_type=consts.PoP_Public_Key_Expried_Fault_Type,
+                    summary="PoP public key has expired",
+                )
+                kid = clientproxyutils.fetch_pop_publickey_kid(
+                    api_server_port, clientproxy_process
+                )  # fetch the rotated PoP public key
+                # fetch and post the at corresponding to the new public key
+                clientproxyutils.fetch_and_post_at_to_csp(
+                    cmd, api_server_port, tenant_id, kid, clientproxy_process
+                )
+            else:
+                telemetry.set_exception(
+                    exception=post_at_response.text,
+                    fault_type=consts.Post_AT_To_ClientProxy_Failed_Fault_Type,
+                    summary="Failed to post access token to client proxy",
+                )
+                clientproxyutils.close_subprocess_and_raise_cli_error(
+                    clientproxy_process,
+                    "Failed to post access token to client proxy"
+                    + post_at_response.text,
+                )
 
     data = prepare_clientproxy_data(response)
     expiry = data["hybridConnectionConfig"]["expirationTime"]
@@ -4571,12 +4562,10 @@ def troubleshoot(
 
     # Handling the user manual interrupt
     except KeyboardInterrupt:
-        try:
+        with contextlib.suppress(Exception):
             troubleshootutils.fetching_cli_output_logs(
                 filepath_with_timestamp, storage_space_available, 0
             )
-        except Exception:
-            pass
         raise ManualInterrupt("Process terminated externally.")
 
 
@@ -4590,10 +4579,8 @@ def install_kubectl_client():
         home_dir = os.path.expanduser("~")
         kubectl_filepath = os.path.join(home_dir, ".azure", "kubectl-client")
 
-        try:
+        with contextlib.suppress(FileExistsError):
             os.makedirs(kubectl_filepath)
-        except FileExistsError:
-            pass
 
         operating_system = platform.system().lower()
         # Setting path depending on the OS being used
