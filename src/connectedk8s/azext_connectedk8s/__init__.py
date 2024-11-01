@@ -18,7 +18,7 @@ class Connectedk8sCommandsLoader(AzCommandsLoader):
             operations_tmpl="azext_connectedk8s.custom#{}",
             client_factory=cf_connectedk8s,
         )
-        super(Connectedk8sCommandsLoader, self).__init__(
+        super().__init__(
             cli_ctx=cli_ctx, custom_command_type=connectedk8s_custom
         )
 
