@@ -31,7 +31,6 @@ from kubernetes.client.rest import ApiException
 from msrest.exceptions import AuthenticationError, HttpOperationError, TokenExpiredError
 from msrest.exceptions import ValidationError as MSRestValidationError
 from packaging import version
-from requests.adapters import HTTPAdapter
 
 import azext_connectedk8s._constants as consts
 from azext_connectedk8s._client_factory import (
@@ -43,21 +42,6 @@ logger = get_logger(__name__)
 
 # pylint: disable=line-too-long
 # pylint: disable=bare-except
-
-
-class TimeoutHTTPAdapter(HTTPAdapter):
-    def __init__(self, *args, **kwargs):
-        self.timeout = consts.DEFAULT_REQUEST_TIMEOUT
-        if "timeout" in kwargs:
-            self.timeout = kwargs["timeout"]
-            del kwargs["timeout"]
-        super().__init__(*args, **kwargs)
-
-    def send(self, request, **kwargs):
-        timeout = kwargs.get("timeout")
-        if timeout is None:
-            kwargs["timeout"] = self.timeout
-        return super().send(request, **kwargs)
 
 
 def validate_connect_rp_location(cmd, location):
