@@ -1,80 +1,84 @@
+resources:
+- repo: self
+
 trigger:
   batch: true
   branches:
     include:
-      - main
+      - '*'
+
 pr:
   branches:
     include:
-      - main
+      - '*'
 
 stages:
-- stage: BuildTestPublishExtension
-  displayName: "Build, Test, and Publish Extension"
-  variables:
-    TEST_PATH: $(Agent.BuildDirectory)/s/testing
-    CLI_REPO_PATH: $(Agent.BuildDirectory)/s
-    EXTENSION_NAME: "connectedk8s"
-    EXTENSION_FILE_NAME: "connectedk8s"
-    SUBSCRIPTION_ID: "15c06b1b-01d6-407b-bb21-740b8617dea3"
-    RESOURCE_GROUP: "K8sPartnerExtensionTest"
-    BASE_CLUSTER_NAME: "connectedk8s-cluster"
-  jobs:
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: BasicOnboardingTest
-      path: ./test/configurations/BasicOnboarding.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: AutoUpdateTest
-      path: ./test/configurations/AutoUpdate.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: ProxyTest
-      path: ./test/configurations/Proxy.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: GatewayTest
-      path: ./test/configurations/Gateway.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: WorkloadIdentityTest
-      path: ./test/configurations/WorkloadIdentity.Tests.ps1
-  - job: BuildPublishExtension
-    pool:
-      vmImage: 'ubuntu-20.04'
-    displayName: "Build and Publish the Extension Artifact"
-    variables: 
-      CLI_REPO_PATH: $(Agent.BuildDirectory)/s
-      EXTENSION_NAME: "connectedk8s"
-    steps:
-    - task: UsePythonVersion@0
-      displayName: 'Use Python 3.6'
-      inputs:
-        versionSpec: 3.6
-    - bash: |
-        set -ev
-        echo "Building extension ${EXTENSION_NAME}..."
+# - stage: BuildTestPublishExtension
+#   displayName: "Build, Test, and Publish Extension"
+#   variables:
+#     TEST_PATH: $(Agent.BuildDirectory)/s/testing
+#     CLI_REPO_PATH: $(Agent.BuildDirectory)/s
+#     EXTENSION_NAME: "connectedk8s"
+#     EXTENSION_FILE_NAME: "connectedk8s"
+#     SUBSCRIPTION_ID: "15c06b1b-01d6-407b-bb21-740b8617dea3"
+#     RESOURCE_GROUP: "K8sPartnerExtensionTest"
+#     BASE_CLUSTER_NAME: "connectedk8s-cluster"
+#   jobs:
+#   - template: ./templates/run-test.yml
+#     parameters:
+#       jobName: BasicOnboardingTest
+#       path: ./test/configurations/BasicOnboarding.Tests.ps1
+#   - template: ./templates/run-test.yml
+#     parameters:
+#       jobName: AutoUpdateTest
+#       path: ./test/configurations/AutoUpdate.Tests.ps1
+#   - template: ./templates/run-test.yml
+#     parameters:
+#       jobName: ProxyTest
+#       path: ./test/configurations/Proxy.Tests.ps1
+#   - template: ./templates/run-test.yml
+#     parameters:
+#       jobName: GatewayTest
+#       path: ./test/configurations/Gateway.Tests.ps1
+#   - template: ./templates/run-test.yml
+#     parameters:
+#       jobName: WorkloadIdentityTest
+#       path: ./test/configurations/WorkloadIdentity.Tests.ps1
+#   - job: BuildPublishExtension
+#     pool:
+#       vmImage: 'ubuntu-20.04'
+#     displayName: "Build and Publish the Extension Artifact"
+#     variables: 
+#       CLI_REPO_PATH: $(Agent.BuildDirectory)/s
+#       EXTENSION_NAME: "connectedk8s"
+#     steps:
+#     - task: UsePythonVersion@0
+#       displayName: 'Use Python 3.6'
+#       inputs:
+#         versionSpec: 3.6
+#     - bash: |
+#         set -ev
+#         echo "Building extension ${EXTENSION_NAME}..."
 
-        # prepare and activate virtualenv
-        pip install virtualenv
-        python3 -m venv env/
-        source env/bin/activate
+#         # prepare and activate virtualenv
+#         pip install virtualenv
+#         python3 -m venv env/
+#         source env/bin/activate
 
-        # clone azure-cli
-        pip install --upgrade pip
-        pip install azdev
+#         # clone azure-cli
+#         pip install --upgrade pip
+#         pip install azdev
 
-        ls $(CLI_REPO_PATH)
+#         ls $(CLI_REPO_PATH)
 
-        azdev --version
-        azdev setup -r $(CLI_REPO_PATH) -e $(EXTENSION_NAME)
-        azdev extension build $(EXTENSION_NAME)
-      workingDirectory: $(CLI_REPO_PATH)
-      displayName: "Setup and Build Extension with azdev"
-    - task: PublishBuildArtifacts@1
-      inputs: 
-        pathToPublish: $(CLI_REPO_PATH)/dist
+#         azdev --version
+#         azdev setup -r $(CLI_REPO_PATH) -e $(EXTENSION_NAME)
+#         azdev extension build $(EXTENSION_NAME)
+#       workingDirectory: $(CLI_REPO_PATH)
+#       displayName: "Setup and Build Extension with azdev"
+#     - task: PublishBuildArtifacts@1
+#       inputs: 
+#         pathToPublish: $(CLI_REPO_PATH)/dist
       
 - stage: AzureCLIOfficial
   displayName: "Azure Official CLI Code Checks"
@@ -236,9 +240,6 @@ stages:
 
           # overwrite the default AZURE_EXTENSION_DIR set by ADO
           AZURE_EXTENSION_DIR=~/.azure/cliextensions az --version
-
-          # print directories in ~/.azure/cliextensions
-          ls -l ~/.azure/cliextensions
 
           AZURE_EXTENSION_DIR=~/.azure/cliextensions python scripts/ci/azdev_linter_style.py --type style
         displayName: "azdev style on Modified Extensions"
