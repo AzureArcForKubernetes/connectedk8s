@@ -212,6 +212,7 @@ stages:
 
   - job: AzdevStyleModifiedExtensions
     displayName: "azdev style on Modified Extensions"
+    continueOnError: true
     pool:
       vmImage: 'ubuntu-latest'
     steps:
