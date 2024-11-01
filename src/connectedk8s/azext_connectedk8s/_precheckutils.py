@@ -117,10 +117,9 @@ def fetch_diagnostic_checks_results(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to execute cluster diagnostic checks container on the "
-            "cluster. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to execute cluster diagnostic checks "
+            "container on the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -281,7 +280,7 @@ def executing_cluster_diagnostic_checks_job(
             except Exception:
                 logger.debug(
                     "Caught Exception, executing Cluster Diagnostic Checks job: ",
-                    Exception,
+                    exc_info=True,
                 )
                 continue
 
@@ -363,12 +362,9 @@ def executing_cluster_diagnostic_checks_job(
                                 onerror=None,
                             )
                         else:
-                            logger.warning(
-                                "An exception has occured while saving the Cluster Diagnostic Checks Job "
-                                "logs in the local machine. Exception: {}".format(
-                                    str(e)
-                                )
-                                + "\n"
+                            logger.exception(
+                                "An exception has occured while saving the Cluster "
+                                "Diagnostic Checks Job logs in the local machine."
                             )
                             telemetry.set_exception(
                                 exception=e,
@@ -379,10 +375,9 @@ def executing_cluster_diagnostic_checks_job(
 
                     # To handle any exception that may occur during the execution
                     except Exception as e:
-                        logger.warning(
-                            "An exception has occured while saving the Cluster Diagnostic Checks Job logs "
-                            "in the local machine. Exception: {}".format(str(e))
-                            + "\n"
+                        logger.exception(
+                            "An exception has occured while saving the Cluster "
+                            "Diagnostic Checks Job logs in the local machine."
                         )
                         telemetry.set_exception(
                             exception=e,
@@ -524,10 +519,8 @@ def fetching_cli_output_logs(filepath_with_timestamp, storage_space_available, f
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to store the diagnoser results. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to store the diagnoser results."
         )
         telemetry.set_exception(
             exception=e,

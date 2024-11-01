@@ -57,7 +57,7 @@ def fetch_kubectl_cluster_info(
                 )
                 logger.warning(
                     "Error while doing 'kubectl cluster-info'. We were not able to capture cluster-info "
-                    "logs in arc_diagnostic_logs folder. Exception: ",
+                    "logs in arc_diagnostic_logs folder. Exception: %s",
                     error_cluster_info.decode("ascii"),
                 )
                 diagnoser_output.append(
@@ -95,10 +95,9 @@ def fetch_kubectl_cluster_info(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while trying to store the cluster info in the "
-                "arc_diagnostic_logs folder. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to store the cluster info in "
+                "the arc_diagnostic_logs folder."
             )
             telemetry.set_exception(
                 exception=e,
@@ -113,10 +112,9 @@ def fetch_kubectl_cluster_info(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
+        logger.exception(
             "An exception has occured while trying to store the cluster info in the "
-            "arc_diagnostic_logs folder. Exception: {}".format(str(e))
-            + "\n"
+            "arc_diagnostic_logs folder."
         )
         telemetry.set_exception(
             exception=e,
@@ -181,10 +179,9 @@ def fetch_connected_cluster_resource(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while trying to store the get output of connected cluster "
-                "resource in diagnostic logs folder. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to store the get output of "
+                "connected cluster resource in diagnostic logs folder."
             )
             telemetry.set_exception(
                 exception=e,
@@ -201,10 +198,9 @@ def fetch_connected_cluster_resource(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to store the get output of connected cluster resource "
-            "in diagnostic logs folder. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to store the get output of "
+            "connected cluster resource in diagnostic logs folder."
         )
         telemetry.set_exception(
             exception=e,
@@ -278,10 +274,9 @@ def retrieve_arc_agents_logs(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while trying to fetch the azure arc agents logs from the "
-                "cluster. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to fetch the azure arc agents "
+                "logs from the cluster."
             )
             telemetry.set_exception(
                 exception=e,
@@ -296,10 +291,9 @@ def retrieve_arc_agents_logs(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to fetch the azure arc agents logs from the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to fetch the azure arc agents logs "
+            "from the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -354,7 +348,7 @@ def retrieve_arc_agents_event_logs(
                 )
                 logger.warning(
                     "Error while doing kubectl get events. We were not able to capture events log in "
-                    "arc_diagnostic_logs folder. Exception: ",
+                    "arc_diagnostic_logs folder. Exception: %s",
                     error_kubectl_get_events.decode("ascii"),
                 )
                 diagnoser_output.append(
@@ -390,10 +384,9 @@ def retrieve_arc_agents_event_logs(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while trying to fetch the events occured in azure-arc namespace "
-                "from the cluster. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to fetch the events occured in "
+                "azure-arc namespace from the cluster."
             )
             telemetry.set_exception(
                 exception=e,
@@ -408,10 +401,9 @@ def retrieve_arc_agents_event_logs(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to fetch the events occured in azure-arc namespace "
-            "from the cluster. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to fetch the events occured in "
+            "azure-arc namespace from the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -470,10 +462,9 @@ def retrieve_deployments_logs(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while trying to fetch the azure arc deployment logs from the "
-                "cluster. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to fetch the azure arc "
+                "deployment logs from the cluster."
             )
             telemetry.set_exception(
                 exception=e,
@@ -488,10 +479,9 @@ def retrieve_deployments_logs(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to fetch the azure arc deployment logs from the "
-            "cluster. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to fetch the azure arc deployment "
+            "logs from the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -575,10 +565,9 @@ def retrieve_arc_workload_identity_pod_logs(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while trying to fetch the azure arc agents logs from the "
-                "cluster. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to fetch the azure arc agents "
+                "logs from the cluster."
             )
             telemetry.set_exception(
                 exception=e,
@@ -593,10 +582,9 @@ def retrieve_arc_workload_identity_pod_logs(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to fetch the azure arc agents logs from the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to fetch the azure arc agents logs "
+            "from the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -651,7 +639,7 @@ def retrieve_arc_workload_identity_event_logs(
                 )
                 logger.warning(
                     "Error while doing kubectl get events for arc-workload-identity namespace. "
-                    "We were not able to capture events log in arc_diagnostic_logs folder. Exception: ",
+                    "We were not able to capture events log in arc_diagnostic_logs folder. Exception: %s",
                     error_kubectl_get_events.decode("ascii"),
                 )
                 diagnoser_output.append(
@@ -687,10 +675,9 @@ def retrieve_arc_workload_identity_event_logs(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while trying to fetch the events occured in arc-workload-identity namespace "
-                "from the cluster. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to fetch the events occured in "
+                "arc-workload-identity namespace from the cluster."
             )
             telemetry.set_exception(
                 exception=e,
@@ -707,10 +694,9 @@ def retrieve_arc_workload_identity_event_logs(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to fetch the events occured in arc-workload-identity namespace "
-            "from the cluster. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to fetch the events occured in "
+            "arc-workload-identity namespace from the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -777,10 +763,9 @@ def retrieve_arc_workload_identity_deployments_logs(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while trying to fetch the arc-workload-identity deployment logs from the "
-                "cluster. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to fetch the "
+                "arc-workload-identity deployment logs from the cluster."
             )
             telemetry.set_exception(
                 exception=e,
@@ -795,10 +780,9 @@ def retrieve_arc_workload_identity_deployments_logs(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to fetch the arc-workload-identity deployment logs from the "
-            "cluster. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to fetch the arc-workload-identity "
+            "deployment logs from the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -1015,10 +999,9 @@ def check_agent_state(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while trying to check the azure arc agents state in the "
-                "cluster. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to check the azure arc agents "
+                "state in the cluster."
             )
             telemetry.set_exception(
                 exception=e,
@@ -1033,10 +1016,9 @@ def check_agent_state(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to check the azure arc agents state in the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to check the azure arc agents state "
+            "in the cluster. "
         )
         telemetry.set_exception(
             exception=e,
@@ -1074,10 +1056,9 @@ def check_agent_version(connected_cluster, azure_arc_agent_version):
             int(latest_agent_version[1]) - int(current_user_version[1]) > 2
         ):
             logger.warning(
-                "We found that you are on an older agent version that is not supported.\n Please visit this link to "
-                " know the agent version support policy '"
-                + consts.Doc_Agent_Version_Support_Policy_Url
-                + "'.\n"
+                "We found that you are on an older agent version that is not supported.\n"
+                "Please visit this link to know the agent version support policy '%s'.\n",
+                consts.Doc_Agent_Version_Support_Policy_Url
             )
             diagnoser_output.append(
                 "We found that you are on an older agent version that is not supported.\n Please visit this link to "
@@ -1091,10 +1072,9 @@ def check_agent_version(connected_cluster, azure_arc_agent_version):
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to check the azure arc agents version in the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to check the azure arc agents "
+            "version in the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -1205,10 +1185,9 @@ def check_diagnoser_container(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to perform diagnoser container check on the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to perform diagnoser container "
+            "check on the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -1279,10 +1258,9 @@ def executing_diagnoser_job(
         if "isProxyEnabled" in str(e):
             is_proxy_enabled = False
         else:
-            logger.warning(
-                "An exception has occured while trying to fetch Field:'isProxyEnabled' from get helm "
-                "values. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to fetch Field:'isProxyEnabled' "
+                "from get helm values."
             )
             telemetry.set_exception(
                 exception=e,
@@ -1302,10 +1280,9 @@ def executing_diagnoser_job(
         if "isCustomCert" in str(e):
             is_custom_cert = False
         else:
-            logger.warning(
-                "An exception has occured while trying to fetch Field:'isCustomCert' from get helm "
-                "values. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to fetch Field:'isCustomCert' "
+                "from get helm values."
             )
             telemetry.set_exception(
                 exception=e,
@@ -1325,10 +1302,9 @@ def executing_diagnoser_job(
         if "proxyCert" in str(e):
             proxy_cert = False
         else:
-            logger.warning(
-                "An exception has occured while trying to fetch Field:'proxyCert' from get helm values. "
-                "Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while trying to fetch Field:'proxyCert' from "
+                "get helm values."
             )
             telemetry.set_exception(
                 exception=e,
@@ -1561,7 +1537,7 @@ def executing_diagnoser_job(
                             )
                             logger.warning(
                                 "Error while doing kubectl get events. We were not able to capture events "
-                                "log in arc_diagnostic_logs folder. Exception: ",
+                                "log in arc_diagnostic_logs folder. Exception: %s",
                                 error_kubectl_get_events.decode("ascii"),
                             )
                             diagnoser_output.append(
@@ -1604,10 +1580,9 @@ def executing_diagnoser_job(
         Popen(cmd_delete_job, stdout=PIPE, stderr=PIPE)
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to execute the diagnoser job in the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to execute the diagnoser job in the "
+            "cluster."
         )
         Popen(cmd_delete_job, stdout=PIPE, stderr=PIPE)
         telemetry.set_exception(
@@ -1643,9 +1618,9 @@ def check_msi_certificate_presence(corev1_api_instance):
         # Checking if msi cerificate is present or not
         if not msi_cert_present:
             logger.warning(
-                "Error: Unable to pull MSI certificate. Please ensure to meet the following network requirements '"
-                + consts.Doc_Quick_Start_NW_Requirements_Url
-                + "'. \n"
+                "Error: Unable to pull MSI certificate. "
+                "Please ensure to meet the following network requirements '%s'.\n",
+                consts.Doc_Quick_Start_NW_Requirements_Url
             )
             diagnoser_output.append(
                 "Error: Unable to pull MSI certificate. Please ensure to meet the following network requirements '"
@@ -1658,10 +1633,9 @@ def check_msi_certificate_presence(corev1_api_instance):
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while performing the msi certificate check on the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while performing the msi certificate check on "
+            "the cluster. "
         )
         telemetry.set_exception(
             exception=e,
@@ -1757,10 +1731,9 @@ def check_probable_cluster_security_policy(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to performing kube aad proxy presence and pod security "
-            "policy presence check in the cluster. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to performing kube aad proxy "
+            "presence and pod security policy presence check in the cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -1818,10 +1791,9 @@ def check_kap_cert(corev1_api_instance):
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception occured while trying to check the presence of kube aad proxy certificater. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception occured while trying to check the presence of kube aad proxy "
+            "certificater."
         )
         telemetry.set_exception(
             exception=e,
@@ -1869,10 +1841,9 @@ def check_msi_expiry(connected_cluster):
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while performing msi expiry check on the cluster. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while performing msi expiry check on the "
+            "cluster."
         )
         telemetry.set_exception(
             exception=e,
@@ -1926,10 +1897,9 @@ def describe_non_ready_agent_log(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while storing stuck agent logs in the user local machine. "
-                "Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while storing stuck agent logs in the user "
+                "local machine."
             )
             telemetry.set_exception(
                 exception=e,
@@ -1944,10 +1914,9 @@ def describe_non_ready_agent_log(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while storing stuck agent logs in the user local machine. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while storing stuck agent logs in the user local "
+            "machine."
         )
         telemetry.set_exception(
             exception=e,
@@ -1994,7 +1963,7 @@ def get_secrets_azure_arc(
                 )
                 logger.warning(
                     "Error while doing kubectl get secrets for azure-arc namespace. We were not able to "
-                    "capture this log in arc_diagnostic_logs folder. Exception: ",
+                    "capture this log in arc_diagnostic_logs folder. Exception: %s",
                     error_kubectl_get_secrets.decode("ascii"),
                 )
                 diagnoser_output.append(
@@ -2027,10 +1996,9 @@ def get_secrets_azure_arc(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while storing list of secrets in azure arc namespace in the "
-                "user local machine. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while storing list of secrets in azure arc "
+                "namespace in the user local machine."
             )
             telemetry.set_exception(
                 exception=e,
@@ -2045,10 +2013,9 @@ def get_secrets_azure_arc(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while storing list of secrets in azure arc namespace in the user "
-            "local machine. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while storing list of secrets in azure arc "
+            "namespace in the user local machine."
         )
         telemetry.set_exception(
             exception=e,
@@ -2107,7 +2074,7 @@ def get_helm_values_azure_arc(
                 )
                 logger.warning(
                     "Error while doing helm get values for azure-arc release. We were not able to capture "
-                    "this log in arc_diagnostic_logs folder. Exception: ",
+                    "this log in arc_diagnostic_logs folder. Exception: %s",
                     error_kubectl_get_helmvalues.decode("ascii"),
                 )
                 diagnoser_output.append(
@@ -2159,10 +2126,9 @@ def get_helm_values_azure_arc(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while storing helm values of azure-arc release in the user "
-                "local machine. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while storing helm values of azure-arc "
+                "release in the user local machine."
             )
             telemetry.set_exception(
                 exception=e,
@@ -2177,10 +2143,9 @@ def get_helm_values_azure_arc(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while storing helm values of azure-arc release in the user local "
-            "machine. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while storing helm values of azure-arc release "
+            "in the user local machine."
         )
         telemetry.set_exception(
             exception=e,
@@ -2239,7 +2204,7 @@ def get_helm_values_arc_workload_identity(
                 )
                 logger.warning(
                     "Error while doing helm get values for wiextension release. We were not able to capture "
-                    "this log in arc_diagnostic_logs folder. Exception: ",
+                    "this log in arc_diagnostic_logs folder. Exception: %s",
                     error_kubectl_get_helmvalues.decode("ascii"),
                 )
                 diagnoser_output.append(
@@ -2275,10 +2240,9 @@ def get_helm_values_arc_workload_identity(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while storing helm values of wiextension release in the user "
-                "local machine. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while storing helm values of wiextension "
+                "release in the user local machine."
             )
             telemetry.set_exception(
                 exception=e,
@@ -2293,10 +2257,9 @@ def get_helm_values_arc_workload_identity(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while storing helm values of wiextension release in the user local "
-            "machine. Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while storing helm values of wiextension release "
+            "in the user local machine."
         )
         telemetry.set_exception(
             exception=e,
@@ -2347,7 +2310,7 @@ def get_metadata_cr_snapshot(
                 )
                 logger.warning(
                     "Error while doing kubectl describe for clustermetadata CR. We were not able to "
-                    "capture this log in arc_diagnostic_logs folder. Exception: ",
+                    "capture this log in arc_diagnostic_logs folder. Exception: %s",
                     error_kubectl_get_metadata_cr.decode("ascii"),
                 )
                 diagnoser_output.append(
@@ -2380,10 +2343,9 @@ def get_metadata_cr_snapshot(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while storing metadata CR details in the user local machine. "
-                "Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while storing metadata CR details in the "
+                "user local machine."
             )
             telemetry.set_exception(
                 exception=e,
@@ -2398,10 +2360,9 @@ def get_metadata_cr_snapshot(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while storing metadata CR details in the user local machine. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while storing metadata CR details in the user "
+            "local machine."
         )
         telemetry.set_exception(
             exception=e,
@@ -2452,7 +2413,7 @@ def get_kubeaadproxy_cr_snapshot(
                 )
                 logger.warning(
                     "Error while doing kubectl describe for kube-aad-proxy CR. We were not able to "
-                    "capture this log in arc_diagnostic_logs folder. Exception: ",
+                    "capture this log in arc_diagnostic_logs folder. Exception: %s",
                     error_kubectl_get_kap_cr.decode("ascii"),
                 )
                 diagnoser_output.append(
@@ -2485,10 +2446,9 @@ def get_kubeaadproxy_cr_snapshot(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while storing kube-aad-proxy CR details in the user local "
-                "machine. Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while storing kube-aad-proxy CR details in "
+                "the user local machine."
             )
             telemetry.set_exception(
                 exception=e,
@@ -2503,10 +2463,9 @@ def get_kubeaadproxy_cr_snapshot(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while storing kube-aad-proxy CR details in the user local machine. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while storing kube-aad-proxy CR details in the "
+            "user local machine."
         )
         telemetry.set_exception(
             exception=e,
@@ -2559,7 +2518,7 @@ def get_signingkey_cr_snapshot(
                 )
                 logger.warning(
                     "Error while doing kubectl describe for signingkey CR. We were not able to "
-                    "capture this log in arc_diagnostic_logs folder. Exception: ",
+                    "capture this log in arc_diagnostic_logs folder. Exception: %s",
                     error_kubectl_get_signingkey_cr.decode("ascii"),
                 )
                 diagnoser_output.append(
@@ -2592,10 +2551,9 @@ def get_signingkey_cr_snapshot(
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
         else:
-            logger.warning(
-                "An exception has occured while storing signingkey CR details in the user local machine. "
-                "Exception: {}".format(str(e))
-                + "\n"
+            logger.exception(
+                "An exception has occured while storing signingkey CR details in the "
+                "user local machine."
             )
             telemetry.set_exception(
                 exception=e,
@@ -2610,10 +2568,9 @@ def get_signingkey_cr_snapshot(
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while storing signingkey CR details in the user local machine. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while storing signingkey CR details in the user "
+            "local machine." + "\n"
         )
         telemetry.set_exception(
             exception=e,
@@ -2677,10 +2634,8 @@ def fetching_cli_output_logs(filepath_with_timestamp, storage_space_available, f
 
     # To handle any exception that may occur during the execution
     except Exception as e:
-        logger.warning(
-            "An exception has occured while trying to store the diagnoser results. "
-            "Exception: {}".format(str(e))
-            + "\n"
+        logger.exception(
+            "An exception has occured while trying to store the diagnoser results."
         )
         telemetry.set_exception(
             exception=e,
