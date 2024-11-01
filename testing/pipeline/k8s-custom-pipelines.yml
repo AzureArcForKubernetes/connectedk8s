@@ -247,7 +247,7 @@ stages:
           # overwrite the default AZURE_EXTENSION_DIR set by ADO
           AZURE_EXTENSION_DIR=~/.azure/cliextensions az --version
 
-          AZURE_EXTENSION_DIR=~/.azure/cliextensions azdev style --extensions connectedk8s
+          AZURE_EXTENSION_DIR=~/.azure/cliextensions azdev style connectedk8s
         displayName: "azdev style on Modified Extensions"
         env:
           ADO_PULL_REQUEST_LATEST_COMMIT: $(System.PullRequest.SourceCommitId)
