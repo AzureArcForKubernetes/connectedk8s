@@ -318,7 +318,7 @@ def save_cluster_diagnostic_checks_pod_description(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while saving the cluster diagnostic checks "
@@ -394,7 +394,7 @@ def check_cluster_DNS(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while performing the DNS check on the "
@@ -616,7 +616,7 @@ def check_cluster_outbound_connectivity(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while performing the outbound connectivity "
@@ -679,7 +679,7 @@ def create_folder_diagnosticlogs(time_stamp, folder_name):
     # For handling storage or OS exception that may occur during the execution
     except OSError as e:
         if "[Errno 28]" in str(e):
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
             telemetry.set_exception(
                 exception=e,
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,

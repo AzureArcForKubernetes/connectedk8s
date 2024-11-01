@@ -93,7 +93,7 @@ def fetch_kubectl_cluster_info(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while trying to store the cluster info in "
@@ -175,7 +175,7 @@ def fetch_connected_cluster_resource(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while trying to store the get output of "
@@ -267,7 +267,7 @@ def retrieve_arc_agents_logs(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while trying to fetch the azure arc agents "
@@ -375,7 +375,7 @@ def retrieve_arc_agents_event_logs(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while trying to fetch the events occured in "
@@ -451,7 +451,7 @@ def retrieve_deployments_logs(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while trying to fetch the azure arc "
@@ -550,7 +550,7 @@ def retrieve_arc_workload_identity_pod_logs(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while trying to fetch the azure arc agents "
@@ -658,7 +658,7 @@ def retrieve_arc_workload_identity_event_logs(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while trying to fetch the events occured in "
@@ -740,7 +740,7 @@ def retrieve_arc_workload_identity_deployments_logs(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while trying to fetch the "
@@ -974,7 +974,7 @@ def check_agent_state(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while trying to check the azure arc agents "
@@ -1856,7 +1856,7 @@ def describe_non_ready_agent_log(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while storing stuck agent logs in the user "
@@ -1951,7 +1951,7 @@ def get_secrets_azure_arc(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while storing list of secrets in azure arc "
@@ -2075,7 +2075,7 @@ def get_helm_values_azure_arc(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while storing helm values of azure-arc "
@@ -2183,7 +2183,7 @@ def get_helm_values_arc_workload_identity(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while storing helm values of wiextension "
@@ -2284,7 +2284,7 @@ def get_metadata_cr_snapshot(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while storing metadata CR details in the "
@@ -2385,7 +2385,7 @@ def get_kubeaadproxy_cr_snapshot(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while storing kube-aad-proxy CR details in "
@@ -2488,7 +2488,7 @@ def get_signingkey_cr_snapshot(
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while storing signingkey CR details in the "
@@ -2567,7 +2567,7 @@ def fetching_cli_output_logs(filepath_with_timestamp, storage_space_available, f
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
 
     # To handle any exception that may occur during the execution
     except Exception as e:

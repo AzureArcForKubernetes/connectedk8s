@@ -352,11 +352,7 @@ def executing_cluster_diagnostic_checks_job(
                                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                                 summary="No space left on device",
                             )
-                            shutil.rmtree(
-                                filepath_with_timestamp,
-                                ignore_errors=False,
-                                onerror=None,
-                            )
+                            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
                         else:
                             logger.exception(
                                 "An exception has occured while saving the Cluster "
@@ -509,7 +505,7 @@ def fetching_cli_output_logs(filepath_with_timestamp, storage_space_available, f
                 fault_type=consts.No_Storage_Space_Available_Fault_Type,
                 summary="No space left on device",
             )
-            shutil.rmtree(filepath_with_timestamp, ignore_errors=False, onerror=None)
+            shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
 
     # To handle any exception that may occur during the execution
     except Exception as e:
