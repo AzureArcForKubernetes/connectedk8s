@@ -6,6 +6,7 @@ target-version = "py38"
 
 [tool.ruff.lint]
 extend-select = [
-  "I",  # isort
-  "UP", # pyupgrade
+  "I",   # isort
+  "PIE", # flake8-pie
+  "UP",  # pyupgrade
 ]

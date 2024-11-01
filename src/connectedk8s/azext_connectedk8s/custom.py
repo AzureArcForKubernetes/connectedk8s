@@ -1126,9 +1126,9 @@ def set_kube_config(kube_config):
     print(f"Step: {utils.get_utctimestring()}: Setting KubeConfig")
     if kube_config:
         # Trim kubeconfig. This is required for windows os.
-        if kube_config.startswith("'") or kube_config.startswith('"'):
+        if kube_config.startswith(("'", '"')):
             kube_config = kube_config[1:]
-        if kube_config.endswith("'") or kube_config.endswith('"'):
+        if kube_config.endswith(("'", '"')):
             kube_config = kube_config[:-1]
         return kube_config
     return None

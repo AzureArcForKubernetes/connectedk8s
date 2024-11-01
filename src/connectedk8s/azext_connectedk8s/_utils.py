@@ -656,7 +656,6 @@ def create_folder_diagnosticlogs(time_stamp, folder_name):
             #  creating it again
             shutil.rmtree(filepath_with_timestamp, ignore_errors=True)
             os.mkdir(filepath_with_timestamp)
-            pass
 
         return filepath_with_timestamp, True
 
@@ -1012,9 +1011,9 @@ def get_values_file():
             "Values files detected. Reading additional helm parameters from same."
         )
         # trimming required for windows os
-        if values_file.startswith("'") or values_file.startswith('"'):
+        if values_file.startswith(("'", '"')):
             values_file = values_file[1:]
-        if values_file.endswith("'") or values_file.endswith('"'):
+        if values_file.endswith(("'", '"')):
             values_file = values_file[:-1]
         return values_file
     return None
