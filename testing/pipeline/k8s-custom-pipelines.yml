@@ -201,6 +201,9 @@ stages:
           pip install setuptools==70.0.0
           pip list -v
 
+          # Resolve the target branch variable
+          TARGET_BRANCH=$(System.PullRequest.TargetBranch)
+
           # overwrite the default AZURE_EXTENSION_DIR set by ADO
           AZURE_EXTENSION_DIR=~/.azure/cliextensions az --version
 
