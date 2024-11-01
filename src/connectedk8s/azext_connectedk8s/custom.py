@@ -3933,9 +3933,7 @@ def client_side_proxy(
             raise CLIInternalError(f"Failed to start proxy process: {e}")
 
         # refresh token approach if cli is using ADAL auth (for cli < 2.30.0)
-        if (
-            not utils.is_cli_using_msal_auth()
-        ) and user_type == "user":
+        if (not utils.is_cli_using_msal_auth()) and user_type == "user":
             identity_data = {}
             identity_data["refreshToken"] = creds
             identity_uri = f"https://localhost:{api_server_port}/identity/rt"
