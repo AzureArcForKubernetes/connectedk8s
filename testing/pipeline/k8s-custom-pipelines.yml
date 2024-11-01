@@ -197,6 +197,9 @@ stages:
           azdev --version
 
           azdev setup -c ../azure-cli -r ./ -e connectedk8s
+          # Installing setuptools with a version higher than 70.0.0 will not generate metadata.json
+          pip install setuptools==70.0.0
+          pip list -v
 
           # overwrite the default AZURE_EXTENSION_DIR set by ADO
           AZURE_EXTENSION_DIR=~/.azure/cliextensions az --version
@@ -232,7 +235,7 @@ stages:
 
           azdev --version
 
-          azdev setup -c ../azure-cli -r ./ -e k8s-configuration
+          azdev setup -c ../azure-cli -r ./ -e connectedk8s
           # Installing setuptools with a version higher than 70.0.0 will not generate metadata.json
           pip install setuptools==70.0.0
           pip list -v
