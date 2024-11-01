@@ -171,8 +171,8 @@ stages:
           azdev test connectedk8s
         displayName: 'Run integration test and build test'
 
-  - job: LintModifiedExtensions
-    displayName: "CLI Linter on Modified Extensions"
+  - job: AzdevLinterModifiedExtensions
+    displayName: "azdev linter on Modified Extensions"
     pool:
       vmImage: 'ubuntu-latest'
     steps:
@@ -247,7 +247,7 @@ stages:
           # overwrite the default AZURE_EXTENSION_DIR set by ADO
           AZURE_EXTENSION_DIR=~/.azure/cliextensions az --version
 
-          AZURE_EXTENSION_DIR=~/.azure/cliextensions azdev style --include-whl-extensions connectedk8s
+          AZURE_EXTENSION_DIR=~/.azure/cliextensions azdev style --extensions connectedk8s
         displayName: "azdev style on Modified Extensions"
         env:
           ADO_PULL_REQUEST_LATEST_COMMIT: $(System.PullRequest.SourceCommitId)
