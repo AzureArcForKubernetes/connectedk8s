@@ -202,7 +202,7 @@ stages:
           pip list -v
 
           # Resolve the target branch variable
-          TARGET_BRANCH=$(System.PullRequest.TargetBranch)
+          TARGET_BRANCH=${SYSTEM_PULLREQUEST_TARGETBRANCH}
 
           # overwrite the default AZURE_EXTENSION_DIR set by ADO
           AZURE_EXTENSION_DIR=~/.azure/cliextensions az --version
