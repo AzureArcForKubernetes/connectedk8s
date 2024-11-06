@@ -16,7 +16,10 @@ from ._format import connectedk8s_list_table_format, connectedk8s_show_table_for
 
 def load_command_table(self, _):
     connectedk8s_sdk = CliCommandType(
-        operations_tmpl="azext_connectedk8s.vendored_sdks.operations#ConnectedClusterOperations.{}",
+        operations_tmpl=(
+            "azext_connectedk8s.vendored_sdks.preview_2024_07_01.operations#"
+            "ConnectedClusterOperations.{}"
+        ),
         client_factory=cf_connectedk8s_prev_2024_07_01,
     )
     with self.command_group(
