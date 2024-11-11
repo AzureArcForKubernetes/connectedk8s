@@ -1526,7 +1526,7 @@ def az_cli(args_str: str) -> Any:
     if cli.result.result:
         return cli.result.result
     if cli.result.error:
-        raise Exception(cli.result.error)
+        raise CLIInternalError(f"'az ${args_str}' failed: {cli.result.error}")
     return True
 
 

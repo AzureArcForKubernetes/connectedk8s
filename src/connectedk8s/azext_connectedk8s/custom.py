@@ -3107,7 +3107,7 @@ def disable_features(
                 helm_values.get("systemDefaultValues").get("customLocations").get("oid")  # type: ignore[union-attr]
             )
             if not disable_cl and cl_enabled is True and cl_oid != "":
-                raise Exception(
+                raise ClientRequestError(
                     "Disabling 'cluster-connect' feature is not allowed when 'custom-locations' feature is enabled"
                 )
         except AttributeError:
