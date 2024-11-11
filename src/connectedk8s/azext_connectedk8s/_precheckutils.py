@@ -291,8 +291,6 @@ def executing_cluster_diagnostic_checks_job(
             )
             azext_utils.save_cluster_diagnostic_checks_pod_description(
                 corev1_api_instance,
-                batchv1_api_instance,
-                helm_client_location,
                 kubectl_client_location,
                 kube_config,
                 kube_context,

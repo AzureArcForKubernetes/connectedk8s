@@ -2131,7 +2131,6 @@ def update_connected_cluster(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-
     # Install helm client
     helm_client_location = install_helm_client()
 
@@ -2865,7 +2864,6 @@ def enable_features(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-
     # Install helm client
     helm_client_location = install_helm_client()
 
@@ -3057,7 +3055,6 @@ def disable_features(
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
-
 
     # Install helm client
     helm_client_location = install_helm_client()

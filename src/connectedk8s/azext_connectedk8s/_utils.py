@@ -44,7 +44,7 @@ from azext_connectedk8s._client_factory import (
 if TYPE_CHECKING:
     from azure.cli.core import AzCli
     from knack.commands import CLICommand
-    from kubernetes.client import BatchV1Api, CoreV1Api, V1NodeList
+    from kubernetes.client import CoreV1Api, V1NodeList
     from requests import Response
 
     from azext_connectedk8s.vendored_sdks.preview_2024_07_01.models import (
@@ -262,8 +262,6 @@ def pull_helm_chart(
 
 def save_cluster_diagnostic_checks_pod_description(
     corev1_api_instance: CoreV1Api,
-    batchv1_api_instance: BatchV1Api,
-    helm_client_location: str,
     kubectl_client_location: str,
     kube_config: str | None,
     kube_context: str | None,
