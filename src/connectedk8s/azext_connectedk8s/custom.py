@@ -273,7 +273,6 @@ def create_connectedk8s(
     kubernetes_version = check_kube_connection()
 
     print(f"Step: {utils.get_utctimestring()}: Do node validations")
-    utils.try_list_node_fix()
     api_instance = kube_client.CoreV1Api()
     node_api_response = utils.validate_node_api_response(api_instance)
     is_arm64_cluster = check_arm64_node(node_api_response)
@@ -1768,7 +1767,6 @@ def delete_connectedk8s(
     )
 
     print(f"Step: {utils.get_utctimestring()}: Do node validations")
-    utils.try_list_node_fix()
     api_instance = kube_client.CoreV1Api()
     node_api_response = utils.validate_node_api_response(api_instance)
     is_arm64_cluster = check_arm64_node(node_api_response)
@@ -2133,7 +2131,6 @@ def update_connected_cluster(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-    utils.try_list_node_fix()
 
     # Install helm client
     helm_client_location = install_helm_client()
@@ -2371,7 +2368,6 @@ def upgrade_agents(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-    utils.try_list_node_fix()
     api_instance = kube_client.CoreV1Api()
 
     # Install helm client
@@ -2869,7 +2865,6 @@ def enable_features(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-    utils.try_list_node_fix()
 
     # Install helm client
     helm_client_location = install_helm_client()
@@ -3063,7 +3058,6 @@ def disable_features(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-    utils.try_list_node_fix()
 
     # Install helm client
     helm_client_location = install_helm_client()
@@ -4201,7 +4195,6 @@ def troubleshoot(
         # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
         # if the user had not logged in.
         check_kube_connection()
-        utils.try_list_node_fix()
 
         # Fetch Connected Cluster for agent version
         connected_cluster = client.get(resource_group_name, cluster_name)

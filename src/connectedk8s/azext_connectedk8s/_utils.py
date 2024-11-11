@@ -1417,21 +1417,6 @@ def is_guid(guid: str) -> bool:
         return False
 
 
-def try_list_node_fix() -> None:
-    try:
-        from kubernetes.client.models.v1_container_image import V1ContainerImage
-
-        def names(self: V1ContainerImage, names: list[str]) -> None:
-            self._names = names
-
-        V1ContainerImage.names = V1ContainerImage.names.setter(names)
-    except Exception:
-        logger.debug(
-            "Error while trying to monkey patch the fix for list_node()",
-            exc_info=True,
-        )
-
-
 def check_provider_registrations(
     cli_ctx: AzCli,
     subscription_id: str,
