@@ -50,6 +50,7 @@ from knack.log import get_logger
 from knack.prompting import NoTTYException, prompt_y_n
 from kubernetes import client as kube_client
 from kubernetes import config
+from kubernetes.config.kube_config import KubeConfigMerger
 from packaging import version
 
 import azext_connectedk8s._clientproxyutils as clientproxyutils
@@ -1615,11 +1616,7 @@ def get_kubeconfig_node_dict(kube_config: str | None = None) -> ConfigNode:
             os.path.expanduser("~"), ".kube", "config"
         )
     try:
-        kubeconfig_data: dict[str, Any] = (
-            config.kube_config._get_kube_config_loader_for_yaml_file(
-                kube_config
-            )._config
-        )
+        kubeconfig_data = KubeConfigMerger(kube_config).config
     except Exception as ex:
         telemetry.set_exception(
             exception=ex,
