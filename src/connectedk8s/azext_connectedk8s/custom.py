@@ -2289,10 +2289,6 @@ def update_connected_cluster(
     if disable_proxy:
         helm_content_values["global.isProxyEnabled"] = "False"
 
-    # Disable proxy if disable_proxy flag is set
-    if disable_proxy:
-        helm_content_values["global.isProxyEnabled"] = "False"
-
     # Set agent version in registry path
     if connected_cluster.agent_version is not None:
         agent_version = connected_cluster.agent_version  # type: ignore[unreachable]
