@@ -3267,7 +3267,7 @@ def disable_cluster_connect(
 def load_kubernetes_configuration(filename: str) -> dict[str, Any]:
     try:
         with open(filename) as stream:
-            k8s_config: dict[str, Any] = yaml.safe_load(stream)
+            k8s_config: dict[str, Any] = yaml.safe_load(stream) or {}
             return k8s_config
     except OSError as ex:
         if getattr(ex, "errno", 0) == errno.ENOENT:
@@ -3368,8 +3368,8 @@ def merge_kubernetes_configurations(
                 break
         except (KeyError, TypeError):
             continue
-    
-    if existing is None:
+
+    if not existing:
         existing = addition
     else:
         handle_merge(existing, addition, "clusters", replace)
