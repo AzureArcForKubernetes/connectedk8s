@@ -47,6 +47,22 @@ Describe 'Connectedk8s Proxy Scenario' {
         # Check if the job ran successfully
         $proxyJob.State | Should -Be 'Running'
 
+        # Check if the proxy command ran successfully
+        $kubectlJob = Start-Job -ScriptBlock {
+            try {
+                $output =  kubectl get pods -n azure-arc 2>&1
+                return @{ Success = $LASTEXITCODE -eq 0; Output = $output }
+            } catch {
+                return @{ Success = $false; Output = $_.Exception.Message }
+            }
+        }
+
+        $kubectlJob | Wait-Job
+        $kubectlResult = Receive-Job -Job $kubectlJob
+
+        # Assert that the result is 0
+        $kubectlResult.Success | Should -BeTrue
+
         Stop-Job -Job $proxyJob
         Remove-Job -Job $proxyJob
     }
