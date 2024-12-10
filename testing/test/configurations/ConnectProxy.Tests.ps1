@@ -31,7 +31,7 @@ Describe 'Connectedk8s Proxy Scenario' {
 
             # Capture output and errors
             try {
-                $output = az connectedk8s proxy -n $ClusterName -g $ResourceGroup 2>&1
+                $output = az connectedk8s proxy -n $ClusterName -g $ResourceGroup --debug > .\a.txt 2>&1
                 return @{ Success = $LASTEXITCODE -eq 0; Output = $output }
             } catch {
                 return @{ Success = $false; Output = $_.Exception.Message }
@@ -39,13 +39,37 @@ Describe 'Connectedk8s Proxy Scenario' {
         } -ArgumentList $ENVCONFIG.arcClusterName, $ENVCONFIG.resourceGroup
 
         # Wait for a certain amount of time (e.g., 30 seconds)
-        Start-Sleep -Seconds 30
-
+        Start-Sleep -Seconds 120
+    
+        Get-Content ".\a.txt" | ForEach-Object { Write-Host $_ }
+        
         # Display the output
         Write-Host "Proxy Job State: $($proxyJob.State)"
 
         # Check if the job ran successfully
         $proxyJob.State | Should -Be 'Running'
+        
+        # Check if the kubeconfig file has been updated to use the proxy
+        $kubeconfigPath = "~/.kube/config"
+        $kubeconfig = Get-Content $kubeconfigPath -Raw | ConvertFrom-Yaml
+        $server = $kubeconfig.clusters[0].cluster.server
+        $server | Should -Match "^https://127.0.0.1:47011/proxies/"
+        
+        # Check if the proxy command ran successfully
+        $kubectlJob = Start-Job -ScriptBlock {
+            try {
+                $output =  kubectl get pods -n azure-arc 2>&1
+                return @{ Success = $LASTEXITCODE -eq 0; Output = $output }
+            } catch {
+                return @{ Success = $false; Output = $_.Exception.Message }
+            }
+        }
+
+        $kubectlJob | Wait-Job
+        $kubectlResult = Receive-Job -Job $kubectlJob
+
+        # Assert that the result is 0
+        $kubectlResult.Success | Should -BeTrue
 
         Stop-Job -Job $proxyJob
         Remove-Job -Job $proxyJob
