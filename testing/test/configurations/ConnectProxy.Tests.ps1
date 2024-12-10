@@ -47,6 +47,12 @@ Describe 'Connectedk8s Proxy Scenario' {
         # Check if the job ran successfully
         $proxyJob.State | Should -Be 'Running'
 
+        # Check if the kubeconfig file has been updated to use the proxy
+        $kubeconfigPath = "~/.kube/config"
+        $kubeconfig = Get-Content $kubeconfigPath -Raw | ConvertFrom-Yaml
+        $server = $kubeconfig.clusters[0].cluster.server
+        $server | Should -Match "^https://127.0.0.1:47011/proxies/"
+        
         # Check if the proxy command ran successfully
         $kubectlJob = Start-Job -ScriptBlock {
             try {
