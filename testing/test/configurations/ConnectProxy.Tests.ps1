@@ -31,7 +31,7 @@ Describe 'Connectedk8s Proxy Scenario' {
 
             # Capture output and errors
             try {
-                $output = az connectedk8s proxy -n $ClusterName -g $ResourceGroup 2>&1
+                $output = az connectedk8s proxy -n $ClusterName -g $ResourceGroup --debug 2>&1
                 return @{ Success = $LASTEXITCODE -eq 0; Output = $output }
             } catch {
                 return @{ Success = $false; Output = $_.Exception.Message }
@@ -47,6 +47,11 @@ Describe 'Connectedk8s Proxy Scenario' {
         # Check if the job ran successfully
         $proxyJob.State | Should -Be 'Running'
 
+        $jobOutput = Receive-Job -Job $proxyJob -OutVariable tempOutput
+        if ($tempOutput) {
+            Write-Host $tempOutput
+        }
+        
         # Check if the kubeconfig file has been updated to use the proxy
         $kubeconfigPath = "~/.kube/config"
         $kubeconfig = Get-Content $kubeconfigPath -Raw | ConvertFrom-Yaml
