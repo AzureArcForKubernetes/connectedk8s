@@ -40,7 +40,7 @@ Describe 'Connectedk8s Proxy Scenario' {
 
         # Wait for a certain amount of time (e.g., 30 seconds)
         Start-Sleep -Seconds 60
-    
+
         # Display the output
         Write-Host "Proxy Job State: $($proxyJob.State)"
 
