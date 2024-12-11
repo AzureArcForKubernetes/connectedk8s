@@ -39,7 +39,7 @@ def install_client_side_proxy(arc_proxy_folder: str | None) -> str:
             # if directory exists, delete any older versions of the proxy
             else:
                 older_version_location = _get_older_version_proxy_path(
-                    install_dir, client_operating_system, client_architecture
+                    install_dir, client_operating_system
                 )
                 older_version_files = glob(older_version_location)
                 for f in older_version_files:
@@ -67,7 +67,7 @@ def _download_proxy_from_MCR(
     dest_dir: str, proxy_name: str, operating_system: str, architecture: str
 ) -> None:
     mar_target = (
-        f"{consts.CLIENT_PROXY_MCR_TARGET}/{operating_system.lower()}/amd64/arc-proxy"
+        f"{consts.CLIENT_PROXY_MCR_TARGET}/{operating_system.lower()}/{architecture}/arc-proxy"
     )
     logger.debug(
         "Downloading Arc Connectivity Proxy from %s in Microsoft Artifact Regristy.",
@@ -214,7 +214,7 @@ def _get_proxy_filename(operating_system: str, architecture: str) -> str:
     if operating_system.lower() == "darwin" and architecture == "386":
         raise azclierror.BadRequestError("Unsupported Darwin OS with 386 architecture.")
     proxy_filename = (
-        f"arcProxy{operating_system.capitalize()}{consts.CLIENT_PROXY_VERSION}"
+        f"arcProxy_{operating_system.lower()}_{architecture}_{consts.CLIENT_PROXY_VERSION.replace('.', '_')}"
     )
     if operating_system.lower() == "windows":
         proxy_filename += ".exe"
@@ -222,9 +222,9 @@ def _get_proxy_filename(operating_system: str, architecture: str) -> str:
 
 
 def _get_older_version_proxy_path(
-    install_dir: str, operating_system: str, architecture: str
+    install_dir: str, operating_system: str,
 ) -> str:
-    proxy_name = f"arcProxy{operating_system.capitalize()}*"
+    proxy_name = f"arcProxy_{operating_system.lower()}*"
     return os.path.join(install_dir, proxy_name)
 
 
