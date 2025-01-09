@@ -3475,7 +3475,7 @@ def client_side_proxy_wrapper(
 
     args = []
     operating_system = proxybinaryutils._get_client_operating_system()
-    proc_name = f"arcProxy{operating_system}"
+    proc_name = f"arcProxy_{operating_system.lower()}"
 
     telemetry.set_debug_info("CSP Version is ", consts.CLIENT_PROXY_VERSION)
     telemetry.set_debug_info("OS is ", operating_system)
