@@ -176,13 +176,14 @@ def _check_proxy_installation(
 ) -> None:
     proxy_filepath = os.path.join(install_dir, proxy_name)
     os.chmod(proxy_filepath, os.stat(proxy_filepath).st_mode | stat.S_IXUSR)
-    if os.path.isfile(proxy_filepath) and debug:
-        print_styled_text(
-            (
-                Style.SUCCESS,
-                f"Successfully installed Arc Connectivity Proxy file {proxy_filepath}",
+    if os.path.isfile(proxy_filepath):
+        if debug:
+            print_styled_text(
+                (
+                    Style.SUCCESS,
+                    f"Successfully installed Arc Connectivity Proxy file {proxy_filepath}",
+                )
             )
-        )
     else:
         raise azclierror.CLIInternalError(
             "Failed to install required Arc Connectivity Proxy. "
@@ -192,13 +193,14 @@ def _check_proxy_installation(
     license_files = ["LICENSE.txt", "ThirdPartyNotice.txt"]
     for file in license_files:
         file_location = os.path.join(install_dir, file)
-        if os.path.isfile(file_location) and debug:
-            print_styled_text(
-                (
-                    Style.SUCCESS,
-                    f"Successfully installed Arc Connectivity Proxy License file {file_location}",
+        if os.path.isfile(file_location):
+            if debug:
+                print_styled_text(
+                    (
+                        Style.SUCCESS,
+                        f"Successfully installed Arc Connectivity Proxy License file {file_location}",
+                    )
                 )
-            )
         else:
             logger.warning(
                 "Failed to download Arc Connectivity Proxy license file %s. Couldn't find expected file %s. "
