@@ -21,7 +21,7 @@ logger = log.get_logger(__name__)
 
 
 # Downloads client side proxy to connect to Arc Connectivity Platform
-def install_client_side_proxy(arc_proxy_folder: str | None) -> str:
+def install_client_side_proxy(arc_proxy_folder: str | None, debug: bool = False) -> str:
     client_operating_system = _get_client_operating_system()
     client_architecture = _get_client_architeture()
     install_dir = _get_proxy_install_dir(arc_proxy_folder)
@@ -38,9 +38,7 @@ def install_client_side_proxy(arc_proxy_folder: str | None) -> str:
                 )
             # if directory exists, delete any older versions of the proxy
             else:
-                older_version_location = _get_older_version_proxy_path(
-                    install_dir, client_operating_system
-                )
+                older_version_location = _get_older_version_proxy_path(install_dir)
                 older_version_files = glob(older_version_location)
                 for f in older_version_files:
                     file_utils.delete_file(
@@ -50,7 +48,7 @@ def install_client_side_proxy(arc_proxy_folder: str | None) -> str:
             _download_proxy_from_MCR(
                 install_dir, proxy_name, client_operating_system, client_architecture
             )
-            _check_proxy_installation(install_dir, proxy_name)
+            _check_proxy_installation(install_dir, proxy_name, debug)
 
     except Exception as e:
         telemetry.set_exception(
@@ -173,14 +171,16 @@ def _extract_proxy_tar_files(
         tar.extractall(members=members, path=install_dir)
 
 
-def _check_proxy_installation(install_dir: str, proxy_name: str) -> None:
+def _check_proxy_installation(
+    install_dir: str, proxy_name: str, debug: bool = False
+) -> None:
     proxy_filepath = os.path.join(install_dir, proxy_name)
     os.chmod(proxy_filepath, os.stat(proxy_filepath).st_mode | stat.S_IXUSR)
-    if os.path.isfile(proxy_filepath):
+    if os.path.isfile(proxy_filepath) and debug:
         print_styled_text(
             (
                 Style.SUCCESS,
-                f"Successfuly installed Arc Connectivity Proxy file {proxy_filepath}",
+                f"Successfully installed Arc Connectivity Proxy file {proxy_filepath}",
             )
         )
     else:
@@ -192,16 +192,16 @@ def _check_proxy_installation(install_dir: str, proxy_name: str) -> None:
     license_files = ["LICENSE.txt", "ThirdPartyNotice.txt"]
     for file in license_files:
         file_location = os.path.join(install_dir, file)
-        if os.path.isfile(file_location):
+        if os.path.isfile(file_location) and debug:
             print_styled_text(
                 (
                     Style.SUCCESS,
-                    f"Successfuly installed Arc Connectivity Proxy License file {file_location}",
+                    f"Successfully installed Arc Connectivity Proxy License file {file_location}",
                 )
             )
         else:
             logger.warning(
-                "Failed to download Arc Connectivity Proxy license file %s. Clouldn't find expected file %s. "
+                "Failed to download Arc Connectivity Proxy license file %s. Couldn't find expected file %s. "
                 "This won't affect your connection.",
                 file,
                 file_location,
@@ -219,9 +219,8 @@ def _get_proxy_filename(operating_system: str, architecture: str) -> str:
 
 def _get_older_version_proxy_path(
     install_dir: str,
-    operating_system: str,
 ) -> str:
-    proxy_name = f"arcProxy_{operating_system.lower()}*"
+    proxy_name = "arcProxy*"
     return os.path.join(install_dir, proxy_name)
 
 

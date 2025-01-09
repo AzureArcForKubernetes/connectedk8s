@@ -3508,7 +3508,11 @@ def client_side_proxy_wrapper(
     if port_error_string != "":
         raise ClientRequestError(port_error_string)
 
-    install_location = proxybinaryutils.install_client_side_proxy(None)
+    debug_mode = False
+    if "--debug" in cmd.cli_ctx.data["safe_params"]:
+        debug_mode = True
+
+    install_location = proxybinaryutils.install_client_side_proxy(None, debug_mode)
     args.append(install_location)
     install_dir = os.path.dirname(install_location)
 
@@ -3591,10 +3595,8 @@ def client_side_proxy_wrapper(
     args.append("-c")
     args.append(config_file_location)
 
-    debug_mode = False
-    if "--debug" in cmd.cli_ctx.data["safe_params"]:
+    if debug_mode:
         args.append("-d")
-        debug_mode = True
 
     client_side_proxy_main(
         cmd,
