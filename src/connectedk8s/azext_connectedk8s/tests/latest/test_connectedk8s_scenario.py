@@ -70,15 +70,19 @@ def install_helm_client():
 
     # Set helm binary download & install locations
     if operating_system == "windows":
-        download_location_string = f".azure\\helm\\{consts.HELM_VERSION}\\helm-{consts.HELM_VERSION}-\
+        download_location_string = (
+            f".azure\\helm\\{consts.HELM_VERSION}\\helm-{consts.HELM_VERSION}-\
             {operating_system}-amd64.zip"
+        )
         install_location_string = (
             f".azure\\helm\\{consts.HELM_VERSION}\\{operating_system}-amd64\\helm.exe"
         )
         requestUri = f"{consts.HELM_STORAGE_URL}/helm/helm-{consts.HELM_VERSION}-{operating_system}-amd64.zip"
     elif operating_system == "linux" or operating_system == "darwin":
-        download_location_string = f".azure/helm/{consts.HELM_VERSION}/helm-{consts.HELM_VERSION}-\
+        download_location_string = (
+            f".azure/helm/{consts.HELM_VERSION}/helm-{consts.HELM_VERSION}-\
             {operating_system}-amd64.tar.gz"
+        )
         install_location_string = (
             f".azure/helm/{consts.HELM_VERSION}/{operating_system}-amd64/helm"
         )
@@ -717,8 +721,8 @@ only supported when auto-upgrade is set to false",
             {managed_cluster_name}-admin"
         )
         response = requests.post(
-            f'https://{CONFIG["location"]}.dp.kubernetesconfiguration.azure.com/azure-\
-            arc-k8sagents/GetLatestHelmPackagePath?api-version=2019-11-01-preview&releaseTrain=stable'
+            f"https://{CONFIG['location']}.dp.kubernetesconfiguration.azure.com/azure-\
+            arc-k8sagents/GetLatestHelmPackagePath?api-version=2019-11-01-preview&releaseTrain=stable"
         )
         jsonData = json.loads(response.text)
         repo_path = jsonData["repositoryPath"]
