@@ -7,7 +7,7 @@ import stat
 import tarfile
 import time
 from glob import glob
-from typing import List
+from typing import List, Optional
 
 import oras.client  # type: ignore[import-untyped]
 from azure.cli.core import azclierror, telemetry
@@ -21,7 +21,9 @@ logger = log.get_logger(__name__)
 
 
 # Downloads client side proxy to connect to Arc Connectivity Platform
-def install_client_side_proxy(arc_proxy_folder: str | None, debug: bool = False) -> str:
+def install_client_side_proxy(
+    arc_proxy_folder: Optional[str], debug: bool = False
+) -> str:
     client_operating_system = _get_client_operating_system()
     client_architecture = _get_client_architeture()
     install_dir = _get_proxy_install_dir(arc_proxy_folder)
@@ -226,7 +228,7 @@ def _get_older_version_proxy_path(
     return os.path.join(install_dir, proxy_name)
 
 
-def _get_proxy_install_dir(arc_proxy_folder: str | None) -> str:
+def _get_proxy_install_dir(arc_proxy_folder: Optional[str]) -> str:
     if not arc_proxy_folder:
         return os.path.expanduser(os.path.join("~", consts.CLIENT_PROXY_FOLDER))
     return arc_proxy_folder
