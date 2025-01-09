@@ -18,7 +18,6 @@ from subprocess import PIPE
 import psutil
 import requests
 from azure.cli.core import get_default_cli
-import azext_connectedk8s.clientproxyhelper._binaryutils as proxybinaryutils
 from azure.cli.core.azclierror import RequiredArgumentMissingError, ValidationError
 from azure.cli.testsdk import (  # pylint: disable=import-error
     LiveScenarioTest,
@@ -29,6 +28,7 @@ from knack.log import get_logger
 from knack.util import CLIError
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s.clientproxyhelper._binaryutils as proxybinaryutils
 
 TEST_DIR = os.path.abspath(os.path.join(os.path.abspath(__file__), ".."))
 logger = get_logger(__name__)
@@ -1016,7 +1016,9 @@ If there are any issues with the test, please verify manually that there are no 
         proxy_process_name = None
         client_operating_system = proxybinaryutils._get_client_operating_system()
         client_architecture = proxybinaryutils._get_client_architeture()
-        proxy_process_name = proxybinaryutils._get_proxy_filename(client_operating_system, client_architecture)
+        proxy_process_name = proxybinaryutils._get_proxy_filename(
+            client_operating_system, client_architecture
+        )
 
         # There cannot be more than one connectedk8s proxy running, since they would use the same port.
         script = [
