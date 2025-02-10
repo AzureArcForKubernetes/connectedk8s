@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import contextlib
 import json
-import oras.client
 import os
 import platform
 import shutil
@@ -15,6 +14,7 @@ import subprocess
 import time
 from subprocess import PIPE
 
+import oras.client  # type: ignore[import-untyped]
 import psutil
 import requests
 from azure.cli.core import get_default_cli

@@ -9,7 +9,6 @@ import errno
 import hashlib
 import json
 import logging
-import oras.client
 import os
 import platform
 import re
@@ -22,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor
 from subprocess import DEVNULL, PIPE, Popen
 from typing import TYPE_CHECKING, Any, Iterable
 
+import oras.client  # type: ignore[import-untyped]
 import yaml
 from azure.cli.command_modules.role import graph_client_factory
 from azure.cli.core import get_default_cli, telemetry
