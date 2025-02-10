@@ -176,10 +176,8 @@ def create_connectedk8s(
         else get_subscription_id(cmd.cli_ctx)
     )
 
-    resource_id = (
-        f"/subscriptions/{subscription_id}/resourcegroups/{resource_group_name}/providers/Microsoft.\
+    resource_id = f"/subscriptions/{subscription_id}/resourcegroups/{resource_group_name}/providers/Microsoft.\
         Kubernetes/connectedClusters/{cluster_name}/location/{location}"
-    )
     telemetry.add_extension_event(
         "connectedk8s", {"Context.Default.AzureCLI.resourceid": resource_id}
     )
@@ -1180,7 +1178,9 @@ def install_helm_client() -> str:
         artifactTag = f"helm-{consts.HELM_VERSION}-{operating_system}-amd64"
     elif operating_system == "linux" or operating_system == "darwin":
         download_location_string = f".azure/helm/{consts.HELM_VERSION}"
-        download_file_name = f"helm-{consts.HELM_VERSION}-{operating_system}-amd64.tar.gz"
+        download_file_name = (
+            f"helm-{consts.HELM_VERSION}-{operating_system}-amd64.tar.gz"
+        )
         install_location_string = (
             f".azure/helm/{consts.HELM_VERSION}/{operating_system}-amd64/helm"
         )
@@ -1223,7 +1223,8 @@ def install_helm_client() -> str:
         for i in range(retry_count):
             try:
                 client.pull(
-                    target=f"{consts.HELM_MCR_URL}:{artifactTag}", outdir=download_location
+                    target=f"{consts.HELM_MCR_URL}:{artifactTag}",
+                    outdir=download_location,
                 )
                 break
             except Exception as e:
@@ -1244,7 +1245,9 @@ def install_helm_client() -> str:
         # Extract the archive.
         try:
             extract_dir = download_location
-            download_location = os.path.expanduser(os.path.join(download_location, download_file_name))
+            download_location = os.path.expanduser(
+                os.path.join(download_location, download_file_name)
+            )
             shutil.unpack_archive(download_location, extract_dir)
             os.chmod(install_location, os.stat(install_location).st_mode | stat.S_IXUSR)
         except Exception as e:

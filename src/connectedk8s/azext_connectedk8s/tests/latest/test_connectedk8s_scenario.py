@@ -79,7 +79,9 @@ def install_helm_client():
         artifactTag = f"helm-{consts.HELM_VERSION}-{operating_system}-amd64"
     elif operating_system == "linux" or operating_system == "darwin":
         download_location_string = f".azure/helm/{consts.HELM_VERSION}"
-        download_file_name = f"helm-{consts.HELM_VERSION}-{operating_system}-amd64.tar.gz"
+        download_file_name = (
+            f"helm-{consts.HELM_VERSION}-{operating_system}-amd64.tar.gz"
+        )
         install_location_string = (
             f".azure/helm/{consts.HELM_VERSION}/{operating_system}-amd64/helm"
         )
@@ -120,7 +122,9 @@ def install_helm_client():
         # Extract the archive.
         try:
             extract_dir = download_location
-            download_location = os.path.expanduser(os.path.join(download_location, download_file_name))
+            download_location = os.path.expanduser(
+                os.path.join(download_location, download_file_name)
+            )
             shutil.unpack_archive(download_location, extract_dir)
             os.chmod(install_location, os.stat(install_location).st_mode | stat.S_IXUSR)
         except Exception as e:
