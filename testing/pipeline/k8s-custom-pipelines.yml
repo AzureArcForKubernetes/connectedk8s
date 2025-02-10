@@ -344,6 +344,8 @@ stages:
 
           pip install --upgrade pip
           pip install azure-cli --editable .[linting]
+          echo "ruff version"
+          ruff --version
 
           ruff format --check
 
