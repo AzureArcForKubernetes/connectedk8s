@@ -16,6 +16,7 @@ helps["connectedk8s"] = """
 helps["connectedk8s connect"] = """
     type: command
     short-summary: Onboard a connected kubernetes cluster to azure.
+    Prerequisite: The Kuberenetes cluster to be onboarded as a connected cluster must be the default cluster in kubeconfig. Please use kube context to check before executing the connect command.
     examples:
     - name: Onboard a connected kubernetes cluster with default kube config and kube context.
       text: az connectedk8s connect -g resourceGroupName -n connectedClusterName
