@@ -475,7 +475,6 @@ DEFAULT_MAX_ONBOARDING_TIMEOUT_HELMVALUE_SECONDS = "1200"
 
 # URL constants
 CLIENT_PROXY_MCR_TARGET = "mcr.microsoft.com/azureconnectivity/proxy"
-HELM_STORAGE_URL = "https://k8connecthelm.azureedge.net"
 HELM_MCR_URL = "mcr.microsoft.com/azurearck8s/helm"
 HELM_VERSION = "v3.12.2"
 Download_And_Install_Kubectl_Fault_Type = "Failed to download and install kubectl"
