@@ -1169,7 +1169,7 @@ def install_helm_client() -> str:
     telemetry.add_extension_event(
         "connectedk8s", {"Context.Default.AzureCLI.MachineType": machine_type}
     )
-
+    print("Operating system: ", operating_system)
     # Set helm binary download & install locations
     if operating_system == "windows":
         download_location_string = f".azure\\helm\\{consts.HELM_VERSION}"
