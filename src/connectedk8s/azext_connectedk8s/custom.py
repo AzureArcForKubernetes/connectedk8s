@@ -1356,14 +1356,16 @@ def get_private_key(key_pair: RsaKey) -> str:
     return PEM.encode(privKey_DER, "RSA PRIVATE KEY")
 
 
+# Updated function to include more Kubernetes distributions based on provided criteria
 def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
     if api_response is None:
         return "generic"
     try:
         for node in api_response.items:
-            labels = node.metadata.labels
+            labels = node.metadata.labels or {}
             provider_id = str(node.spec.provider_id)
-            annotations = node.metadata.annotations
+            annotations = node.metadata.annotations or {}
+
             if labels.get("node.openshift.io/os_id"):
                 return "openshift"
             if labels.get("kubernetes.azure.com/node-image-version"):
@@ -1388,39 +1390,6 @@ def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
                 "rke.cattle.io/internal-ip"
             ):
                 return "rancher_rke"
-            import pytest
-from kubernetes.client.models import V1NodeList, V1Node, V1NodeSpec, V1ObjectMeta
-
-# Updated function to include more Kubernetes distributions based on provided criteria
-def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
-    if api_response is None:
-        return "generic"
-    try:
-        for node in api_response.items:
-            labels = node.metadata.labels or {}
-            provider_id = str(node.spec.provider_id)
-            annotations = node.metadata.annotations or {}
-
-            if labels.get("node.openshift.io/os_id"):
-                return "openshift"
-            if labels.get("kubernetes.azure.com/node-image-version"):
-                return "aks"
-            if labels.get("cloud.google.com/gke-nodepool") or labels.get("cloud.google.com/gke-os-distribution"):
-                return "gke"
-            if labels.get("eks.amazonaws.com/nodegroup"):
-                return "eks"
-            if labels.get("minikube.k8s.io/version"):
-                return "minikube"
-            if annotations.get("node.aksedge.io/distro") == "aks_edge_k3s":
-                return "aks_edge_k3s"
-            if annotations.get("node.aksedge.io/distro") == "aks_edge_k8s":
-                return "aks_edge_k8s"
-            if provider_id.startswith("kind://"):
-                return "kind"
-            if provider_id.startswith("k3s://"):
-                return "k3s"
-            if annotations.get("rke.cattle.io/external-ip") or annotations.get("rke.cattle.io/internal-ip"):
-                return "rancher_rke"
             if any(label.startswith("snap.microk8s") for label in labels):
                 return "microk8s"
             if any(label.startswith("k3os.io") for label in labels):
@@ -1429,7 +1398,11 @@ def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
                 return "talos"
             if any(key.startswith("rke2.io") for key in annotations):
                 return "rke2"
-            if any(label.startswith("node-role.kubernetes.io") for label in labels) or any(key.startswith("kubeadm.alpha.kubernetes.io") for key in annotations):
+            if any(
+                label.startswith("node-role.kubernetes.io") for label in labels
+            ) or any(
+                key.startswith("kubeadm.alpha.kubernetes.io") for key in annotations
+            ):
                 return "kubeadm"
             if any(label.startswith("run.tanzu.vmware.com") for label in labels):
                 return "tkg"
