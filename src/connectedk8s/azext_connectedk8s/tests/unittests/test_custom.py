@@ -14,7 +14,9 @@ from azext_connectedk8s.custom import get_kubernetes_distro, get_kubernetes_infr
 
 
 def create_node(
-    provider_id: Optional[str] = None, labels: Optional[Dict[str, str]] = None, annotations: Optional[Dict[str, str]] = None
+    provider_id: Optional[str] = None,
+    labels: Optional[Dict[str, str]] = None,
+    annotations: Optional[Dict[str, str]] = None,
 ) -> V1Node:
     spec = V1NodeSpec(provider_id=provider_id)
     metadata = V1ObjectMeta(labels=labels or {}, annotations=annotations or {})
