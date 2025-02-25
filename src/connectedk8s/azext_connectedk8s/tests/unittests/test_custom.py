@@ -4,16 +4,17 @@
 # --------------------------------------------------------------------------------------------
 import os
 import sys
+from typing import Dict, Optional
 
 import pytest
-from kubernetes.client.models import V1NodeList, V1Node, V1NodeSpec, V1ObjectMeta
+from kubernetes.client.models import V1Node, V1NodeList, V1NodeSpec, V1ObjectMeta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-from azext_connectedk8s.custom import get_kubernetes_infra, get_kubernetes_distro
+from azext_connectedk8s.custom import get_kubernetes_distro, get_kubernetes_infra
 
 
 def create_node(
-    provider_id: str = None, labels: dict = None, annotations: dict = None
+    provider_id: Optional[str] = None, labels: Optional[Dict[str, str]] = None, annotations: Optional[Dict[str, str]] = None
 ) -> V1Node:
     spec = V1NodeSpec(provider_id=provider_id)
     metadata = V1ObjectMeta(labels=labels or {}, annotations=annotations or {})
