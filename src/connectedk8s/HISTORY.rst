@@ -3,6 +3,10 @@
 Release History
 ===============
 
+1.10.8
+++++++
+* Update AgentState timeout to 30 minutes to allow more time for workload identity extension operation.
+
 1.10.7
 ++++++
 * Added support for discovering additional k8s distributions and Infrastructure.
