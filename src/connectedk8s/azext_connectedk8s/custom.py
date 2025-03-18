@@ -1220,8 +1220,18 @@ def install_helm_client(cmd: CLICommand) -> str:
         logger.warning(
             "Downloading helm client for first time. This can take few minutes..."
         )
+        active_directory_array = cmd.cli_ctx.cloud.endpoints.active_directory.split(".")
 
-        mcr_url = utils.get_mcr_path(cmd)
+        # default for public, mc, ff clouds
+        mcr_postfix = active_directory_array[2]
+        # special cases for USSec, exclude part of suffix
+        if len(active_directory_array) == 4 and active_directory_array[2] == "microsoft":
+            mcr_postfix = active_directory_array[3]
+        # special case for USNat
+        elif len(active_directory_array) == 5:
+            mcr_postfix = active_directory_array[2] + "." + active_directory_array[3] + "." + active_directory_array[4]
+
+        mcr_url = f"mcr.microsoft.{mcr_postfix}"
 
         client = oras.client.OrasClient()
         retry_count = 3
