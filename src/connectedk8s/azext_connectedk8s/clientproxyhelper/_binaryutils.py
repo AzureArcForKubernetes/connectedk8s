@@ -23,8 +23,7 @@ logger = log.get_logger(__name__)
 
 # Downloads client side proxy to connect to Arc Connectivity Platform
 def install_client_side_proxy(
-    cmd: CLICommand,
-    arc_proxy_folder: Optional[str], debug: bool = False
+    cmd: CLICommand, arc_proxy_folder: Optional[str], debug: bool = False
 ) -> str:
     client_operating_system = _get_client_operating_system()
     client_architecture = _get_client_architeture()
@@ -50,7 +49,11 @@ def install_client_side_proxy(
                     )
 
             _download_proxy_from_MCR(
-                cmd, install_dir, proxy_name, client_operating_system, client_architecture
+                cmd,
+                install_dir,
+                proxy_name,
+                client_operating_system,
+                client_architecture,
             )
             _check_proxy_installation(install_dir, proxy_name, debug)
 
@@ -66,9 +69,12 @@ def install_client_side_proxy(
 
 
 def _download_proxy_from_MCR(
-    cmd: CLICommand, dest_dir: str, proxy_name: str, operating_system: str, architecture: str
+    cmd: CLICommand,
+    dest_dir: str,
+    proxy_name: str,
+    operating_system: str,
+    architecture: str,
 ) -> None:
-
     active_directory_array = cmd.cli_ctx.cloud.endpoints.active_directory.split(".")
 
     # default for public, mc, ff clouds
@@ -78,7 +84,13 @@ def _download_proxy_from_MCR(
         mcr_postfix = active_directory_array[3]
     # special case for USNat
     elif len(active_directory_array) == 5:
-        mcr_postfix = active_directory_array[2] + "." + active_directory_array[3] + "." + active_directory_array[4]
+        mcr_postfix = (
+            active_directory_array[2]
+            + "."
+            + active_directory_array[3]
+            + "."
+            + active_directory_array[4]
+        )
 
     mcr_url = f"mcr.microsoft.{mcr_postfix}"
 
