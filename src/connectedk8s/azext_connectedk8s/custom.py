@@ -1963,13 +1963,13 @@ def delete_cc_resource(
     print(f"Step: {utils.get_utctimestring()}: Deleting ARM resource")
     try:
         if force:
-           poller: LROPoller[None] = sdk_no_wait(
-            no_wait,
-            client.begin_delete,
-            resource_group_name=resource_group_name,
-            cluster_name=cluster_name,
+            poller: LROPoller[None] = sdk_no_wait(
+                no_wait,
+                client.begin_delete,
+                resource_group_name=resource_group_name,
+                cluster_name=cluster_name,
                 params={"force": True},
-        )
+            )
         else:
             poller: LROPoller[None] = sdk_no_wait(
                 no_wait,
