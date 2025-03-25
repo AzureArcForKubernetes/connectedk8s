@@ -132,7 +132,7 @@ def create_connectedk8s(
     configuration_settings: dict[str, Any] | None = None,
     configuration_protected_settings: dict[str, Any] | None = None,
 ) -> ConnectedCluster:
-    logger.warning("This operation might take a while...\n")
+    logger.warning("Local version:This operation might take a while...\n")
     # changing cli config to push telemetry in 1 hr interval
     try:
         if cmd.cli_ctx and hasattr(cmd.cli_ctx, "config"):
@@ -301,8 +301,13 @@ def create_connectedk8s(
     # Install kubectl and helm
     try:
         kubectl_client_location = install_kubectl_client()
-        helm_client_location = install_helm_client()
+        helm_client_location = install_helm_client()        
     except Exception as e:
+        telemetry.set_exception(
+            exception=e,
+            fault_type=consts.Kubectl_Helm_Install_Fault_Type,
+            summary="Failed to install kubectl or helm",
+        )
         raise CLIInternalError(
             f"An exception has occured while trying to perform kubectl or helm install: {e}"
         )
@@ -516,6 +521,7 @@ def create_connectedk8s(
 
     # Validate location of private link scope resource. Throws error only if there is a location mismatch
     if enable_private_link is True:
+        
         print(
             f"Step: {utils.get_utctimestring()}: Validate location of PrviateLinkScope passed in."
         )
@@ -1141,9 +1147,10 @@ def check_kube_connection() -> str:
     try:
         api_response = api_instance.get_code()
         git_version: str = api_response.git_version
+        #raise Exception("Something went wrong!")
         return git_version
     except Exception as e:  # pylint: disable=broad-except
-        logger.warning("Unable to verify connectivity to the Kubernetes cluster.")
+        logger.warning("Unable to verify connectivity to the Kubernetes cluster. Please check https://learn.microsoft.com/en-us/azure/azure-arc/kubernetes/diagnose-connection-issues")
         utils.kubernetes_exception_handler(
             e,
             consts.Kubernetes_Connectivity_FaultType,
@@ -1348,6 +1355,7 @@ def load_kube_config(
             fault_type=consts.Load_Kubeconfig_Fault_Type,
             summary="Problem loading the kubeconfig file",
         )
+        logger.warning("Unable to load the kubeconfig file. Please check https://learn.microsoft.com/en-us/azure/azure-arc/kubernetes/diagnose-connection-issues#is-kubeconfig-pointing-to-the-right-cluster")
         raise FileOperationError("Problem loading the kubeconfig file. " + str(e))
 
 
