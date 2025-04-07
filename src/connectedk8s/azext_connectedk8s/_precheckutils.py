@@ -212,18 +212,7 @@ def executing_cluster_diagnostic_checks_job(
                     )
                     return None
 
-        active_directory_array = cmd.cli_ctx.cloud.endpoints.active_directory.split(".")
-
-        # default for public, mc, ff clouds
-        mcr_postfix = active_directory_array[2]
-        # special cases for USSec, exclude part of suffix
-        if len(active_directory_array) == 4 and active_directory_array[2] == "microsoft":
-            mcr_postfix = active_directory_array[3]
-        # special case for USNat
-        elif len(active_directory_array) == 5:
-            mcr_postfix = active_directory_array[2] + "." + active_directory_array[3] + "." + active_directory_array[4]
-
-        mcr_url = f"mcr.microsoft.{mcr_postfix}"
+        mcr_url = azext_utils.get_mcr_path(cmd)
 
         chart_path = azext_utils.get_chart_path(
             f"{mcr_url}/{consts.Cluster_Diagnostic_Checks_Job_Registry_Path}",
