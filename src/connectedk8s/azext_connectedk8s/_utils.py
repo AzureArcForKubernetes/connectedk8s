@@ -68,7 +68,13 @@ def get_mcr_path(cmd: CLICommand) -> str:
         mcr_postfix = active_directory_array[3]
     # special case for USNat
     elif len(active_directory_array) == 5:
-        mcr_postfix = active_directory_array[2] + "." + active_directory_array[3] + "." + active_directory_array[4]
+        mcr_postfix = (
+            active_directory_array[2]
+            + "."
+            + active_directory_array[3]
+            + "."
+            + active_directory_array[4]
+        )
 
     mcr_url = f"mcr.microsoft.{mcr_postfix}"
     return mcr_url

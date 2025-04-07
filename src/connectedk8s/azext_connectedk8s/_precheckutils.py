@@ -20,8 +20,8 @@ import azext_connectedk8s._constants as consts
 import azext_connectedk8s._utils as azext_utils
 
 if TYPE_CHECKING:
-    from kubernetes.client import BatchV1Api, CoreV1Api
     from knack.commands import CLICommand
+    from kubernetes.client import BatchV1Api, CoreV1Api
 
 logger = get_logger(__name__)
 # pylint: disable=unused-argument, too-many-locals, too-many-branches, too-many-statements, line-too-long

@@ -743,7 +743,9 @@ def create_connectedk8s(
             "Cleaning up the stale arc agents present on the cluster before starting new onboarding."
         )
         # Explicit CRD Deletion
-        crd_cleanup_force_delete(cmd, kubectl_client_location, kube_config, kube_context)
+        crd_cleanup_force_delete(
+            cmd, kubectl_client_location, kube_config, kube_context
+        )
         # Cleaning up the cluster
         utils.delete_arc_agents(
             release_namespace,
@@ -774,7 +776,9 @@ def create_connectedk8s(
             raise ArgumentUsageError(err_msg, recommendation=reco_msg)
 
         # cleanup of stuck CRD if release namespace is not present/deleted
-        crd_cleanup_force_delete(cmd, kubectl_client_location, kube_config, kube_context)
+        crd_cleanup_force_delete(
+            cmd, kubectl_client_location, kube_config, kube_context
+        )
 
     print(
         f"Step: {utils.get_utctimestring()}: Check if ResourceGroup exists.  Try to create if it doesn't"
@@ -1301,7 +1305,13 @@ def get_default_config_dp_endpoint(cmd: CLICommand, location: str) -> str:
     if len(active_directory_array) == 4:
         cloud_based_domain = active_directory_array[2] + "." + active_directory_array[3]
     elif len(active_directory_array) == 5:
-        cloud_based_domain = active_directory_array[2] + "." + active_directory_array[3] + "." + active_directory_array[4]
+        cloud_based_domain = (
+            active_directory_array[2]
+            + "."
+            + active_directory_array[3]
+            + "."
+            + active_directory_array[4]
+        )
 
     config_dp_endpoint = (
         f"https://{location}.dp.kubernetesconfiguration.azure.{cloud_based_domain}"
@@ -1819,7 +1829,9 @@ def delete_connectedk8s(
         ).result()
 
         # Explicit CRD Deletion
-        crd_cleanup_force_delete(cmd, kubectl_client_location, kube_config, kube_context)
+        crd_cleanup_force_delete(
+            cmd, kubectl_client_location, kube_config, kube_context
+        )
 
         if release_namespace:
             utils.delete_arc_agents(
@@ -3564,7 +3576,7 @@ def client_side_proxy_wrapper(
     if "--debug" in cmd.cli_ctx.data["safe_params"]:
         debug_mode = True
 
-    install_location = proxybinaryutils.install_client_side_proxy(cmd, debug_mode)
+    install_location = proxybinaryutils.install_client_side_proxy(cmd, None, debug_mode)
     args.append(install_location)
     install_dir = os.path.dirname(install_location)
 
@@ -4421,7 +4433,10 @@ def install_kubectl_client() -> str:
 
 
 def crd_cleanup_force_delete(
-    cmd: CLICommand, kubectl_client_location: str, kube_config: str | None, kube_context: str | None
+    cmd: CLICommand,
+    kubectl_client_location: str,
+    kube_config: str | None,
+    kube_context: str | None,
 ) -> None:
     print(f"Step: {utils.get_utctimestring()}: Deleting Arc CRDs")
 
@@ -4432,7 +4447,13 @@ def crd_cleanup_force_delete(
     if len(active_directory_array) == 4:
         cloud_based_domain = active_directory_array[2] + "." + active_directory_array[3]
     elif len(active_directory_array) == 5:
-        cloud_based_domain = active_directory_array[2] + "." + active_directory_array[3] + "." + active_directory_array[4]
+        cloud_based_domain = (
+            active_directory_array[2]
+            + "."
+            + active_directory_array[3]
+            + "."
+            + active_directory_array[4]
+        )
 
     timeout_for_crd_deletion = "20s"
     for crds in consts.CRD_FOR_FORCE_DELETE:

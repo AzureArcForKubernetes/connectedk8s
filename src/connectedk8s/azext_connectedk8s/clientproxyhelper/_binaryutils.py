@@ -24,8 +24,7 @@ logger = log.get_logger(__name__)
 
 # Downloads client side proxy to connect to Arc Connectivity Platform
 def install_client_side_proxy(
-    cmd: CLICommand,
-    arc_proxy_folder: Optional[str], debug: bool = False
+    cmd: CLICommand, arc_proxy_folder: Optional[str], debug: bool = False
 ) -> str:
     client_operating_system = _get_client_operating_system()
     client_architecture = _get_client_architeture()
@@ -51,7 +50,11 @@ def install_client_side_proxy(
                     )
 
             _download_proxy_from_MCR(
-                cmd, install_dir, proxy_name, client_operating_system, client_architecture
+                cmd,
+                install_dir,
+                proxy_name,
+                client_operating_system,
+                client_architecture,
             )
             _check_proxy_installation(install_dir, proxy_name, debug)
 
@@ -67,9 +70,12 @@ def install_client_side_proxy(
 
 
 def _download_proxy_from_MCR(
-    cmd: CLICommand, dest_dir: str, proxy_name: str, operating_system: str, architecture: str
+    cmd: CLICommand,
+    dest_dir: str,
+    proxy_name: str,
+    operating_system: str,
+    architecture: str,
 ) -> None:
-
     mcr_url = utils.get_mcr_path(cmd)
 
     mar_target = f"{mcr_url}/{consts.CLIENT_PROXY_MCR_TARGET}/{operating_system.lower()}/{architecture}/arc-proxy"
