@@ -17,6 +17,7 @@ from knack.commands import CLICommand
 
 import azext_connectedk8s._constants as consts
 import azext_connectedk8s._fileutils as file_utils
+import azext_connectedk8s._utils as utils
 
 logger = log.get_logger(__name__)
 
@@ -69,18 +70,7 @@ def _download_proxy_from_MCR(
     cmd: CLICommand, dest_dir: str, proxy_name: str, operating_system: str, architecture: str
 ) -> None:
 
-    active_directory_array = cmd.cli_ctx.cloud.endpoints.active_directory.split(".")
-
-    # default for public, mc, ff clouds
-    mcr_postfix = active_directory_array[2]
-    # special cases for USSec, exclude part of suffix
-    if len(active_directory_array) == 4 and active_directory_array[2] == "microsoft":
-        mcr_postfix = active_directory_array[3]
-    # special case for USNat
-    elif len(active_directory_array) == 5:
-        mcr_postfix = active_directory_array[2] + "." + active_directory_array[3] + "." + active_directory_array[4]
-
-    mcr_url = f"mcr.microsoft.{mcr_postfix}"
+    mcr_url = utils.get_mcr_path(cmd)
 
     mar_target = f"{mcr_url}/{consts.CLIENT_PROXY_MCR_TARGET}/{operating_system.lower()}/{architecture}/arc-proxy"
     logger.debug(
