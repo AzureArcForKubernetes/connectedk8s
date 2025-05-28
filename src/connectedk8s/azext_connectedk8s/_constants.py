@@ -156,6 +156,7 @@ Download_Helm_Fault_Type = "helm-client-download-error"
 Create_HelmExe_Fault_Type = "helm-client-create-error"
 Extract_HelmExe_Fault_Type = "helm-client-extract-error"
 DP_Health_Check_Fault_Type = "dp-health-check-error"
+Gateway_Associate_Fault_Type = "gateway-associate-error"
 Different_Object_With_Same_Name_Fault_Type = "Kubeconfig has an object with same name"
 Download_Exe_Fault_Type = (
     "Error while downloading client proxy executable from storage account"
@@ -517,3 +518,8 @@ Doc_Agent_Version_Support_Policy_Url = "https://learn.microsoft.com/en-us/azure/
 # "Application code shouldn't block the creation of resources for a resource provider that is in the registering state."
 # See https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types#register-resource-provider
 allowed_rp_registration_states = ["Registering", "Registered"]
+
+#Gateway association url
+GATEWAY_ASSOCIATE_URL = (
+    "https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}/providers/Microsoft.HybridCompute/settings/Default?api-version={api_version}"
+)

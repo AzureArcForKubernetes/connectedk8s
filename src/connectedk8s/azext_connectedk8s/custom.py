@@ -2087,6 +2087,13 @@ def update_connected_cluster(
     # Escaping comma, forward slash present in no proxy urls, needed for helm params.
     no_proxy = escape_proxy_settings(no_proxy)
 
+    # Getting the subscription id from the environment variable or CLI context
+    subscription_id = (
+        os.environ["AZURE_SUBSCRIPTION_ID"]
+        if os.getenv("AZURE_ACCESS_TOKEN")
+        else get_subscription_id(cmd.cli_ctx)
+    )
+
     # check whether proxy cert path exists
     if proxy_cert != "" and (not os.path.exists(proxy_cert)):
         telemetry.set_exception(
