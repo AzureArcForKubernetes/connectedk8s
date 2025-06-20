@@ -38,6 +38,10 @@ helps["connectedk8s connect"] = """
       text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --enable-oidc-issuer --self-hosted-issuer aksissuerurl
     - name: Onboard a connected kubernetes cluster with azure gateway feature enabled.
       text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --gateway-resource-id gatewayResourceId
+    - name: Onboard a connected kubernetes cluster with the bundling feature enabled.
+      text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --disable-auto-upgrade --config extensionSets.versionManagedExtensions='enabled'
+    - name: Onboard a connected Kubernetes cluster with the bundling feature in preview mode.
+      text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --disable-auto-upgrade --config extensionSets.versionManagedExtensions='preview'
 
 """
 
@@ -61,6 +65,11 @@ helps["connectedk8s update"] = """
       text: az connectedk8s update -g resourceGroupName -n connectedClusterName --gateway-resource-id gatewayResourceId
     - name: Disable the azure gateway feature on a connected kubernetes cluster.
       text: az connectedk8s update -g resourceGroupName -n connectedClusterName --disable-gateway
+    - name: Enable the bundling feature on a connected kubernetes cluster.
+      text: az connectedk8s update -g resourceGroupName -n connectedClusterName --auto-upgrade false --config extensionSets.versionManagedExtensions='enabled'
+    - name: Disable the bundling feature on a connected kubernetes cluster.
+      text: az connectedk8s update -g resourceGroupName -n connectedClusterName --auto-upgrade false --config extensionSets.versionManagedExtensions='disabled'
+
 """
 
 helps["connectedk8s upgrade"] = """
