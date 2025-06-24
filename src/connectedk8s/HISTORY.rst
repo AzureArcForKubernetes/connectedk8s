@@ -5,8 +5,8 @@ Release History
 
 1.10.8
 ++++++
-* Add checks for the Graytown bundle feature flag in the 'connectedk8s connect' and 'connectedk8s update' commands.
-* Display a more detailed error message from the agent-update-validator in the 'connectedk8s upgrade' command.
+* Add checks for the bundling feature flag in the 'connectedk8s connect' and 'connectedk8s update' commands.
+* Display a more detailed error message when the 'connectedk8s upgrade' command fails with the bundling feature enabled.
 
 1.10.7
 ++++++

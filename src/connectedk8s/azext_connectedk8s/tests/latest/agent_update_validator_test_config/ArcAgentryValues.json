@@ -1,0 +1,7 @@
+{
+    "systemDefaultValues": {
+        "agent-update-validator": {
+            "config_dp_endpoint_override": "http://fake-dp-server-service.graytowntest.svc.cluster.local:80"
+        }
+    }
+}

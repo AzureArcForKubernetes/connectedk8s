@@ -12,11 +12,13 @@ import shutil
 import stat
 import subprocess
 import time
+from datetime import datetime
 from subprocess import PIPE, Popen
 
 import oras.client  # type: ignore[import-untyped]
 import psutil
 import requests
+import yaml
 from azure.cli.core import get_default_cli
 from azure.cli.core.azclierror import (
     ArgumentUsageError,
@@ -343,7 +345,7 @@ class Connectedk8sScenarioTest(LiveScenarioTest):
         with self.assertLogs(level="WARNING") as cm:
             self.cmd(
                 "connectedk8s connect -g {rg} -n {name} -l {location} --disable-auto-upgrade --kube-config {kubeconfig} \
-            --kube-context {managed_cluster_name}-admin --config extensionSets.versionManagedExtensions='preview' --yes",
+                --kube-context {managed_cluster_name}-admin --config extensionSets.versionManagedExtensions='preview' --yes",
                 checks=[
                     self.check("resourceGroup", "{rg}"),
                     self.check("name", "{name}"),
@@ -495,16 +497,16 @@ class Connectedk8sScenarioTest(LiveScenarioTest):
 
         self.cmd(
             "k8s-extension create --cluster-name {name} --resource-group {rg} --cluster-type connectedClusters \
-                 --extension-type microsoft.iotoperations.platform --name azure-iot-operations-platform \
-                 --release-train preview --auto-upgrade-minor-version False --config installTrustManager=true \
-                 --config installCertManager=true --version 0.7.6 --release-namespace cert-manager --scope cluster"
+            --extension-type microsoft.iotoperations.platform --name azure-iot-operations-platform \
+            --release-train preview --auto-upgrade-minor-version False --config installTrustManager=true \
+            --config installCertManager=true --version 0.7.6 --release-namespace cert-manager --scope cluster"
         )
 
         self.cmd(
             "k8s-extension create --cluster-name {name} --resource-group {rg} --cluster-type connectedClusters \
-                 --extension-type microsoft.azure.secretstore --name azure-secret-store --auto-upgrade-minor-version False \
-                 --config rotationPollIntervalInSeconds=120 --config validatingAdmissionPolicies.applyPolicies=false \
-                 --scope cluster"
+            --extension-type microsoft.azure.secretstore --name azure-secret-store --auto-upgrade-minor-version False \
+            --config rotationPollIntervalInSeconds=120 --config validatingAdmissionPolicies.applyPolicies=false \
+            --scope cluster"
         )
 
         # With bundle extensions installed on the cluster, the bundle feature flag cannot be set to 'disabled'
@@ -520,6 +522,144 @@ class Connectedk8sScenarioTest(LiveScenarioTest):
             kubectl_client_location, kubeconfig, f"{managed_cluster_name}-admin"
         )
         self.assertEqual(configmap_bundle_feature_flag, "enabled")
+
+    @live_only()
+    @ResourceGroupPreparer(
+        name_prefix="conk8stest", location=CONFIG["location"], random_name_length=16
+    )
+    def test_upgrade_with_agentupdatevalidator(self, resource_group):
+        managed_cluster_name = self.create_random_name(prefix="test-upgrade", length=24)
+        kubeconfig = _get_test_data_file(managed_cluster_name + "-config.yaml")
+        self.kwargs.update(
+            {
+                "rg": resource_group,
+                "name": self.create_random_name(prefix="cc-", length=12),
+                "kubeconfig": kubeconfig,
+                "managed_cluster_name": managed_cluster_name,
+                "location": CONFIG["location"],
+            }
+        )
+        self.cmd("aks create -g {rg} -n {managed_cluster_name} --generate-ssh-keys")
+        self.cmd(
+            "aks get-credentials -g {rg} -n {managed_cluster_name} -f {kubeconfig} --admin"
+        )
+
+        self.cmd(
+            "connectedk8s connect -g {rg} -n {name} -l {location} --disable-auto-upgrade --kube-config {kubeconfig} \
+            --kube-context {managed_cluster_name}-admin --config extensionSets.versionManagedExtensions='enabled'",
+            checks=[
+                self.check("resourceGroup", "{rg}"),
+                self.check("name", "{name}"),
+                self.check(
+                    "arcAgentryConfigurations[0].settings.versionManagedExtensions",
+                    "enabled",
+                ),
+            ],
+        )
+
+        ns = "azure-arc"
+        config_dir = os.path.join(
+            os.path.dirname(__file__), "agent_update_validator_test_config"
+        )
+        arc_agent_values_path = os.path.join(config_dir, "ArcAgentryValues.json")
+        fake_ext_config_path = os.path.join(config_dir, "fake_ext_config.yml")
+
+        with open(fake_ext_config_path) as file:
+            data = yaml.safe_load(file)
+
+        # Update the lastSyncTime to the current time
+        current_time = datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        data["status"]["syncStatus"]["lastSyncTime"] = current_time
+
+        with open(fake_ext_config_path, "w") as file:
+            yaml.dump(data, file, default_flow_style=False)
+
+        kubectl_client_location = install_kubectl_client()
+
+        # Create the fake extension config to simulate an extension that depends on the bundle
+        subprocess.run(
+            [
+                kubectl_client_location,
+                "apply",
+                "-f",
+                fake_ext_config_path,
+                "--namespace",
+                ns,
+                "--kubeconfig",
+                kubeconfig,
+                "--context",
+                f"{managed_cluster_name}-admin",
+            ]
+        )
+
+        os.environ["HELMVALUESPATH"] = arc_agent_values_path
+
+        with self.assertRaisesRegex(
+            CLIError, "Error: Failed to validate agent update.*?no such host"
+        ):
+            self.cmd(
+                "connectedk8s upgrade -g {rg} -n {name} --agent-version 1.26.0 --kube-config {kubeconfig} \
+                --kube-context {managed_cluster_name}-admin",
+            )
+
+        os.environ["HELMVALUESPATH"] = ""
+
+        # Remove the finalizers from the fake extension config to allow deletion
+        subprocess.run(
+            [
+                kubectl_client_location,
+                "patch",
+                "extensionconfig",
+                "fake-ext-config",
+                "--namespace",
+                ns,
+                "--type=json",
+                "-p",
+                '[{"op": "remove", "path": "/metadata/finalizers"}]',
+                "--kubeconfig",
+                kubeconfig,
+                "--context",
+                f"{managed_cluster_name}-admin",
+            ]
+        )
+
+        subprocess.Popen(
+            [
+                kubectl_client_location,
+                "delete",
+                "extensionconfig",
+                "fake-ext-config",
+                "--namespace",
+                ns,
+                "--kubeconfig",
+                kubeconfig,
+                "--context",
+                f"{managed_cluster_name}-admin",
+            ]
+        )
+
+        time.sleep(60)
+
+        cmd_output = subprocess.Popen(
+            [
+                kubectl_client_location,
+                "get",
+                "extensionconfig",
+                "fake-ext-config",
+                "--namespace",
+                ns,
+                "--kubeconfig",
+                kubeconfig,
+                "--context",
+                f"{managed_cluster_name}-admin",
+            ],
+            stdout=PIPE,
+            stderr=PIPE,
+        )
+        _, error_get_ext_config = cmd_output.communicate()
+
+        # Should fail to get the extension config as it has been deleted
+        assert cmd_output.returncode != 0
 
     @live_only()
     @ResourceGroupPreparer(
