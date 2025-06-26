@@ -48,6 +48,7 @@ from knack.log import get_logger
 from knack.prompting import NoTTYException, prompt_y_n
 from kubernetes import client as kube_client
 from kubernetes import config
+from kubernetes.client.rest import ApiException
 from kubernetes.config.kube_config import KubeConfigMerger
 from packaging import version
 
@@ -1538,22 +1539,48 @@ def set_security_profile(enable_workload_identity: bool) -> SecurityProfile:
     return security_profile
 
 
-def get_k8s_extension_module(module_name):
+def get_installed_bundle_extensions() -> list[str]:
+    api_instance = kube_client.CustomObjectsApi()
+
     try:
-        # adding the installed extension in the path
-        from azure.cli.core.extension.operations import add_extension_to_path
-
-        add_extension_to_path(consts.CONST_K8S_EXTENSION_NAME)
-        # import the extension module
-        from importlib import import_module
-
-        azext_custom = import_module(module_name)
-        return azext_custom
-    except ImportError:
-        raise ImportError(  # pylint: disable=raise-missing-from
-            "Please add CLI extension `k8s-extension` to disable bundle feature flag.\n"
-            "Run command `az extension add --name k8s-extension`"
+        extension_configs = api_instance.list_cluster_custom_object(
+            group=consts.Extension_Config_CRD_Group,
+            version=consts.Extension_Config_CRD_Version,
+            plural=consts.Extension_Config_CRD_Plural,
         )
+    except Exception as e:
+        if isinstance(e, ApiException) and e.status == 404:
+            # If the ExtensionConfig resource is not found, return an empty list
+            return []
+
+        utils.kubernetes_exception_handler(
+            e,
+            consts.List_Extension_Config_Fault_Type,
+            "Failed to list ExtensionConfigs",
+            error_message="Failed to list ExtensionConfigs: ",
+        )
+
+    try:
+        installed_extensions = []
+        for config in extension_configs.get("items", []):
+            config_spec = config.get("spec", {})
+            isPartOfBundle = config_spec.get("isPartOfBundle")
+            isDependentOnBundle = config_spec.get("isDependentOnBundle")
+            extensionType = config_spec.get("extensionType")
+            if (isPartOfBundle or isDependentOnBundle) and extensionType:
+                installed_extensions.append(extensionType)
+
+    except Exception as e:  # pylint: disable=broad-except
+        telemetry.set_exception(
+            exception=e,
+            fault_type=consts.Get_Extension_Config_Bundle_Property_Fault_Type,
+            summary="Failed to get bundle properties from the Arc extension config",
+        )
+        raise CLIInternalError(
+            f"Failed to get bundle properties from the Arc extension config: {e}"
+        )
+
+    return installed_extensions
 
 
 def get_bundle_feature_flag_from_arc_agentry_config(
@@ -1755,34 +1782,7 @@ def validate_update_cluster_bundle_feature_flag_value(
         current_bundle_feature_flag_value == "enabled"
         and bundle_feature_flag_value == "disabled"
     ):
-        client_factory = get_k8s_extension_module(
-            consts.CONST_K8S_EXTENSION_CLIENT_FACTORY_MOD_NAME
-        )
-        client = client_factory.cf_k8s_extension_operation(cmd.cli_ctx)
-        k8s_extension_custom_mod = get_k8s_extension_module(
-            consts.CONST_K8S_EXTENSION_CUSTOM_MOD_NAME
-        )
-
-        try:
-            extensions = k8s_extension_custom_mod.list_k8s_extension(
-                client,
-                resource_group_name,
-                cluster_name,
-                consts.Connected_Cluster_Type,
-            )
-
-        except Exception as e:  # pylint: disable=broad-except
-            utils.arm_exception_handler(
-                e,
-                consts.List_K8s_Extension_Fault_Type,
-                "Failed to list installed k8s extensions for the connected cluster.",
-            )
-
-        installed_bundle_extensions = [
-            ext.extension_type.lower()
-            for ext in extensions
-            if ext.extension_type.lower() in consts.Bundle_Extension_Type_List
-        ]
+        installed_bundle_extensions = get_installed_bundle_extensions()
 
         if installed_bundle_extensions:
             err_msg = (
@@ -2395,19 +2395,6 @@ def update_connected_cluster(
         )
         raise InvalidArgumentValueError(err_msg)
 
-    # Validate and update bundle feature flag value if provided
-    validate_update_cluster_bundle_feature_flag_value(
-        cmd,
-        connected_cluster.arc_agentry_configurations,
-        configuration_settings,
-        resource_group_name,
-        cluster_name,
-    )
-
-    arc_agentry_configurations = generate_arc_agent_configuration(
-        configuration_settings, redacted_protected_values
-    )
-
     # Patching the connected cluster ARM resource
     arm_properties_unset = (
         tags is None
@@ -2475,6 +2462,19 @@ def update_connected_cluster(
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
+
+    # Validate and update bundle feature flag value if provided
+    validate_update_cluster_bundle_feature_flag_value(
+        cmd,
+        connected_cluster.arc_agentry_configurations,
+        configuration_settings,
+        resource_group_name,
+        cluster_name,
+    )
+
+    arc_agentry_configurations = generate_arc_agent_configuration(
+        configuration_settings, redacted_protected_values
+    )
 
     # Install helm client
     helm_client_location = install_helm_client(cmd)
@@ -2999,7 +2999,7 @@ def upgrade_agents(
                 e,
                 consts.List_Kubernetes_Namespaced_Pod_Fault_Type,
                 "Unable to list pods",
-                error_message=f"Unable to list pods in namespace '{namespace}' with label selector '{label_selector}'",
+                error_message=f"Unable to list pods in namespace '{namespace}' with label selector '{label_selector}': ",
                 raise_error=False,
             )
 

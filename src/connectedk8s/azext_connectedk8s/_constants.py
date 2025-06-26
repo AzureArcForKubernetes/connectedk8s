@@ -134,6 +134,7 @@ Check_HelmInstallation_Fault_Type = "check-helm-installed-error"
 Get_HelmRegistery_Path_Fault_Type = "helm-registry-path-fetch-error"
 Pull_HelmChart_Fault_Type = "helm-chart-pull-error"
 Export_HelmChart_Fault_Type = "helm-chart-export-error"
+List_Extension_Config_Fault_Type = "kubernetes-list-extension-config-error"
 List_Kubernetes_Namespaced_Pod_Fault_Type = "kubernetes-list-namespaced-pod-error"
 Get_Kubernetes_Distro_Fault_Type = "kubernetes-get-distribution-error"
 Get_Kubernetes_Namespace_Fault_Type = "kubernetes-get-namespace-error"
@@ -526,16 +527,12 @@ Arc_Agentry_Bundle_Feature = "extensionSets"
 Arc_Agentry_Bundle_Feature_Setting = "versionManagedExtensions"
 
 Bundle_Feature_Value_List = ["enabled", "disabled", "preview"]
-Bundle_Extension_Type_List = [
-    "microsoft.iotoperations",
-    "microsoft.extensiondiagnostics",
-    "microsoft.arc.containerstorage",
-    "microsoft.azure.secretstore",
-]
 
-CONST_K8S_EXTENSION_NAME = "k8s-extension"
-CONST_K8S_EXTENSION_CLIENT_FACTORY_MOD_NAME = "azext_k8s_extension._client_factory"
-CONST_K8S_EXTENSION_CUSTOM_MOD_NAME = "azext_k8s_extension.custom"
+Extension_Config_CRD_Group = "clusterconfig.azure.com"
+Extension_Config_CRD_Version = "v1beta1"
+Extension_Config_CRD_Plural = "extensionconfigs"
 
-List_K8s_Extension_Fault_Type = "list-k8s-extension-error"
 Get_Bundle_Feature_Flag_Fault_Type = "get-bundle-feature-flag-error"
+Get_Extension_Config_Bundle_Property_Fault_Type = (
+    "get-extension-config-bundle-property-error"
+)
