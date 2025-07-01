@@ -97,7 +97,7 @@ Describe 'Setting Bundle Feature Flag Scenario' {
         az k8s-extension create --cluster-name $ENVCONFIG.arcClusterName --resource-group $ENVCONFIG.resourceGroup `
             --cluster-type connectedClusters --extension-type microsoft.iotoperations.platform `
             --name azure-iot-operations-platform --release-train preview --auto-upgrade-minor-version False `
-            --config installTrustManager=true --config installCertManager=true --version 0.7.6 `
+            --config installTrustManager=true --config installCertManager=true --version 0.7.24 `
             --release-namespace cert-manager --scope cluster
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
@@ -175,11 +175,13 @@ Describe 'Setting Bundle Feature Flag Scenario' {
         $n | Should -BeLessOrEqual $MAX_RETRY_ATTEMPTS
 
         $ns = "azure-arc"
-        $rootDir = Resolve-Path "$PSScriptRoot/../../../"
+        $rootDir = Resolve-Path -Path (Join-Path $PSScriptRoot "..\..\..")
 
-        $configDir = Join-Path $rootDir "src/connectedk8s/azext_connectedk8s/tests/latest/agent_update_validator_test_config"
-        $arcAgentValuesPath = Join-Path $configDir "ArcAgentryValues.json"
-        $fakeExtConfigPath = Join-Path $configDir "fake_ext_config.yml"
+        $arcAgentValuesPath = Get-ChildItem -Path $rootDir -Recurse -Filter "ArcAgentryValues.json" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        $arcAgentValuesPath | Should -Not -BeNullOrEmpty -Because "ArcAgentryValues.json is expected to exist under the root directory."
+
+        $fakeExtConfigPath = Get-ChildItem -Path $rootDir -Recurse -Filter "fake_ext_config.yml" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        $fakeExtConfigPath | Should -Not -BeNullOrEmpty -Because "fake_ext_config.yml is expected to exist under the root directory."
 
         $tmpDir = Join-Path $rootDir "testing/tmp"
 

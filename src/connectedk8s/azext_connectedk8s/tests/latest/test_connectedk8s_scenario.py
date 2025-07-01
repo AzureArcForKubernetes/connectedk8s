@@ -499,7 +499,7 @@ class Connectedk8sScenarioTest(LiveScenarioTest):
             "k8s-extension create --cluster-name {name} --resource-group {rg} --cluster-type connectedClusters \
             --extension-type microsoft.iotoperations.platform --name azure-iot-operations-platform \
             --release-train preview --auto-upgrade-minor-version False --config installTrustManager=true \
-            --config installCertManager=true --version 0.7.6 --release-namespace cert-manager --scope cluster"
+            --config installCertManager=true --version 0.7.24 --release-namespace cert-manager --scope cluster"
         )
 
         self.cmd(
