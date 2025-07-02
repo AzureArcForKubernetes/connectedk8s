@@ -4091,7 +4091,7 @@ def troubleshoot(
 
         # Check if agents have been added to the cluster
         arc_agents_pod_list = corev1_api_instance.list_namespaced_pod(
-            namespace = "azure-arc",
+            namespace="azure-arc",
         )
 
         # To verify if arc agents have been added to the cluster

@@ -287,6 +287,7 @@ def retrieve_arc_agents_logs(
 
     return consts.Diagnostic_Check_Failed, storage_space_available
 
+
 def retrieve_namespace_logs(
     corev1_api_instance: CoreV1Api,
     filepath_with_timestamp: str,
@@ -303,8 +304,8 @@ def retrieve_namespace_logs(
             # creating a folder for the namespace inside the timestamp folder
             namespace_folder_name = f"ns_{kube_namespace}"
             namespace_logs_path = os.path.join(
-                    filepath_with_timestamp, namespace_folder_name
-                )
+                filepath_with_timestamp, namespace_folder_name
+            )
             os.mkdir(namespace_logs_path)
 
             # Traversing through all pods in the namespace
