@@ -1148,7 +1148,7 @@ def check_kube_connection() -> str:
         git_version: str = api_response.git_version
         return git_version
     except Exception as e:  # pylint: disable=broad-except
-        logger.warning("Unable to verify connectivity to the Kubernetes cluster.")
+        logger.warning("Unable to verify connectivity to the Kubernetes cluster. Please check https://learn.microsoft.com/en-us/azure/azure-arc/kubernetes/diagnose-connection-issues")
         utils.kubernetes_exception_handler(
             e,
             consts.Kubernetes_Connectivity_FaultType,
@@ -1370,6 +1370,7 @@ def load_kube_config(
             fault_type=consts.Load_Kubeconfig_Fault_Type,
             summary="Problem loading the kubeconfig file",
         )
+        logger.warning("Unable to load the kubeconfig file. Please check https://learn.microsoft.com/en-us/azure/azure-arc/kubernetes/diagnose-connection-issues#is-kubeconfig-pointing-to-the-right-cluster")
         raise FileOperationError("Problem loading the kubeconfig file. " + str(e))
 
 
