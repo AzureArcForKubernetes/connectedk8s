@@ -134,6 +134,8 @@ Check_HelmInstallation_Fault_Type = "check-helm-installed-error"
 Get_HelmRegistery_Path_Fault_Type = "helm-registry-path-fetch-error"
 Pull_HelmChart_Fault_Type = "helm-chart-pull-error"
 Export_HelmChart_Fault_Type = "helm-chart-export-error"
+List_Extension_Config_Fault_Type = "kubernetes-list-extension-config-error"
+List_Kubernetes_Namespaced_Pod_Fault_Type = "kubernetes-list-namespaced-pod-error"
 Get_Kubernetes_Distro_Fault_Type = "kubernetes-get-distribution-error"
 Get_Kubernetes_Namespace_Fault_Type = "kubernetes-get-namespace-error"
 Get_Kubernetes_Helm_Release_Namespace_Fault_Type = (
@@ -525,3 +527,20 @@ Doc_Agent_Version_Support_Policy_Url = "https://learn.microsoft.com/en-us/azure/
 # "Application code shouldn't block the creation of resources for a resource provider that is in the registering state."
 # See https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-providers-and-types#register-resource-provider
 allowed_rp_registration_states = ["Registering", "Registered"]
+
+Connected_Cluster_Type = "connectedClusters"
+Arc_Agent_Update_Validator_Job_Label = "agent-update-validator"
+
+Arc_Agentry_Bundle_Feature = "extensionSets"
+Arc_Agentry_Bundle_Feature_Setting = "versionManagedExtensions"
+
+Bundle_Feature_Value_List = ["enabled", "disabled", "preview"]
+
+Extension_Config_CRD_Group = "clusterconfig.azure.com"
+Extension_Config_CRD_Version = "v1beta1"
+Extension_Config_CRD_Plural = "extensionconfigs"
+
+Get_Bundle_Feature_Flag_Fault_Type = "get-bundle-feature-flag-error"
+Get_Extension_Config_Bundle_Property_Fault_Type = (
+    "get-extension-config-bundle-property-error"
+)
