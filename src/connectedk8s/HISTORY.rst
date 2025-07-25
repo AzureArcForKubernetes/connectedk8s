@@ -3,6 +3,11 @@
 Release History
 ===============
 
+1.10.8
+++++++
+* Add checks for the bundling feature flag in the 'connectedk8s connect' and 'connectedk8s update' commands.
+* Display a more detailed error message when the 'connectedk8s upgrade' command fails with the bundling feature enabled.
+
 1.10.7
 ++++++
 * Added support for discovering additional k8s distributions and Infrastructure.

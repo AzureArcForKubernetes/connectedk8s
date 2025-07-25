@@ -56,6 +56,10 @@ stages:
     parameters:
       jobName: ForcedDeleteTest
       path: ./test/configurations/ForcedDelete.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: BundleFeatureFlagTest
+      path: ./test/configurations/BundleFeatureFlag.Tests.ps1
   - job: BuildPublishExtension
     pool:
       vmImage: 'ubuntu-latest'
