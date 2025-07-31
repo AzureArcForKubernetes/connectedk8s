@@ -29,6 +29,11 @@ Describe 'Troubleshoot Scenario' {
         $? | Should -BeTrue
     }
 
+    It 'Verify troubleshoot command functionality with namespace parameter' {
+        az connectedk8s troubleshoot -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --kube-namespace $ENVCONFIG.extensionNamespace
+        $? | Should -BeTrue
+    }
+
     It "Delete the connected instance" {
         az connectedk8s delete -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --force -y
         $? | Should -BeTrue
