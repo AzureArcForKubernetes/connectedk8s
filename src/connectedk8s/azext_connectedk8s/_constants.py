@@ -70,6 +70,10 @@ CRD_FOR_FORCE_DELETE = [
     "customlocationsettings.clusterconfig.azure",
     "extensionconfigs.clusterconfig.azure",
     "gitconfigs.clusterconfig.azure",
+    "signingkeys.clusterconfig.azure",
+    "configsyncstatuses.clusterconfig.azure",
+    "extensionevents.clusterconfig.azure",
+    "healthstates.clusterconfig.azure",    
 ]
 Helm_Install_Release_Userfault_Messages = [
     "forbidden",
