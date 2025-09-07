@@ -3,6 +3,7 @@
     "resourceGroup": "<resourceGroup>",
     "aksClusterName": "<aksClusterName>",
     "arcClusterName": "<arcClusterName>",
+    "extensionNamespace": "<extensionNamespace. e.g. gatekeeper-system>",
 
     "extensionVersion": {
         "k8s-extension": "0.3.0",
