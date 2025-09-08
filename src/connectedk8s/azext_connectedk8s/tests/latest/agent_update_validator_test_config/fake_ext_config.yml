@@ -1,0 +1,19 @@
+apiVersion: clusterconfig.azure.com/v1beta1
+kind: ExtensionConfig
+metadata:
+  name: fake-ext-config
+  namespace: azure-arc
+spec:
+  dependentBundles:
+  - appdevaddons
+  extensionType: microsoft.graytown.testextension
+  isDependentOnBundle: true
+  parameter:
+    releaseTrain: Preview
+    repoUrl: https://graytownacr.azurecr.io/helm/graytowntest
+    scope: cluster
+    version: 1.302.0
+status:
+  syncStatus:
+    isSyncedWithAzure: true
+    lastSyncTime: '2025-06-23T21:14:39.000Z'
