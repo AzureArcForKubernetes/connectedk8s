@@ -177,13 +177,13 @@ stages:
           pip install pytest
           cd /home/vsts/work/1/s/src/connectedk8s/azext_connectedk8s/tests/unittests
           pytest --junitxml=test-results.xml
-          
+
         displayName: 'Run UnitTests test'
       - task: PublishTestResults@2
         inputs:
           testResultsFormat: 'JUnit'
           testResultsFiles: '**/test-results.xml'
-          failTaskOnFailedTests: true        
+          failTaskOnFailedTests: true
   - job: SourceTests
     displayName: "Integration Tests, Build Tests"
     pool:
@@ -330,7 +330,7 @@ stages:
         displayName: "ruff check"
 
   - job: RuffFormat
-    displayName: "Check connected8ks formatting with ruff"
+    displayName: "Check connectedk8s formatting with ruff"
     pool:
       vmImage: 'ubuntu-latest'
     steps:
@@ -354,7 +354,7 @@ stages:
         displayName: "ruff format check"
 
   - job: TypeChecking
-    displayName: "Typecheck connected8ks with mypy"
+    displayName: "Typecheck connectedk8s with mypy"
     pool:
       vmImage: 'ubuntu-latest'
     steps:
