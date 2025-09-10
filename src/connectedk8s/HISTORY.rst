@@ -5,7 +5,7 @@ Release History
 1.10.8
 +++++
 * Removed deprecated '--app-id' and '--app-secret' RBAC parameters from the extension.
-* Bug fix for https://github.com/Azure/azure-cli-extensions/issues/8498: resolved error when using the extension with Azure CLI v2.59+.
+* Bug fix for https://github.com/Azure/azure-cli-extensions/issues/8498.
 * Update warning to use the latest kubelogin version which has support for generating PoP token.
 
 1.10.7

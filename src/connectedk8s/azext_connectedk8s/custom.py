@@ -3030,7 +3030,7 @@ def enable_features(
         logger.warning(
             "[Azure RBAC] For secure authentication, ensure you have the latest kubelogin installed which supports PoP tokens. "
             "This is required for Azure RBAC. Download or upgrade at: https://github.com/Azure/kubelogin/releases. "
-            "If you encounter authentication errors, please verify your kubelogin version and refer to the documentation for troubleshooting."
+            "If you encounter authentication errors, please verify your kubelogin version and refer to the documentation: https://learn.microsoft.com/en-us/azure/azure-arc/kubernetes/azure-rbac"
         )
         cmd_helm_upgrade.extend(
             [
