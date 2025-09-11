@@ -2423,10 +2423,6 @@ def update_connected_cluster(
         f"Step: {utils.get_utctimestring()}: Agent state {maybe_has} reached terminal state."
     )
 
-    portal_request = os.getenv("PORTAL_REQUEST", "false")
-    if portal_request.lower() == "true":
-        return connected_cluster
-
     # Adding helm repo
     if os.getenv("HELMREPONAME") and os.getenv("HELMREPOURL"):
         utils.add_helm_repo(kube_config, kube_context, helm_client_location)

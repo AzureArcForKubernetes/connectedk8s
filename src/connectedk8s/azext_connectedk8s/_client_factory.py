@@ -69,11 +69,9 @@ def cf_connectedk8s_prev_2025_08_01(
     )
     from azure.core.pipeline.policies import HeadersPolicy
 
-    portal_request = os.getenv("PORTAL_REQUEST", "false")
-
     # Create custom headers policy for PUT requests
     headers_policy = HeadersPolicy({
-        "x-ms-azurearc-cli": "false" if portal_request == "true" else "true"
+        "x-ms-azurearc-cli": "true"
     })
 
     client: KubernetesClient
@@ -86,7 +84,7 @@ def cf_connectedk8s_prev_2025_08_01(
             KubernetesClient,
             subscription_id=os.getenv("AZURE_SUBSCRIPTION_ID"),
             credential=credential,
-            base_url="https://eastus2euap.management.azure.com",
+            base_url="https://management.azure.com",
             per_call_policies=[headers_policy],
         )
         return client
@@ -94,7 +92,7 @@ def cf_connectedk8s_prev_2025_08_01(
     client = get_mgmt_service_client(
         cli_ctx,
         KubernetesClient,
-        base_url="https://eastus2euap.management.azure.com",
+        base_url="https://management.azure.com",
         per_call_policies=[headers_policy],
     )
     return client
