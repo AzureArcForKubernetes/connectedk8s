@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
     from knack.commands import CLICommand
 
-    from azext_connectedk8s.vendored_sdks.preview_2024_07_01.models import (
+    from azext_connectedk8s.vendored_sdks.preview_2025_08_01.models import (
         CredentialResults,
     )
 
@@ -204,16 +204,16 @@ def prepare_clientproxy_data(response: CredentialResults) -> dict[str, Any]:
     data["kubeconfigs"] = []
     kubeconfig = {}
     kubeconfig["name"] = "Kubeconfig"
-    kubeconfig["value"] = b64encode(response.kubeconfigs[0].value).decode("utf-8")  # type: ignore[index]
+    kubeconfig["value"] = b64encode(response.kubeconfigs[0].value).decode("utf-8")
     data["kubeconfigs"].append(kubeconfig)
     data["hybridConnectionConfig"] = {}
-    data["hybridConnectionConfig"]["relay"] = response.hybrid_connection_config.relay  # type: ignore[attr-defined]
+    data["hybridConnectionConfig"]["relay"] = response.hybrid_connection_config.relay
     data["hybridConnectionConfig"]["hybridConnectionName"] = (
-        response.hybrid_connection_config.hybrid_connection_name  # type: ignore[attr-defined]
+        response.hybrid_connection_config.hybrid_connection_name
     )
-    data["hybridConnectionConfig"]["token"] = response.hybrid_connection_config.token  # type: ignore[attr-defined]
+    data["hybridConnectionConfig"]["token"] = response.hybrid_connection_config.token
     data["hybridConnectionConfig"]["expirationTime"] = (
-        response.hybrid_connection_config.expiration_time  # type: ignore[attr-defined]
+        response.hybrid_connection_config.expiration_time
     )
     return data
 
