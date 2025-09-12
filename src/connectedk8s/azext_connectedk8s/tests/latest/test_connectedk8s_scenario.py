@@ -398,7 +398,7 @@ class Connectedk8sScenarioTest(LiveScenarioTest):
             {kubeconfig} --kube-context {managed_cluster_name}-admin -y"
         )
         cmd_output = subprocess.Popen(cmd, stdout=PIPE, stderr=PIPE)
-        _, error_helm_delete = cmd_output.communicate()
+        _, _error_helm_delete = cmd_output.communicate()
         assert cmd_output.returncode == 0
         changed_cmd = json.loads(cmd_output.communicate()[0].strip())
         assert changed_cmd["systemDefaultValues"]["customLocations"]["enabled"] == bool(
@@ -661,7 +661,7 @@ only supported when auto-upgrade is set to false",
             --kube-context {managed_cluster_name}-admin"
         )
         cmd_output1 = subprocess.Popen(cmd, stdout=PIPE, stderr=PIPE)
-        _, error_helm_delete = cmd_output1.communicate()
+        _, _error_helm_delete = cmd_output1.communicate()
         assert cmd_output1.returncode == 0
         updated_cmd1 = json.loads(cmd_output1.communicate()[0].strip())
         assert updated_cmd1["systemDefaultValues"]["azureArcAgents"][
