@@ -917,7 +917,7 @@ def update_gateway_cluster_link(
     If `gateway_resource_id` is provided, performs association.
     If `gateway_resource_id` is None, performs disassociation.
     """
-    api_version = "2024-07-31-preview"
+    api_version = "2025-02-19-preview"
     is_association = gateway_resource_id is not None
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     url = consts.GATEWAY_ASSOCIATE_URL.format(
