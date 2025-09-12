@@ -4,7 +4,6 @@
 # --------------------------------------------------------------------------------------------
 from __future__ import annotations
 
-import cmd
 import contextlib
 import errno
 import hashlib
@@ -916,7 +915,7 @@ def create_connectedk8s(
             logger.info("Gateway-cluster link updated successfully")
 
         except Exception as e:
-            error_msg = f"Failed to create gateway-cluster association: {str(e)}"
+            error_msg = f"Failed to create gateway-cluster association: {e!s}"
             logger.error(error_msg)
             telemetry.set_exception(
                 exception=e,
@@ -955,7 +954,7 @@ def create_connectedk8s(
             logger.info("Connected cluster resource updated successfully with gateway configuration")
 
         except Exception as e:
-            error_msg = f"Failed to update connected cluster resource with gateway configuration: {str(e)}"
+            error_msg = f"Failed to update connected cluster resource with gateway configuration: {e!s}"
             logger.error(error_msg)
             telemetry.set_exception(
                 exception=e,

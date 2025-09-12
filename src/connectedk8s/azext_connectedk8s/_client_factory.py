@@ -64,10 +64,10 @@ def cf_connected_cluster(cli_ctx: AzCli, _: Any) -> ConnectedClusterOperations:
 def cf_connectedk8s_prev_2025_08_01(
     cli_ctx: AzCli, *_: Any
 ) -> ConnectedKubernetesClient20250801:
+    from azure.core.pipeline.policies import HeadersPolicy
     from azext_connectedk8s.vendored_sdks.preview_2025_08_01 import (
         KubernetesClient,
     )
-    from azure.core.pipeline.policies import HeadersPolicy
 
     # Create custom headers policy for PUT requests
     headers_policy = HeadersPolicy({

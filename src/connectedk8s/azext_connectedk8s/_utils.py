@@ -909,7 +909,7 @@ def update_gateway_cluster_link(
     subscription_id: str,
     resource_group: str,
     cluster_name: str,
-    gateway_resource_id: str = None
+    gateway_resource_id: str | None = None
 ) -> bool:
     """
     Associates or disassociates a gateway with a cluster.
