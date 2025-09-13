@@ -21,10 +21,10 @@ if TYPE_CHECKING:
     from knack.commands import CLICommand
     from requests.models import Response
 
-    from azext_connectedk8s.vendored_sdks.preview_2024_07_01.models import (
+    from azext_connectedk8s.vendored_sdks.preview_2025_08_01.models import (
         CredentialResults,
     )
-    from azext_connectedk8s.vendored_sdks.preview_2024_07_01.operations import (
+    from azext_connectedk8s.vendored_sdks.preview_2025_08_01.operations import (
         ConnectedClusterOperations,
     )
 

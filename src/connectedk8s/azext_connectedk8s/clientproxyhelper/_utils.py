@@ -204,17 +204,27 @@ def prepare_clientproxy_data(response: CredentialResults) -> dict[str, Any]:
     data["kubeconfigs"] = []
     kubeconfig = {}
     kubeconfig["name"] = "Kubeconfig"
-    kubeconfig["value"] = b64encode(response.kubeconfigs[0].value).decode("utf-8")
+    
+    # Check if kubeconfigs exists and has items
+    if response.kubeconfigs and len(response.kubeconfigs) > 0:
+        kubeconfig_value = response.kubeconfigs[0].value
+        if kubeconfig_value is not None:
+            kubeconfig["value"] = b64encode(kubeconfig_value).decode("utf-8")
+    
     data["kubeconfigs"].append(kubeconfig)
     data["hybridConnectionConfig"] = {}
-    data["hybridConnectionConfig"]["relay"] = response.hybrid_connection_config.relay
-    data["hybridConnectionConfig"]["hybridConnectionName"] = (
-        response.hybrid_connection_config.hybrid_connection_name
-    )
-    data["hybridConnectionConfig"]["token"] = response.hybrid_connection_config.token
-    data["hybridConnectionConfig"]["expirationTime"] = (
-        response.hybrid_connection_config.expiration_time
-    )
+    
+    # Check if hybrid_connection_config exists
+    if response.hybrid_connection_config is not None:
+        data["hybridConnectionConfig"]["relay"] = response.hybrid_connection_config.relay
+        data["hybridConnectionConfig"]["hybridConnectionName"] = (
+            response.hybrid_connection_config.hybrid_connection_name
+        )
+        data["hybridConnectionConfig"]["token"] = response.hybrid_connection_config.token
+        data["hybridConnectionConfig"]["expirationTime"] = (
+            response.hybrid_connection_config.expiration_time
+        )
+    
     return data
 
 

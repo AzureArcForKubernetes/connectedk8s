@@ -24,7 +24,7 @@ from azext_connectedk8s._utils import get_utctimestring
 if TYPE_CHECKING:
     from kubernetes.client import AppsV1Api, BatchV1Api, CoreV1Api
 
-    from .vendored_sdks.preview_2024_07_01.models import (
+    from .vendored_sdks.preview_2025_08_01.models import (
         ConnectedCluster,
     )
 
