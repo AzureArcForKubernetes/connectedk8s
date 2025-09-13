@@ -901,7 +901,7 @@ def create_connectedk8s(
         print(
             f"Step: {utils.get_utctimestring()}: Associating Gateway with the Connected Cluster"
         )
-        
+
         try:
             # Create the gateway-cluster association
             utils.update_gateway_cluster_link(
@@ -920,7 +920,7 @@ def create_connectedk8s(
             telemetry.set_exception(
                 exception=e,
                 fault_type=consts.GATEWAY_LINK_FAULT_TYPE,
-                summary="Failed to associate gateway with connected cluster"
+                summary="Failed to associate gateway with connected cluster",
             )
             raise ValidationError(
                 "Failed to associate gateway with connected cluster. "
@@ -933,7 +933,7 @@ def create_connectedk8s(
                 f"Step: {utils.get_utctimestring()}: Updating Connected Cluster resource with Gateway configuration"
             )
             connected_cluster = client.get(resource_group_name, cluster_name)
-            
+
             # Generate updated payload with gateway configuration
             cc = generate_reput_request_payload(
                 connected_cluster,
@@ -943,15 +943,17 @@ def create_connectedk8s(
                 arc_agentry_configurations,
                 arc_agent_profile,
             )
-            
+
             # Update the connected cluster resource
             reput_cc_poller = create_cc_resource(
                 client, resource_group_name, cluster_name, cc, False
             )
             dp_request_payload = reput_cc_poller.result()
             put_cc_response = LongRunningOperation(cmd.cli_ctx)(reput_cc_poller)
-            
-            logger.info("Connected cluster resource updated successfully with gateway configuration")
+
+            logger.info(
+                "Connected cluster resource updated successfully with gateway configuration"
+            )
 
         except Exception as e:
             error_msg = f"Failed to update connected cluster resource with gateway configuration: {e!s}"
@@ -959,14 +961,14 @@ def create_connectedk8s(
             telemetry.set_exception(
                 exception=e,
                 fault_type=consts.Gateway_Cluster_Resource_Update_Failed_Fault_Type,
-                summary="Failed to update connected cluster resource with gateway configuration"
+                summary="Failed to update connected cluster resource with gateway configuration",
             )
             raise CLIInternalError(
                 "Failed to update the connected cluster resource with gateway configuration. "
                 "The gateway association may have been created, but the cluster resource update failed. "
                 "Please check the resource status and try again."
             ) from e
-    
+
     print(
         f"Step: {utils.get_utctimestring()}: Azure resource provisioning has finished."
     )

@@ -909,11 +909,11 @@ def update_gateway_cluster_link(
     subscription_id: str,
     resource_group: str,
     cluster_name: str,
-    gateway_resource_id: str | None = None
+    gateway_resource_id: str | None = None,
 ) -> bool:
     """
     Associates or disassociates a gateway with a cluster.
-    
+
     If `gateway_resource_id` is provided, performs association.
     If `gateway_resource_id` is None, performs disassociation.
     """
@@ -925,13 +925,10 @@ def update_gateway_cluster_link(
         subscription_id=subscription_id,
         resource_group=resource_group,
         cluster_name=cluster_name,
-        api_version=api_version
+        api_version=api_version,
     )
 
-    headers = [
-        "Content-Type=application/json",
-        "Accept=application/json"
-    ]
+    headers = ["Content-Type=application/json", "Accept=application/json"]
 
     token = os.getenv("AZURE_ACCESS_TOKEN")
     if token:
@@ -953,19 +950,23 @@ def update_gateway_cluster_link(
         fault_type=consts.GATEWAY_LINK_FAULT_TYPE,
         summary=f"Error during gateway {operation_type}",
         request_body=json.dumps(body),
-        resource=resource
+        resource=resource,
     )
 
     if response.status_code == 200:
-        logger.info(f"Gateway {operation_type} succeeded for cluster '{cluster_name}' in resource group '{resource_group}'.")
+        logger.info(
+            f"Gateway {operation_type} succeeded for cluster '{cluster_name}' in resource group '{resource_group}'."
+        )
         return True
 
     telemetry.set_exception(
         exception=f"Gateway {operation_type} failed",
         fault_type=consts.GATEWAY_LINK_FAULT_TYPE,
-        summary=f"Gateway {operation_type} failed"
+        summary=f"Gateway {operation_type} failed",
     )
-    raise CLIInternalError(f"Gateway {operation_type} failed for cluster '{cluster_name}'.")
+    raise CLIInternalError(
+        f"Gateway {operation_type} failed for cluster '{cluster_name}'."
+    )
 
 
 def send_request_with_retries(
