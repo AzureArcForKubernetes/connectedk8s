@@ -6,7 +6,7 @@ Describe 'Onboarding with Gateway Scenario' {
     }
 
     It 'Check if onboarding works with gateway enabled' {
-        az connectedk8s connect -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --gateway-resource-id $gatewayResourceId --no-wait
+        az connectedk8s connect -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --gateway-resource-id $gatewayResourceId
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
 

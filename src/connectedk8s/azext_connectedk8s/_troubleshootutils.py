@@ -1000,7 +1000,7 @@ def check_agent_version(
             return consts.Diagnostic_Check_Incomplete
 
         # To get user agent version and the latest agent version
-        user_agent_version = connected_cluster.agent_version  # type: ignore[unreachable]
+        user_agent_version = connected_cluster.agent_version
         current_user_version = user_agent_version.split(".")
         latest_agent_version = azure_arc_agent_version.split(".")
         # Comparing if the user version is compatible or not
