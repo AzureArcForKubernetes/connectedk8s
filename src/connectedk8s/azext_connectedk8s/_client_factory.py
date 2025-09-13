@@ -71,9 +71,7 @@ def cf_connectedk8s_prev_2025_08_01(
     )
 
     # Create custom headers policy for PUT requests
-    headers_policy = HeadersPolicy({
-        "x-ms-azurearc-cli": "true"
-    })
+    headers_policy = HeadersPolicy({"x-ms-azurearc-cli": "true"})
 
     client: KubernetesClient
     access_token = os.getenv(consts.Azure_Access_Token_Variable)
