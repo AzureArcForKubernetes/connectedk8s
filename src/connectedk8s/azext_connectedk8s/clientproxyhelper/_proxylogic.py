@@ -11,7 +11,7 @@ from azure.cli.core import telemetry
 import azext_connectedk8s._constants as consts
 import azext_connectedk8s.clientproxyhelper._utils as clientproxyutils
 
-from ..vendored_sdks.models import (
+from ..vendored_sdks.preview_2025_08_01.models import (
     ListClusterUserCredentialProperties,
 )
 
