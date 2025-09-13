@@ -2320,7 +2320,9 @@ def update_connected_cluster(
     # Fetch Connected Cluster for agent version
     connected_cluster = client.get(resource_group_name, cluster_name)
     if connected_cluster.id is None:
-        raise CLIInternalError("Connected cluster resource 'id' is None. Cannot extract subscription id.")
+        raise CLIInternalError(
+            "Connected cluster resource 'id' is None. Cannot extract subscription id."
+        )
     subscription_id = connected_cluster.id.split("/")[2]
     location = connected_cluster.location
 
