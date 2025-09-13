@@ -83,7 +83,7 @@ def get_cluster_user_credentials(
         authentication_method=auth_method, client_proxy=True
     )
 
-    result: CredentialResults = client.list_cluster_user_credential(  # type: ignore[call-overload]
+    result: CredentialResults = client.list_cluster_user_credential(
         resource_group_name,
         cluster_name,
         list_prop,
