@@ -71,6 +71,7 @@ from .vendored_sdks.preview_2025_08_01.models import (
     ConnectedCluster,
     ConnectedClusterIdentity,
     ConnectedClusterPatch,
+    ConnectedClusterProperties,
     Gateway,
     OidcIssuerProfile,
     SecurityProfile,
@@ -1671,13 +1672,17 @@ def generate_request_payload(
     if tags is None:
         tags = {}
 
+    properties = ConnectedClusterProperties(
+        agent_public_key_certificate=public_key,
+        distribution=kubernetes_distro,
+        infrastructure=kubernetes_infra,
+    )
+
     cc = ConnectedCluster(
         location=location,
         identity=identity,
-        agent_public_key_certificate=public_key,
+        properties=properties,
         tags=tags,
-        distribution=kubernetes_distro,
-        infrastructure=kubernetes_infra,
     )
 
     if (
@@ -1699,11 +1704,8 @@ def generate_request_payload(
         if private_link_scope_resource_id:
             kwargs["private_link_scope_resource_id"] = private_link_scope_resource_id
 
-        cc = ConnectedCluster(
-            location=location,
-            identity=identity,
+        properties = ConnectedClusterProperties(
             agent_public_key_certificate=public_key,
-            tags=tags,
             distribution=kubernetes_distro,
             infrastructure=kubernetes_infra,
             azure_hybrid_benefit=azure_hybrid_benefit,
@@ -1714,6 +1716,13 @@ def generate_request_payload(
             oidc_issuer_profile=oidc_profile,
             security_profile=security_profile,
             **kwargs,
+        )
+
+        cc = ConnectedCluster(
+            location=location,
+            identity=identity,
+            properties=properties,
+            tags=tags,
         )
 
     return cc
@@ -2471,7 +2480,7 @@ def update_connected_cluster(
 
     # Set agent version in registry path
     if connected_cluster.agent_version is not None:
-        agent_version = connected_cluster.agent_version  # type: ignore[unreachable]
+        agent_version = connected_cluster.agent_version
         registry_path = reg_path_array[0] + ":" + agent_version
 
     check_operation_support("update (properties)", agent_version)
@@ -3102,7 +3111,7 @@ def enable_features(
 
     # Set agent version in registry path
     if connected_cluster.agent_version is not None:
-        agent_version = connected_cluster.agent_version  # type: ignore[unreachable]
+        agent_version = connected_cluster.agent_version
         registry_path = reg_path_array[0] + ":" + agent_version
 
     check_operation_support("enable-features", agent_version)
@@ -3353,7 +3362,7 @@ def get_chart_and_disable_features(
 
     # Set agent version in registry path
     if connected_cluster.agent_version is not None:
-        agent_version = connected_cluster.agent_version  # type: ignore[unreachable]
+        agent_version = connected_cluster.agent_version
         registry_path = reg_path_array[0] + ":" + agent_version
 
     check_operation_support("disable-features", agent_version)
