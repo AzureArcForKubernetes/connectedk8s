@@ -71,6 +71,7 @@ from .vendored_sdks.preview_2025_08_01.models import (
     ConnectedCluster,
     ConnectedClusterIdentity,
     ConnectedClusterPatch,
+    ConnectedClusterPatchProperties,
     ConnectedClusterProperties,
     Gateway,
     OidcIssuerProfile,
@@ -1761,13 +1762,16 @@ def generate_patch_payload(
     distribution_version: str | None,
     azure_hybrid_benefit: str | None,
 ) -> ConnectedClusterPatch:
-    cc = ConnectedClusterPatch(
-        tags=tags,
+    properties = ConnectedClusterPatchProperties(
         distribution=distribution,
         distribution_version=distribution_version,
         azure_hybrid_benefit=azure_hybrid_benefit,
     )
-    return cc
+
+    return ConnectedClusterPatch(
+        tags=tags,
+        properties=properties,
+    )
 
 
 def get_kubeconfig_node_dict(kube_config: str | None = None) -> ConfigNode:
@@ -2315,6 +2319,8 @@ def update_connected_cluster(
 
     # Fetch Connected Cluster for agent version
     connected_cluster = client.get(resource_group_name, cluster_name)
+    if connected_cluster.id is None:
+        raise CLIInternalError("Connected cluster resource 'id' is None. Cannot extract subscription id.")
     subscription_id = connected_cluster.id.split("/")[2]
     location = connected_cluster.location
 
