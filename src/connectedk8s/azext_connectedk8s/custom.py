@@ -683,7 +683,6 @@ def create_connectedk8s(
                 try:
                     utils.update_gateway_cluster_link(
                         cmd,
-                        location,
                         subscription_id,
                         resource_group_name,
                         cluster_name,
@@ -908,7 +907,6 @@ def create_connectedk8s(
             # Create the gateway-cluster association
             utils.update_gateway_cluster_link(
                 cmd,
-                location,
                 subscription_id,
                 resource_group_name,
                 cluster_name,
@@ -2360,7 +2358,6 @@ def update_connected_cluster(
         )
         utils.update_gateway_cluster_link(
             cmd,
-            location,
             subscription_id,
             resource_group_name,
             cluster_name,
@@ -2373,7 +2370,6 @@ def update_connected_cluster(
         )
         utils.update_gateway_cluster_link(
             cmd,
-            location,
             subscription_id,
             resource_group_name,
             cluster_name,
@@ -2518,10 +2514,10 @@ def update_connected_cluster(
     )
 
     # If we didn't see a terminal agent state, now's the time to throw an error.
-    # if not terminal_agent_state:
-    #     raise CLIInternalError(
-    #         "Timed out waiting for Agent State to reach terminal state."
-    #     )
+    if not terminal_agent_state:
+        raise CLIInternalError(
+            "Timed out waiting for Agent State to reach terminal state."
+        )
 
     return connected_cluster
 

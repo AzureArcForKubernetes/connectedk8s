@@ -905,7 +905,6 @@ def health_check_dp(cmd: CLICommand, config_dp_endpoint: str) -> bool:
 
 def update_gateway_cluster_link(
     cmd: CLICommand,
-    location: str,
     subscription_id: str,
     resource_group: str,
     cluster_name: str,
@@ -921,7 +920,6 @@ def update_gateway_cluster_link(
     is_association = gateway_resource_id is not None
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     url = consts.GATEWAY_ASSOCIATE_URL.format(
-        location=location,
         subscription_id=subscription_id,
         resource_group=resource_group,
         cluster_name=cluster_name,
