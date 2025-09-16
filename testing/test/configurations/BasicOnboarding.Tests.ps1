@@ -111,8 +111,8 @@ Describe 'Basic Onboarding Scenario' {
         # Wait for deletion to propagate through the resource model
         Start-Sleep -Seconds 30
 
-        # Configuration should be removed from the resource model
-        Invoke-AzCommand "az connectedk8s show -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup)"
-        $? | Should -BeFalse
+        # Configuration should be removed from the resource model - expect ResourceNotFound error
+        $output = Invoke-AzCommand "az connectedk8s show -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup)" 2>&1
+        $output | Should -Match "ResourceNotFound"
     }
 }
