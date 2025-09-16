@@ -1,29 +1,28 @@
 Describe 'Basic Onboarding Scenario' {
     BeforeAll {
         . $PSScriptRoot/../helper/Constants.ps1
-    }
 
-
-    function Wait-ForProvisioning {
-        param (
-            [string]$expectedProvisioningState,
-            [string]$expectedAutoUpdate
-        )
-        $n = 0
-        do {
-            $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $autoUpdate = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentAutoUpgrade").GetString()
-            Write-Host "Provisioning State: $provisioningState"
-            Write-Host "Auto Update: $autoUpdate"
-            if ($provisioningState -eq $expectedProvisioningState -and $autoUpdate -eq $expectedAutoUpdate) {
-                break
-            }
-            Start-Sleep -Seconds 10
-            $n += 1
-        } while ($n -le $MAX_RETRY_ATTEMPTS)
-        $n | Should -BeLessOrEqual $MAX_RETRY_ATTEMPTS
+        function Wait-ForProvisioning {
+            param (
+                [string]$expectedProvisioningState,
+                [string]$expectedAutoUpdate
+            )
+            $n = 0
+            do {
+                $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
+                $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
+                $provisioningState = ($output | ConvertFrom-Json).provisioningState
+                $autoUpdate = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentAutoUpgrade").GetString()
+                Write-Host "Provisioning State: $provisioningState"
+                Write-Host "Auto Update: $autoUpdate"
+                if ($provisioningState -eq $expectedProvisioningState -and $autoUpdate -eq $expectedAutoUpdate) {
+                    break
+                }
+                Start-Sleep -Seconds 10
+                $n += 1
+            } while ($n -le $MAX_RETRY_ATTEMPTS)
+            $n | Should -BeLessOrEqual $MAX_RETRY_ATTEMPTS
+        }
     }
 
     It 'Check if basic onboarding works correctly' {
@@ -41,7 +40,7 @@ Describe 'Basic Onboarding Scenario' {
     }
 
     It 'Disable azure-rbac feature' {
-        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features azure-rbac
+        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features azure-rbac --yes
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
@@ -55,7 +54,7 @@ Describe 'Basic Onboarding Scenario' {
     }
 
     It 'Disable cluster-connect feature' {
-        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features cluster-connect
+        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features cluster-connect --yes
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
@@ -69,7 +68,7 @@ Describe 'Basic Onboarding Scenario' {
     }
 
     It 'Disable custom-locations feature' {
-        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features custom-locations
+        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features custom-locations --yes
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
@@ -83,17 +82,17 @@ Describe 'Basic Onboarding Scenario' {
     }
 
     It 'Disable all features (cluster-connect, custom-locations, azure-rbac) together' {
-        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features cluster-connect custom-locations azure-rbac
+        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features cluster-connect custom-locations azure-rbac --yes
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Disable auto-upgrade' {
-    az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --auto-upgrade false
-    $? | Should -BeTrue
-    Start-Sleep -Seconds 10
-    Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Disabled"
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --auto-upgrade false
+        $? | Should -BeTrue
+        Start-Sleep -Seconds 10
+        Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Disabled"
     }
 
     It "Delete the connected instance" {
