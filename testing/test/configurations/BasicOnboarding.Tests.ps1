@@ -108,6 +108,9 @@ Describe 'Basic Onboarding Scenario' {
         Invoke-AzCommand "az connectedk8s delete -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) -y"
         $? | Should -BeTrue
 
+        # Wait for deletion to propagate through the resource model
+        Start-Sleep -Seconds 30
+
         # Configuration should be removed from the resource model
         Invoke-AzCommand "az connectedk8s show -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup)"
         $? | Should -BeFalse
