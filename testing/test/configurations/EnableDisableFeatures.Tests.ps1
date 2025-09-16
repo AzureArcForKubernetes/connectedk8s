@@ -1,4 +1,4 @@
-Describe 'Basic Onboarding Scenario' {
+Describe 'ConnectedK8s Enable Disable Features Scenario' {
     BeforeAll {
         . $PSScriptRoot/../helper/Constants.ps1
 
