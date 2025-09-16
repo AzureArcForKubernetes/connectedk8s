@@ -2,6 +2,15 @@ Describe 'Basic Onboarding Scenario' {
     BeforeAll {
         . $PSScriptRoot/../helper/Constants.ps1
 
+        function Invoke-AzCommand {
+            param (
+                [string]$Command
+            )
+            Write-Host "Executing: $Command" -ForegroundColor Yellow
+            $result = Invoke-Expression $Command
+            return $result
+        }
+
         function Wait-ForProvisioning {
             param (
                 [string]$expectedProvisioningState,
@@ -9,7 +18,7 @@ Describe 'Basic Onboarding Scenario' {
             )
             $n = 0
             do {
-                $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
+                $output = Invoke-AzCommand "az connectedk8s show -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup)"
                 $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
                 $provisioningState = ($output | ConvertFrom-Json).provisioningState
                 $autoUpdate = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentAutoUpgrade").GetString()
@@ -26,81 +35,81 @@ Describe 'Basic Onboarding Scenario' {
     }
 
     It 'Check if basic onboarding works correctly' {
-        az connectedk8s connect -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --no-wait
+        Invoke-AzCommand "az connectedk8s connect -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) -l $ARC_LOCATION --no-wait"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Enable azure-rbac feature' {
-        az connectedk8s enable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features azure-rbac
+        Invoke-AzCommand "az connectedk8s enable-features -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --features azure-rbac"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Disable azure-rbac feature' {
-        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features azure-rbac --yes
+        Invoke-AzCommand "az connectedk8s disable-features -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --features azure-rbac --yes"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Enable cluster-connect feature' {
-        az connectedk8s enable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features cluster-connect
+        Invoke-AzCommand "az connectedk8s enable-features -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --features cluster-connect"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Disable cluster-connect feature' {
-        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features cluster-connect --yes
+        Invoke-AzCommand "az connectedk8s disable-features -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --features cluster-connect --yes"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Enable custom-locations feature' {
-        az connectedk8s enable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features custom-locations --custom-locations-oid $ENVCONFIG.customLocationsOid
+        Invoke-AzCommand "az connectedk8s enable-features -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --features custom-locations --custom-locations-oid $($ENVCONFIG.customLocationsOid)"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Disable custom-locations feature' {
-        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features custom-locations --yes
+        Invoke-AzCommand "az connectedk8s disable-features -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --features custom-locations --yes"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Enable all features (cluster-connect, custom-locations, azure-rbac) together' {
-        az connectedk8s enable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features cluster-connect custom-locations azure-rbac --custom-locations-oid $ENVCONFIG.customLocationsOid
+        Invoke-AzCommand "az connectedk8s enable-features -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --features cluster-connect custom-locations azure-rbac --custom-locations-oid $($ENVCONFIG.customLocationsOid)"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Disable all features (cluster-connect, custom-locations, azure-rbac) together' {
-        az connectedk8s disable-features -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --features cluster-connect custom-locations azure-rbac --yes
+        Invoke-AzCommand "az connectedk8s disable-features -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --features cluster-connect custom-locations azure-rbac --yes"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
     }
 
     It 'Disable auto-upgrade' {
-        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --auto-upgrade false
+        Invoke-AzCommand "az connectedk8s update -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --auto-upgrade false"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Disabled"
     }
 
     It "Delete the connected instance" {
-        az connectedk8s delete -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -y
+        Invoke-AzCommand "az connectedk8s delete -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) -y"
         $? | Should -BeTrue
 
         # Configuration should be removed from the resource model
-        az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
+        Invoke-AzCommand "az connectedk8s show -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup)"
         $? | Should -BeFalse
     }
 }
