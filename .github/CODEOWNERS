@@ -310,8 +310,6 @@
 
 /src/site-recovery/ @calvinhzy
 
-/src/hdinsightonaks/ @aim-for-better @yuc-Li
-
 /src/network-analytics/ @pikanghosh1
 
 /src/azurelargeinstance/ @8Gitbrix
@@ -333,3 +331,5 @@
 /src/carbon/ @itiinani
 
 /src/amlfs/ @Aman-Jain-14 @amajai @mawhite @brpanask @tibanyas
+
+/src/storage-discovery/ @shanefujs @calvinhzy

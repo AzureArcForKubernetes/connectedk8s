@@ -330,7 +330,7 @@ stages:
         displayName: "ruff check"
 
   - job: RuffFormat
-    displayName: "Check connectedk8s formatting with ruff"
+    displayName: "Check connected8ks formatting with ruff"
     pool:
       vmImage: 'ubuntu-latest'
     steps:
@@ -354,7 +354,7 @@ stages:
         displayName: "ruff format check"
 
   - job: TypeChecking
-    displayName: "Typecheck connectedk8s with mypy"
+    displayName: "Typecheck connected8ks with mypy"
     pool:
       vmImage: 'ubuntu-latest'
     steps:
