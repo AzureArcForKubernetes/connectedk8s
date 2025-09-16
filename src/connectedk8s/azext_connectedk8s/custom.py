@@ -2322,7 +2322,6 @@ def update_connected_cluster(
             "Connected cluster resource 'id' is None. Cannot extract subscription id."
         )
     subscription_id = connected_cluster.id.split("/")[2]
-    location = connected_cluster.location
 
     kubernetes_properties = {
         "Context.Default.AzureCLI.KubernetesVersion": kubernetes_version
