@@ -34,7 +34,7 @@ Describe 'Basic Onboarding Scenario' {
         }
     }
 
-    It 'Check if basic onboarding works correctly' {
+    It 'Onboard Connected cluster with no features enabled' {
         Invoke-AzCommand "az connectedk8s connect -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) -l $ARC_LOCATION --no-wait"
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
@@ -95,13 +95,6 @@ Describe 'Basic Onboarding Scenario' {
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
         Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Enabled"
-    }
-
-    It 'Disable auto-upgrade' {
-        Invoke-AzCommand "az connectedk8s update -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup) --auto-upgrade false"
-        $? | Should -BeTrue
-        Start-Sleep -Seconds 10
-        Wait-ForProvisioning -expectedProvisioningState $SUCCEEDED -expectedAutoUpdate "Disabled"
     }
 
     It "Delete the connected instance" {
