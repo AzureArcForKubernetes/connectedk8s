@@ -30,6 +30,10 @@ stages:
       path: ./test/configurations/BasicOnboarding.Tests.ps1
   - template: ./templates/run-test.yml
     parameters:
+      jobName: EnableDisableFeaturesTest
+      path: ./test/configurations/EnableDisableFeatures.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
       jobName: AutoUpdateTest
       path: ./test/configurations/AutoUpdate.Tests.ps1
   - template: ./templates/run-test.yml
