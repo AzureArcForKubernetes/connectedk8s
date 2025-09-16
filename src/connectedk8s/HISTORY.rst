@@ -2,6 +2,12 @@
 
 Release History
 ===============
+1.10.9
++++++
+* Removed deprecated '--app-id' and '--app-secret' RBAC parameters from the extension.
+* Bug fix for https://github.com/Azure/azure-cli-extensions/issues/8498.
+* Update warning to use the latest kubelogin version which has support for generating PoP token.
+
 1.10.8
 ++++++
 * Force delete parameter updated to `connectedk8s delete` command to allow force deletion of connectedk8s ARM resource.
@@ -73,7 +79,7 @@ Release History
 ++++++
 * New api version 2024-07-1-preview added
 * Adding functionality for workload identity feature.
-* Cluster create and update waits for agent state 
+* Cluster create and update waits for agent state
 
 1.7.3
 ++++++

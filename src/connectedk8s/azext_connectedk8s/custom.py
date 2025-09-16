@@ -2847,8 +2847,6 @@ def enable_features(
     features: list[str],
     kube_config: str | None = None,
     kube_context: str | None = None,
-    azrbac_client_id: str | None = None,
-    azrbac_client_secret: str | None = None,
     azrbac_skip_authz_check: str | None = None,
     skip_ssl_verification: bool = False,
     cl_oid: str | None = None,
@@ -2864,6 +2862,10 @@ def enable_features(
     enable_cluster_connect, enable_azure_rbac, enable_cl = (
         utils.check_features_to_update(features)
     )
+
+    # Initialize these variables to ensure they are always defined, preventing UnboundLocalError if only a subset of features is enabled.
+    final_enable_cl = False
+    custom_locations_oid = None
 
     # Check if cluster is private link enabled
     connected_cluster = client.get(resource_group_name, cluster_name)
@@ -3024,8 +3026,9 @@ def enable_features(
         #  apps for authN/authZ.
         cmd_helm_upgrade.extend(["--set", "systemDefaultValues.guard.authnMode=arc"])
         logger.warning(
-            "Please use the kubelogin version v0.0.32 or higher which has support for generating PoP token(s). "
-            "This is needed by guard running in 'arc' authN mode."
+            "[Azure RBAC] For secure authentication, ensure you have the latest kubelogin installed which supports PoP tokens. "
+            "This is required for Azure RBAC. Download or upgrade at: https://github.com/Azure/kubelogin/releases. "
+            "If you encounter authentication errors, please verify your kubelogin version and refer to the documentation: https://learn.microsoft.com/en-us/azure/azure-arc/kubernetes/azure-rbac"
         )
         cmd_helm_upgrade.extend(
             [
