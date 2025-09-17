@@ -5,7 +5,7 @@ Release History
 1.10.9
 ++++++
 * Added support for associating and disassociating gateways in CLI and updated SDK version to '2025-08-01-preview'.
-* Update cluster diagnostics image to 1.29.3
+* Updated cluster diagnostics image to 1.29.3
 
 1.10.8
 ++++++
