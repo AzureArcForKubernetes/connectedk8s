@@ -365,7 +365,7 @@ def get_mcr_path(cmd: CLICommand) -> str:
     active_directory_array = cmd.cli_ctx.cloud.endpoints.active_directory.split(".")
 
     # default for public, mc, ff clouds
-    mcr_postfix = active_directory_array[2]
+    mcr_postfix = ".com"
     # special cases for USSec, exclude part of suffix
     if len(active_directory_array) == 4 and active_directory_array[2] == "microsoft":
         mcr_postfix = active_directory_array[3]
@@ -379,7 +379,7 @@ def get_mcr_path(cmd: CLICommand) -> str:
             + active_directory_array[4]
         )
 
-    mcr_url = f"mcr.microsoft.{mcr_postfix}"
+    mcr_url = f"mcr.microsoft.{mcr_postfix.strip("/")}"
     return mcr_url
 
 def check_namespace_exists(api_instance, namespace: str) -> bool:
