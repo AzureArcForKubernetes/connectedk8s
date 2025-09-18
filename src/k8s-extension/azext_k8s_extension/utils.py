@@ -379,7 +379,7 @@ def get_mcr_path(cmd: CLICommand) -> str:
             + active_directory_array[4]
         )
 
-    mcr_url = f"mcr.microsoft.{mcr_postfix}"
+    mcr_url = f"mcr.microsoft.{mcr_postfix.strip("/")}"
     return mcr_url
 
 def check_namespace_exists(api_instance, namespace: str) -> bool:
