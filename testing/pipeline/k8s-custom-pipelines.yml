@@ -181,7 +181,6 @@ stages:
           pip install pytest
           cd /home/vsts/work/1/s/src/connectedk8s/azext_connectedk8s/tests/unittests
           pytest --junitxml=test-results.xml
-
         displayName: 'Run UnitTests test'
       - task: PublishTestResults@2
         inputs:

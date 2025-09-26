@@ -2,11 +2,16 @@
 
 Release History
 ===============
-1.10.9
+1.10.10
 +++++
 * Deprecated '--app-id' and '--app-secret' RBAC parameters from the extension by adding them to _breaking_change.py.
 * Bug fix for https://github.com/Azure/azure-cli-extensions/issues/8498.
 * Update warning to use the latest kubelogin version which has support for generating PoP token.
+
+1.10.9
+++++++
+* Added support for associating and disassociating gateways in CLI and updated SDK version to '2025-08-01-preview'.
+* Updated cluster diagnostics image to 1.29.3
 
 1.10.8
 ++++++
