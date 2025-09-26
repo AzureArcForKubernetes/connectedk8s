@@ -74,10 +74,6 @@ jobs:
       chmod +x ./kind
       ./kind create cluster
     displayName: "Create and Start the Kind cluster"
-<<<<<<< HEAD
-=======
-
->>>>>>> 329e119ad9591aab99480f0759c300bb41f9170e
   - bash: |
       curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
     displayName: "Upgrade az to latest version"
@@ -97,10 +93,6 @@ jobs:
       inlineScript: |
         .\Bootstrap.ps1 -CI
       workingDirectory: $(TEST_PATH)
-<<<<<<< HEAD
-=======
-
->>>>>>> 329e119ad9591aab99480f0759c300bb41f9170e
   - task: AzureCLI@2
     displayName: Run the Test Suite for ${{ parameters.path }}
     inputs:
