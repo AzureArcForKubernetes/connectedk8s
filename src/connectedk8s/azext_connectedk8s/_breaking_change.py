@@ -4,5 +4,5 @@
 # --------------------------------------------------------------------------------------------
 from azure.cli.core.breaking_change import register_argument_deprecate
 
-register_argument_deprecate('connectedk8s enable-features', '--app-id')
-register_argument_deprecate('connectedk8s enable-features', '--app-secret')
+register_argument_deprecate("connectedk8s enable-features", "--app-id")
+register_argument_deprecate("connectedk8s enable-features", "--app-secret")
