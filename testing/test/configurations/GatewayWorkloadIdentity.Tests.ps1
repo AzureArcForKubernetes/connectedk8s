@@ -1,4 +1,4 @@
-Describe 'Onboarding with Gateway Scenario' {
+Describe 'Onboarding with Gateway and Workload Identity Scenario' {
     BeforeAll {
         . $PSScriptRoot/../helper/Constants.ps1
 
