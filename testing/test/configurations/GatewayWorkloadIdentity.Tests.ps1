@@ -5,7 +5,7 @@ Describe 'Onboarding with Gateway Scenario' {
         $gatewayResourceId = "/subscriptions/15c06b1b-01d6-407b-bb21-740b8617dea3/resourceGroups/connectedk8sCLITestResources/providers/Microsoft.HybridCompute/gateways/gateway-test-cli"
     }
 
-    It 'Check if onboarding works with gateway enabled' {
+    It 'Check if onboarding works with gateway and workload identity enabled' {
         az connectedk8s connect -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup -l $ARC_LOCATION --gateway-resource-id $gatewayResourceId --enable-oidc-issuer --enable-workload-identity
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
@@ -45,7 +45,7 @@ Describe 'Onboarding with Gateway Scenario' {
         $n | Should -BeLessOrEqual $MAX_RETRY_ATTEMPTS
     }
 
-    It 'Disable the gateway' {
+    It 'Disable the gateway and workload identity' {
         az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --disable-gateway --disable-workload-identity
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
@@ -73,7 +73,7 @@ Describe 'Onboarding with Gateway Scenario' {
         $n | Should -BeLessOrEqual $MAX_RETRY_ATTEMPTS
     }
 
-    It 'Update the cluster to use gateway again using update cmd' {
+    It 'Update the cluster to use gateway and workload identity again using update cmd' {
         az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --gateway-resource-id $gatewayResourceId --enable-workload-identity
         $? | Should -BeTrue
         Start-Sleep -Seconds 10
