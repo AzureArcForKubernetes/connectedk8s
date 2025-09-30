@@ -12,6 +12,21 @@ To release a new version, please select a new version number (usually plus 1 to 
 Pending
 +++++++
 
+18.0.0b41
++++++++
+* Fix `--localdns-config` parameter to handle null values in JSON configuration files gracefully, preventing crashes when DNS override sections are null.
+* Add jwtauthenticator commands `az aks jwtauthenticator add/update/show/list/delete` to manage JWT authenticators for a managed cluster.
+* Fix an issue in disabling ACNS performance (--acns-datapath-acceleration-mode None).
+
+18.0.0b40
++++++++
+* Add option `Windows2025` to `--os-sku` for `az aks nodepool add`.
+* `az aks create`: Add new parameter `--container-storage-version` to enable the given version of Azure Container Storage.
+* `az aks update`: Add new parameter `--container-storage-version` to enable the given version of Azure Container Storage.
+* `az aks create`: Change behavior of `--enable-azure-container-storage` to enable latest Azure Container Storage by default.
+* `az aks update`: Change behavior of `--enable-azure-container-storage` to enable latest Azure Container Storage by default.
+* `az aks update`: Change behavior of `--disable-azure-container-storage` to handle disable based on the installed version.
+
 18.0.0b39
 +++++++
 * Add option `AzureLinuxOSGuard` and `AzureLinux3OSGuard` to `--os-sku` for `az aks nodepool add` and `az aks nodepool update`.
