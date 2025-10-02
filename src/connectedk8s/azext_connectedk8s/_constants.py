@@ -530,4 +530,4 @@ GATEWAY_LINK_FAULT_TYPE = "gateway-link-error"
 Gateway_Cluster_Resource_Update_Failed_Fault_Type = (
     "Gateway-Cluster-Resource-Update-Failed"
 )
-GATEWAY_ASSOCIATE_URL = "https://management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}/providers/Microsoft.HybridCompute/settings/Default?api-version={api_version}"
+GATEWAY_ASSOCIATE_URL = "https://uksouth.management.azure.com/subscriptions/{subscription_id}/resourceGroups/{resource_group}/providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}/providers/Microsoft.HybridCompute/settings/Default?api-version={api_version}"
