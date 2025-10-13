@@ -1360,6 +1360,40 @@ def helm_install_release(
                 "'arcConfigEndpoint' doesn't exist under 'dataplaneEndpoints' in the ARM metadata."
             )
 
+    # Add overrides for AGC Scenario
+    if cloud_name.lower() == "ussec" or cloud_name.lower() == "usnat":
+        logger.debug("Adding AGC scenario overrides.")
+
+        arm_metadata_endpoint_array = arm_metadata["authentication"]["loginEndpoint"].strip("/").split(".")
+        
+        if len(arm_metadata_endpoint_array) < 4:
+        raise CLIInternalError("Unexpected loginEndpoint format for AGC")
+
+        cloud_suffix = arm_metadata_endpoint_array[3]
+        endpoint_suffix = arm_metadata_endpoint_array[2] + "." + arm_metadata_endpoint_array[3]
+        if (cloud_name.lower() == "usnat"):
+            cloud_suffix = arm_metadata_endpoint_array[2] + "." + arm_metadata_endpoint_array[3] + "." + arm_metadata_endpoint_array[4]
+            endpoint_suffix = cloud_suffix
+
+        cmd_helm_install.extend(
+            [
+                "--set",
+                f"global.microsoftArtifactRepository=mcr.microsoft.{cloud_suffix}",
+                "--set",
+                f"systemDefaultValues.activeDirectoryEndpoint=https://login.microsoftonline.{endpoint_suffix}",
+                "--set",
+                f"systemDefaultValues.azureArcAgents.config_dp_endpoint_override=https://{location}.dp.kubernetesconfiguration.azure.{endpoint_suffix}",
+                "--set",
+                f"systemDefaultValues.clusterconnect-agent.notification_dp_endpoint_override=https://{location}.guestnotificationservice.azure.{endpoint_suffix}",
+                "--set",
+                f"systemDefaultValues.clusterconnect-agent.relay_endpoint_suffix_override=.servicebus.cloudapi.{endpoint_suffix}",
+                "--set",
+                f"systemDefaultValues.clusteridentityoperator.his_endpoint_override=https://gbl.his.arc.azure.{endpoint_suffix}/discovery?location={location}&api-version=1.1-preview",
+                "--set",
+                f"systemDefaultValues.image.repository=mcr.microsoft.{cloud_suffix}",
+            ]
+        )
+
     # Add helmValues content response from DP
     cmd_helm_install = parse_helm_values(helm_content_values, cmd_helm=cmd_helm_install)
 
