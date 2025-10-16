@@ -4,12 +4,8 @@ Release History
 ===============
 1.10.11
 +++++++
-* Fixed hardcoded public ARM endpoint URL for Government clouds.
-* Corrected MCR URL handling for Government clouds.
-
-++++++
-* Bug fix to remove hardcoded public ARM endpoint url for Gov clouds.
-* Bug Fix for MCR url for Gov clouds.
+* Removed hardcoded public ARM endpoint URL for Government clouds.
+* Fixed incorrect MCR endpoint URLs for Government cloud environments.
 
 1.10.10
 +++++
