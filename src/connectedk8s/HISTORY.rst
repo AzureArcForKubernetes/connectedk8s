@@ -2,6 +2,15 @@
 
 Release History
 ===============
+1.10.11
++++++++
+* Fixed hardcoded public ARM endpoint URL for Government clouds.
+* Corrected MCR URL handling for Government clouds.
+
+++++++
+* Bug fix to remove hardcoded public ARM endpoint url for Gov clouds.
+* Bug Fix for MCR url for Gov clouds.
+
 1.10.10
 +++++
 * Deprecated '--app-id' and '--app-secret' RBAC parameters from the extension by adding them to _breaking_change.py.
