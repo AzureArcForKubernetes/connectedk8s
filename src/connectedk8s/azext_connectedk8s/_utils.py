@@ -1384,7 +1384,7 @@ def helm_install_release(
                 "--set",
                 f"systemDefaultValues.azureArcAgents.config_dp_endpoint_override=https://{location}.dp.kubernetesconfiguration.azure.{endpoint_suffix}",
                 "--set",
-                f"systemDefaultValues.clusterconnect-agent.notification_dp_endpoint_override=https://{location}.guestnotificationservice.azure.{endpoint_suffix}",
+                f"systemDefaultValues.clusterconnect-agent.notification_dp_endpoint_override=https://guestnotificationservice.azure.{endpoint_suffix}",
                 "--set",
                 f"systemDefaultValues.clusterconnect-agent.relay_endpoint_suffix_override=.servicebus.cloudapi.{endpoint_suffix}",
                 "--set",
