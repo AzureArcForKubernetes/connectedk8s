@@ -1365,7 +1365,6 @@ def helm_install_release(
         logger.debug("Adding AGC scenario overrides.")
 
         arm_metadata_endpoint_array = arm_metadata["authentication"]["loginEndpoint"].strip("/").split(".")
-        
         if len(arm_metadata_endpoint_array) < 4:
             raise CLIInternalError("Unexpected loginEndpoint format for AGC")
 
