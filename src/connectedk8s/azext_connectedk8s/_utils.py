@@ -1367,7 +1367,7 @@ def helm_install_release(
         arm_metadata_endpoint_array = arm_metadata["authentication"]["loginEndpoint"].strip("/").split(".")
         
         if len(arm_metadata_endpoint_array) < 4:
-        raise CLIInternalError("Unexpected loginEndpoint format for AGC")
+            raise CLIInternalError("Unexpected loginEndpoint format for AGC")
 
         cloud_suffix = arm_metadata_endpoint_array[3]
         endpoint_suffix = arm_metadata_endpoint_array[2] + "." + arm_metadata_endpoint_array[3]
