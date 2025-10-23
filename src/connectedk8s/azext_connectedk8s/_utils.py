@@ -1364,14 +1364,24 @@ def helm_install_release(
     if cloud_name.lower() == "ussec" or cloud_name.lower() == "usnat":
         logger.debug("Adding AGC scenario overrides.")
 
-        arm_metadata_endpoint_array = arm_metadata["authentication"]["loginEndpoint"].strip("/").split(".")
+        arm_metadata_endpoint_array = (
+            arm_metadata["authentication"]["loginEndpoint"].strip("/").split(".")
+        )
         if len(arm_metadata_endpoint_array) < 4:
             raise CLIInternalError("Unexpected loginEndpoint format for AGC")
 
         cloud_suffix = arm_metadata_endpoint_array[3]
-        endpoint_suffix = arm_metadata_endpoint_array[2] + "." + arm_metadata_endpoint_array[3]
-        if (cloud_name.lower() == "usnat"):
-            cloud_suffix = arm_metadata_endpoint_array[2] + "." + arm_metadata_endpoint_array[3] + "." + arm_metadata_endpoint_array[4]
+        endpoint_suffix = (
+            arm_metadata_endpoint_array[2] + "." + arm_metadata_endpoint_array[3]
+        )
+        if cloud_name.lower() == "usnat":
+            cloud_suffix = (
+                arm_metadata_endpoint_array[2]
+                + "."
+                + arm_metadata_endpoint_array[3]
+                + "."
+                + arm_metadata_endpoint_array[4]
+            )
             endpoint_suffix = cloud_suffix
 
         cmd_helm_install.extend(
