@@ -1843,7 +1843,10 @@ def helm_update_agent(
 
 
 def add_agc_endpoint_overrides(
-    location: str, cloud_name: str, arm_metadata: dict[str, Any], cmd_helm_install: list[str]
+    location: str,
+    cloud_name: str,
+    arm_metadata: dict[str, Any],
+    cmd_helm_install: list[str],
 ) -> None:
     logger.debug("Adding AGC scenario overrides.")
 
