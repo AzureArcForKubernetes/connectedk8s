@@ -302,8 +302,16 @@ def create_connectedk8s(
 
     # Install kubectl and helm
     try:
-        kubectl_client_location = install_kubectl_client()
-        helm_client_location = install_helm_client(cmd)
+        # Skip kubectl and helm install for AGC
+        cloud_name = azure_cloud.lower()
+        if cloud_name == "ussec" or cloud_name == "usnat":
+            logger.info("Skipping kubectl and helm install for AGC. Expecting them to be pre-installed.")
+            # Update path manually if needed
+            kubectl_client_location = "/usr/local/bin/kubectl"
+            helm_client_location = "/usr/bin/helm"
+        else:
+            kubectl_client_location = install_kubectl_client()
+            helm_client_location = install_helm_client(cmd)
     except Exception as e:
         raise CLIInternalError(
             f"An exception has occured while trying to perform kubectl or helm install: {e}"

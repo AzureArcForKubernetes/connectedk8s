@@ -69,7 +69,7 @@ def get_mcr_path(active_directory_endpoint: str) -> str:
     mcr_postfix = "com"
     # special cases for USSec, exclude part of suffix
     if len(active_directory_array) == 4 and active_directory_array[2] == "microsoft":
-        mcr_postfix = active_directory_array[3]
+        mcr_postfix = active_directory_array[3].strip("/")
     # special case for USNat
     elif len(active_directory_array) == 5:
         mcr_postfix = (
@@ -77,7 +77,7 @@ def get_mcr_path(active_directory_endpoint: str) -> str:
             + "."
             + active_directory_array[3]
             + "."
-            + active_directory_array[4]
+            + active_directory_array[4].strip("/")
         )
 
     mcr_url = f"mcr.microsoft.{mcr_postfix}"
@@ -244,6 +244,9 @@ def pull_helm_chart(
             )
 
         base_path = os.path.dirname(chart_url)
+        # for special case when base_path contains additional /v2 segment
+        if base_path.endswith("/v2"):
+            base_path = base_path[:-3]
         image_name = os.path.basename(chart_url)
         chart_url = base_path + "/v2/" + image_name
 
