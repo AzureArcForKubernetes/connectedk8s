@@ -305,10 +305,19 @@ def create_connectedk8s(
         # Skip kubectl and helm install for AGC
         cloud_name = azure_cloud.lower()
         if cloud_name == "ussec" or cloud_name == "usnat":
-            logger.info("Skipping kubectl and helm install for AGC. Expecting them to be pre-installed.")
-            # Update path manually if needed
-            kubectl_client_location = "/usr/local/bin/kubectl"
-            helm_client_location = "/usr/bin/helm"
+            logger.info(
+                "Skipping kubectl and helm install for AGC. Expecting them to be pre-installed."
+            )
+            kubectl_client_location = shutil.which("kubectl")
+            helm_client_location = shutil.which("helm")
+            if not kubectl_client_location:
+                raise CLIInternalError(
+                    "kubectl not found in PATH for AGC environment. Please install it or add to PATH."
+                )
+            if not helm_client_location:
+                raise CLIInternalError(
+                    "helm not found in PATH for AGC environment. Please install it or add to PATH."
+                )
         else:
             kubectl_client_location = install_kubectl_client()
             helm_client_location = install_helm_client(cmd)

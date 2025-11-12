@@ -241,7 +241,7 @@ def executing_cluster_diagnostic_checks_job(
             kube_config,
             kube_context,
             helm_client_location,
-            mcr_url
+            mcr_url,
         )
 
         # Watching for cluster diagnostic checks container to reach in completed stage
@@ -421,8 +421,8 @@ def helm_install_release_cluster_diagnostic_checks(
     kube_config: str | None,
     kube_context: str | None,
     helm_client_location: str,
+    mcr_url: str,
     onboarding_timeout: str = "60",
-    mcr_url: str
 ) -> None:
     cmd_helm_install = [
         helm_client_location,

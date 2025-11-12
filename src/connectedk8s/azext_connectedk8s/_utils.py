@@ -1868,6 +1868,8 @@ def add_agc_endpoint_overrides(
         arm_metadata_endpoint_array[2] + "." + arm_metadata_endpoint_array[3]
     )
     if cloud_name.lower() == "usnat":
+        if len(arm_metadata_endpoint_array) < 5:
+            raise CLIInternalError("Unexpected loginEndpoint format for AGC")
         cloud_suffix = (
             arm_metadata_endpoint_array[2]
             + "."
@@ -1886,7 +1888,9 @@ def add_agc_endpoint_overrides(
             "--set",
             f"systemDefaultValues.azureArcAgents.config_dp_endpoint_override=https://{location}.dp.kubernetesconfiguration.azure.{endpoint_suffix}",
             "--set",
-            f"systemDefaultValues.clusterconnect-agent.notification_dp_endpoint_override=https://guestnotificationservice.azure.{endpoint_suffix}",
+            f"systemDefaultValues.clusterconnect-agent.connect_dp_endpoint_override=https://{location}.dp.kubernetesconfiguration.azure.{endpoint_suffix}",
+            "--set",
+            f"systemDefaultValues.clusterconnect-agent.notification_dp_endpoint_override=https://guestnotificationservice.azure.{endpoint_suffix}/",
             "--set",
             f"systemDefaultValues.clusterconnect-agent.relay_endpoint_suffix_override=.servicebus.cloudapi.{endpoint_suffix}",
             "--set",
