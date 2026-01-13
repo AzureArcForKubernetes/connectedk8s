@@ -2398,8 +2398,8 @@ def update_connected_cluster(
         cluster_name,
         release_namespace,
         chart_path,
-        None, # distribution
-        None, # infrastructure
+        distribution,
+        infrastructure,
     )
 
     # If we didn't see a terminal agent state, now's the time to throw an error.
