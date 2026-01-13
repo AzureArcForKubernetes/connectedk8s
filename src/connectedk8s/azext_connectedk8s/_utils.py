@@ -1766,6 +1766,8 @@ def helm_update_agent(
     cluster_name: str,
     release_namespace: str,
     chart_path: str,
+    distribution: str | None = None,
+    infrastructure: str | None = None,
 ) -> None:
     cmd_helm_values = [
         helm_client_location,
@@ -1779,6 +1781,12 @@ def helm_update_agent(
         cmd_helm_values.extend(["--kubeconfig", kube_config])
     if kube_context:
         cmd_helm_values.extend(["--kube-context", kube_context])
+
+    if distribution:
+        cmd_helm_values.extend(["--set", f"global.kubernetesDistro={distribution}"])
+
+    if infrastructure:
+        cmd_helm_values.extend(["--set", f"global.kubernetesInfra={infrastructure}"])
 
     user_values_location = os.path.join(
         os.path.expanduser("~"), ".azure", "userValues.txt"

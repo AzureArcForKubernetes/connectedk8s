@@ -271,6 +271,12 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:
             arg_type=get_enum_type(Distribution_Enum_Values),
         )
         c.argument(
+            "infrastructure",
+            options_list=["--infrastructure"],
+            help="The infrastructure on which the Kubernetes cluster represented by this connected cluster will be running on.",
+            arg_type=get_enum_type(Infrastructure_Enum_Values),
+        )
+        c.argument(
             "distribution_version",
             help="The Kubernetes distribution version of the connected cluster.",
         )

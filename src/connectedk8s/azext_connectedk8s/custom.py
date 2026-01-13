@@ -115,8 +115,8 @@ def create_connectedk8s(
     kube_context: str | None = None,
     no_wait: bool = False,
     tags: dict[str, str] | None = None,
-    distribution: str = "generic",
-    infrastructure: str = "generic",
+    distribution: str = "",
+    infrastructure: str = "",
     disable_auto_upgrade: bool = False,
     cl_oid: str | None = None,
     onboarding_timeout: str = consts.DEFAULT_MAX_ONBOARDING_TIMEOUT_HELMVALUE_SECONDS,
@@ -291,8 +291,8 @@ def create_connectedk8s(
         "aks_edge_k8s",
     ]
 
-    if (infrastructure.lower() == "azure_stack_hci") and (
-        distribution.lower() in lowbandwith_distros
+    if (infrastructure and infrastructure.lower() == "azure_stack_hci") and (
+        distribution and distribution.lower() in lowbandwith_distros
     ):
         lowbandwidth = True
 
@@ -477,20 +477,10 @@ def create_connectedk8s(
     print(
         f"Step: {utils.get_utctimestring()}: Determining Cluster Distribution and Infrastructure"
     )
-    # Get kubernetes cluster info
-    if distribution == "generic":
-        kubernetes_distro = get_kubernetes_distro(
-            node_api_response
-        )  # (cluster heuristics)
-    else:
-        kubernetes_distro = distribution
 
-    if infrastructure == "generic":
-        kubernetes_infra = get_kubernetes_infra(
-            node_api_response
-        )  # (cluster heuristics)
-    else:
-        kubernetes_infra = infrastructure
+    # kubernetes_distro and kubernetes_infra are used in CC Payload and default to "generic" if not provided
+    kubernetes_distro = distribution if distribution else "generic"
+    kubernetes_infra = infrastructure if infrastructure else "generic"
 
     kubernetes_properties = {
         "Context.Default.AzureCLI.KubernetesVersion": kubernetes_version,
@@ -755,6 +745,8 @@ def create_connectedk8s(
                     cluster_name,
                     release_namespace,
                     chart_path,
+                    None, # distribution
+                    None, # infrastructure
                 )
             return cc_response
 
@@ -1022,8 +1014,8 @@ def create_connectedk8s(
     utils.helm_install_release(
         cmd.cli_ctx.cloud.endpoints.resource_manager,
         chart_path,
-        kubernetes_distro,
-        kubernetes_infra,
+        distribution if distribution else "",
+        infrastructure if infrastructure else "",
         location,
         private_key_pem,
         kube_config,
@@ -1470,111 +1462,6 @@ def load_kube_config(
 def get_private_key(key_pair: RsaKey) -> str:
     privKey_DER = key_pair.exportKey(format="DER")
     return PEM.encode(privKey_DER, "RSA PRIVATE KEY")
-
-
-# Updated function to include more Kubernetes distributions based on provided criteria
-def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
-    if api_response is None:
-        return "generic"
-    try:
-        for node in api_response.items:
-            labels = node.metadata.labels or {}
-            provider_id = str(node.spec.provider_id)
-            annotations = node.metadata.annotations or {}
-
-            if labels.get("node.openshift.io/os_id"):
-                return "openshift"
-            if labels.get("kubernetes.azure.com/node-image-version"):
-                return "aks"
-            if labels.get("cloud.google.com/gke-nodepool") or labels.get(
-                "cloud.google.com/gke-os-distribution"
-            ):
-                return "gke"
-            if labels.get("eks.amazonaws.com/nodegroup"):
-                return "eks"
-            if labels.get("minikube.k8s.io/version"):
-                return "minikube"
-            if annotations.get("node.aksedge.io/distro") == "aks_edge_k3s":
-                return "aks_edge_k3s"
-            if annotations.get("node.aksedge.io/distro") == "aks_edge_k8s":
-                return "aks_edge_k8s"
-            if provider_id.startswith("kind://"):
-                return "kind"
-            if provider_id.startswith("k3s://"):
-                return "k3s"
-            if annotations.get("rke.cattle.io/external-ip") or annotations.get(
-                "rke.cattle.io/internal-ip"
-            ):
-                return "rancher_rke"
-            if any(label.startswith("snap.microk8s") for label in labels):
-                return "microk8s"
-            if any(label.startswith("k3os.io") for label in labels):
-                return "k3os"
-            if any(label.startswith("talos.dev") for label in labels):
-                return "talos"
-            if any(key.startswith("rke2.io") for key in annotations):
-                return "rke2"
-            if any(
-                label.startswith("node-role.kubernetes.io") for label in labels
-            ) or any(
-                key.startswith("kubeadm.alpha.kubernetes.io") for key in annotations
-            ):
-                return "kubeadm"
-            if any(label.startswith("run.tanzu.vmware.com") for label in labels):
-                return "tkg"
-            if any(label.startswith("openebs.io") for label in labels):
-                return "openebs"
-            if any(label.startswith("flatcar-linux") for label in labels):
-                return "flatcar"
-            if any(label.startswith("k0s.k0sproject.io") for label in labels):
-                return "k0s"
-        return "generic"
-    except Exception as e:  # pylint: disable=broad-except
-        logger.debug(
-            "Error occurred while trying to fetch Kubernetes distribution: %s", e
-        )
-        utils.kubernetes_exception_handler(
-            e,
-            consts.Get_Kubernetes_Distro_Fault_Type,
-            "Unable to fetch kubernetes distribution",
-            raise_error=False,
-        )
-        return "generic"
-
-
-def get_kubernetes_infra(api_response: V1NodeList) -> str:  # Heuristic
-    if api_response is None:
-        return "generic"
-    try:
-        for node in api_response.items:
-            provider_id = str(node.spec.provider_id)
-            infra = provider_id.split(":")[0]
-            if infra == "k3s":
-                return "k3s"
-            if infra == "kind":
-                return "kind"
-            if infra == "azure":
-                return "azure"
-            if infra == "gce":
-                return "gcp"
-            if infra == "aws":
-                return "aws"
-            k8s_infra = utils.validate_infrastructure_type(infra)
-            if k8s_infra is not None:
-                return k8s_infra
-        return "generic"
-    except Exception as e:  # pylint: disable=broad-except
-        logger.debug(
-            "Error occured while trying to fetch kubernetes infrastructure: %s", e
-        )
-        utils.kubernetes_exception_handler(
-            e,
-            consts.Get_Kubernetes_Infra_Fault_Type,
-            "Unable to fetch kubernetes infrastructure",
-            raise_error=False,
-        )
-        return "generic"
-
 
 def check_linux_node(api_response: V1NodeList) -> bool:
     try:
@@ -2155,6 +2042,7 @@ def update_connected_cluster(
     auto_upgrade: str | None = None,
     tags: dict[str, str] | None = None,
     distribution: str | None = None,
+    infrastructure: str | None = None,
     distribution_version: str | None = None,
     azure_hybrid_benefit: str | None = None,
     skip_ssl_verification: bool = False,
@@ -2510,6 +2398,8 @@ def update_connected_cluster(
         cluster_name,
         release_namespace,
         chart_path,
+        None, # distribution
+        None, # infrastructure
     )
 
     # If we didn't see a terminal agent state, now's the time to throw an error.
