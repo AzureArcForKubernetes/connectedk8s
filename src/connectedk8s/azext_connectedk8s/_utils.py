@@ -1782,12 +1782,6 @@ def helm_update_agent(
     if kube_context:
         cmd_helm_values.extend(["--kube-context", kube_context])
 
-    if distribution:
-        cmd_helm_values.extend(["--set", f"global.kubernetesDistro={distribution}"])
-
-    if infrastructure:
-        cmd_helm_values.extend(["--set", f"global.kubernetesInfra={infrastructure}"])
-
     user_values_location = os.path.join(
         os.path.expanduser("~"), ".azure", "userValues.txt"
     )
@@ -1829,6 +1823,13 @@ def helm_update_agent(
         cmd_helm_upgrade.extend(["--kubeconfig", kube_config])
     if kube_context:
         cmd_helm_upgrade.extend(["--kube-context", kube_context])
+
+    if distribution:
+        cmd_helm_upgrade.extend(["--set", f"global.kubernetesDistro={distribution}"])
+
+    if infrastructure:
+        cmd_helm_upgrade.extend(["--set", f"global.kubernetesInfra={infrastructure}"])
+
     response_helm_upgrade = Popen(cmd_helm_upgrade, stdout=PIPE, stderr=PIPE)
     _, error_helm_upgrade = response_helm_upgrade.communicate()
     if response_helm_upgrade.returncode != 0:
