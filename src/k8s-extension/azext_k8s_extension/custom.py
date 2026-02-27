@@ -708,10 +708,6 @@ def install_helm_client(cmd: CLICommand) -> str:
     # Fetch system related info
     operating_system = platform.system().lower()
     machine_type = platform.machine()
-    if machine_type.lower() in ("aarch64", "arm64"):
-        arch = "arm64"
-    else:
-        arch = "amd64"
 
     # Send machine telemetry
     telemetry.add_extension_event(
@@ -720,22 +716,20 @@ def install_helm_client(cmd: CLICommand) -> str:
     # Set helm binary download & install locations
     if operating_system == "windows":
         download_location_string = f".azure\\helm\\{consts.HELM_VERSION}"
-        download_file_name = (
-            f"helm-{consts.HELM_VERSION}-{operating_system}-{arch}.zip"
-        )
+        download_file_name = f"helm-{consts.HELM_VERSION}-{operating_system}-amd64.zip"
         install_location_string = (
-            f".azure\\helm\\{consts.HELM_VERSION}\\{operating_system}-{arch}\\helm.exe"
+            f".azure\\helm\\{consts.HELM_VERSION}\\{operating_system}-amd64\\helm.exe"
         )
-        artifactTag = f"helm-{consts.HELM_VERSION}-{operating_system}-{arch}"
+        artifactTag = f"helm-{consts.HELM_VERSION}-{operating_system}-amd64"
     elif operating_system == "linux" or operating_system == "darwin":
         download_location_string = f".azure/helm/{consts.HELM_VERSION}"
         download_file_name = (
-            f"helm-{consts.HELM_VERSION}-{operating_system}-{arch}.tar.gz"
+            f"helm-{consts.HELM_VERSION}-{operating_system}-amd64.tar.gz"
         )
         install_location_string = (
-            f".azure/helm/{consts.HELM_VERSION}/{operating_system}-{arch}/helm"
+            f".azure/helm/{consts.HELM_VERSION}/{operating_system}-amd64/helm"
         )
-        artifactTag = f"helm-{consts.HELM_VERSION}-{operating_system}-{arch}"
+        artifactTag = f"helm-{consts.HELM_VERSION}-{operating_system}-amd64"
     else:
         telemetry.set_exception(
             exception="Unsupported OS for installing helm client",
@@ -747,15 +741,15 @@ def install_helm_client(cmd: CLICommand) -> str:
         )
 
     download_location = os.path.expanduser(os.path.join("~", download_location_string))
+    download_dir = os.path.dirname(download_location)
     install_location = os.path.expanduser(os.path.join("~", install_location_string))
 
     # Download compressed Helm binary if not already present
     if not os.path.isfile(install_location):
-        # The archive is downloaded to ~/.azure/helm/<version>/<archive-file>.
-        # Ensure the <version> directory exists first to avoid file-not-found errors.
-        if not os.path.exists(download_location):
+        # Creating the helm folder if it doesnt exist
+        if not os.path.exists(download_dir):
             try:
-                os.makedirs(download_location)
+                os.makedirs(download_dir)
             except Exception as e:
                 telemetry.set_exception(
                     exception=e,
@@ -769,58 +763,32 @@ def install_helm_client(cmd: CLICommand) -> str:
             "Downloading helm client for first time. This can take few minutes..."
         )
 
+        mcr_url = utils.get_mcr_path(cmd.cli_ctx.cloud.endpoints.active_directory)
+
+        client = oras.client.OrasClient(hostname=mcr_url)
         retry_count = 3
         retry_delay = 5
-        if arch == "arm64":
-            # ARM64 Helm binaries are downloaded from the official Helm distribution.
-            official_helm_url = f"https://get.helm.sh/{download_file_name}"
-            download_location_file = os.path.expanduser(
-                os.path.join(download_location, download_file_name)
-            )
-            for i in range(retry_count):
-                try:
-                    from urllib.request import urlretrieve
-
-                    urlretrieve(official_helm_url, download_location_file)
-                    break
-                except Exception as e:
-                    if i == retry_count - 1:
-                        telemetry.set_exception(
-                            exception=e,
-                            fault_type=consts.Download_Helm_Fault_Type,
-                            summary="Unable to download helm client.",
-                        )
-                        raise CLIInternalError(
-                            f"Failed to download helm client: {e}",
-                            recommendation="Please check your internet connection.",
-                        )
-                    time.sleep(retry_delay)
-        else:
-            # Non-ARM64 binaries continue to use MCR artifacts for existing behavior.
-            mcr_url = utils.get_mcr_path(cmd.cli_ctx.cloud.endpoints.active_directory)
-
-            client = oras.client.OrasClient(hostname=mcr_url)
-            for i in range(retry_count):
-                try:
-                    client.pull(
-                        target=f"{mcr_url}/{consts.HELM_MCR_URL}:{artifactTag}",
-                        outdir=download_location,
+        for i in range(retry_count):
+            try:
+                client.pull(
+                    target=f"{mcr_url}/{consts.HELM_MCR_URL}:{artifactTag}",
+                    outdir=download_location,
+                )
+                break
+            except Exception as e:
+                if i == retry_count - 1:
+                    if "Connection reset by peer" in str(e):
+                        telemetry.set_user_fault()
+                    telemetry.set_exception(
+                        exception=e,
+                        fault_type=consts.Download_Helm_Fault_Type,
+                        summary="Unable to download helm client.",
                     )
-                    break
-                except Exception as e:
-                    if i == retry_count - 1:
-                        if "Connection reset by peer" in str(e):
-                            telemetry.set_user_fault()
-                        telemetry.set_exception(
-                            exception=e,
-                            fault_type=consts.Download_Helm_Fault_Type,
-                            summary="Unable to download helm client.",
-                        )
-                        raise CLIInternalError(
-                            f"Failed to download helm client: {e}",
-                            recommendation="Please check your internet connection.",
-                        )
-                    time.sleep(retry_delay)
+                    raise CLIInternalError(
+                        f"Failed to download helm client: {e}",
+                        recommendation="Please check your internet connection.",
+                    )
+                time.sleep(retry_delay)
 
         # Extract the archive.
         try:
