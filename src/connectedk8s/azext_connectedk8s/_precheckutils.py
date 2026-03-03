@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 # pylint: disable=unused-argument, too-many-locals, too-many-branches, too-many-statements, line-too-long
-# pylint: disable
+# pylint: disable=broad-exception-caught
 
 diagnoser_output: list[str] = []
 

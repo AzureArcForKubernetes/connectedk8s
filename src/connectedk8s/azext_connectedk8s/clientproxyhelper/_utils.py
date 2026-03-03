@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     )
 
 logger = get_logger(__name__)
+# pylint: disable=broad-exception-caught
 
 
 def check_if_port_is_open(port: int) -> bool:
