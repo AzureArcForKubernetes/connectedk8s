@@ -104,11 +104,12 @@ def validate_connect_rp_location(cmd: CLICommand, location: str) -> None:
             "Failed to fetch resource provider details",
         )
 
-    for resourceTypes in providerDetails.resource_types:  # type: ignore[attr-defined]
+    resource_types = providerDetails.resource_types or []
+    for resourceTypes in resource_types:
         if resourceTypes.resource_type == "connectedClusters":
             rp_locations = [
-                location.replace(" ", "").lower()
-                for location in resourceTypes.locations
+                rp_location.replace(" ", "").lower()
+                for rp_location in (resourceTypes.locations or [])
             ]
             if location.lower() not in rp_locations:
                 telemetry.set_exception(
