@@ -1899,8 +1899,10 @@ def delete_connectedk8s(
         else:
             raise
 
-    if cluster_resource is not None and (cluster_resource.kind is not None) and (
-        cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind
+    if (
+        cluster_resource is not None
+        and (cluster_resource.kind is not None)
+        and (cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind)
     ):
         err_msg = (
             "Deleting a Provisioned Cluster is not supported from the Connected Cluster CLI. Please use the "
