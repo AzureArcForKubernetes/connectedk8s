@@ -132,7 +132,7 @@ def select_latest_diagnostic_checks_tag(tags: list[str], is_preview: bool) -> st
     return candidates[0]
 
 
-def get_diagnostic_checks_registry_path(mcr_url: str, release_train: str | None) -> str:
+def get_diagnostic_checks_registry_path(mcr_url: str) -> str:
     """Returns the full ``registry/repo:tag`` path for the diagnostic checks helm chart.
 
     Resolution order:
@@ -140,7 +140,8 @@ def get_diagnostic_checks_registry_path(mcr_url: str, release_train: str | None)
     1. :envvar:`DIAGNOSTIC_CHECKS_REGISTRY_PATH` – when set, this value is
        returned as-is, allowing non-MCR paths and custom tags for testing.
     2. Latest matching tag fetched live from the MCR OCI registry, filtered by
-       *release_train* (``"preview"`` → preview tags; anything else → stable).
+       the :envvar:`RELEASETRAIN` environment variable
+       (``"preview"`` → preview tags; anything else → stable).
 
     Raises :class:`~azure.cli.core.azclierror.CLIInternalError` if tag
     discovery fails and no env override is set, rather than silently using a
@@ -155,7 +156,8 @@ def get_diagnostic_checks_registry_path(mcr_url: str, release_train: str | None)
         return env_override
 
     # 2. Live tag discovery from MCR
-    is_preview = (release_train or "").lower() == "preview"
+    release_train = os.getenv("RELEASETRAIN") if os.getenv("RELEASETRAIN") else "stable"
+    is_preview = release_train.lower() == "preview"
     repo_path = consts.Cluster_Diagnostic_Checks_Job_Repo_Path
     tags = fetch_diagnostic_checks_tags(mcr_url, repo_path)
     tag_kind = "preview" if is_preview else "stable"

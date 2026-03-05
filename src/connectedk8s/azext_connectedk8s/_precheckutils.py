@@ -46,7 +46,6 @@ def fetch_diagnostic_checks_results(
     azure_cloud: str,
     filepath_with_timestamp: str,
     storage_space_available: bool,
-    release_train: str | None = None,
 ) -> tuple[str, bool]:
     try:
         # Setting DNS and Outbound Check as working
@@ -70,7 +69,6 @@ def fetch_diagnostic_checks_results(
                 azure_cloud,
                 filepath_with_timestamp,
                 storage_space_available,
-                release_train,
             )
         )
         # If cluster_diagnostic_checks_container_log is not empty there were errors.  Try to read the logs.
@@ -155,7 +153,6 @@ def executing_cluster_diagnostic_checks_job(
     azure_cloud: str,
     filepath_with_timestamp: str,
     storage_space_available: bool,
-    release_train: str | None = None,
 ) -> str | None:
     job_name = "cluster-diagnostic-checks-job"
     # Setting the log output as Empty
@@ -216,9 +213,7 @@ def executing_cluster_diagnostic_checks_job(
                     return None
 
         mcr_url = azext_utils.get_mcr_path(cmd.cli_ctx.cloud.endpoints.active_directory)
-        registry_path = azext_utils.get_diagnostic_checks_registry_path(
-            mcr_url, release_train
-        )
+        registry_path = azext_utils.get_diagnostic_checks_registry_path(mcr_url)
 
         chart_path = azext_utils.get_chart_path(
             registry_path,
