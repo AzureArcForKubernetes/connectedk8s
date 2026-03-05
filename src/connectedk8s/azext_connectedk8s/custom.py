@@ -361,6 +361,7 @@ def create_connectedk8s(
                     azure_cloud,
                     filepath_with_timestamp,
                     storage_space_available,
+                    release_train,
                 )
             )
             precheckutils.fetching_cli_output_logs(

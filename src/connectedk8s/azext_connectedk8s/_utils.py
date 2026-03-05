@@ -15,6 +15,8 @@ import time
 from subprocess import PIPE, Popen
 from typing import TYPE_CHECKING, Any
 
+import requests
+
 from azure.cli.core import get_default_cli, telemetry
 from azure.cli.core.azclierror import (
     ArgumentUsageError,
@@ -82,6 +84,100 @@ def get_mcr_path(active_directory_endpoint: str) -> str:
 
     mcr_url = f"mcr.microsoft.{mcr_postfix}"
     return mcr_url
+
+
+def fetch_diagnostic_checks_tags(mcr_url: str, repo_path: str) -> list[str]:
+    """Fetches all available tags for the diagnostic checks image from the OCI registry.
+
+    Queries the standard OCI ``/v2/<repo>/tags/list`` endpoint and returns the
+    raw list of tag strings.  Returns an empty list on any failure so callers
+    can fall back gracefully.
+    """
+    url = f"https://{mcr_url}/v2/{repo_path}/tags/list"
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        return response.json().get("tags", [])
+    except Exception as e:
+        logger.debug("Failed to fetch diagnostic checks tags from %s: %s", url, e)
+        return []
+
+
+def select_latest_diagnostic_checks_tag(tags: list[str], is_preview: bool) -> str | None:
+    """Selects the latest tag from *tags*, filtered by whether preview is desired.
+
+    Preview tags are expected to contain the substring ``preview`` (e.g.
+    ``1.32.0-preview``).  Non-preview tags are those without it.  The latest
+    tag is determined using :mod:`packaging.version` so that ``1.10.0`` sorts
+    higher than ``1.9.0``.  Returns ``None`` when no matching tag is found.
+    """
+    if is_preview:
+        candidates = [t for t in tags if "preview" in t.lower()]
+    else:
+        candidates = [t for t in tags if "preview" not in t.lower()]
+
+    if not candidates:
+        return None
+
+    def _parse_version(tag: str) -> version.Version:
+        # Strip the -preview suffix (and any other pre-release text) so that
+        # packaging.version can parse the numeric part reliably.
+        clean = re.sub(r"[-.]?preview.*$", "", tag, flags=re.IGNORECASE).strip("-")
+        try:
+            return version.parse(clean)
+        except Exception:
+            return version.parse("0.0.0")
+
+    candidates.sort(key=_parse_version, reverse=True)
+    return candidates[0]
+
+
+def get_diagnostic_checks_registry_path(mcr_url: str, release_train: str | None) -> str:
+    """Returns the full ``registry/repo:tag`` path for the diagnostic checks helm chart.
+
+    Resolution order:
+
+    1. :envvar:`DIAGNOSTIC_CHECKS_REGISTRY_PATH` – when set, this value is
+       returned as-is, allowing non-MCR paths and custom tags for testing.
+    2. Latest matching tag fetched live from the MCR OCI registry, filtered by
+       *release_train* (``"preview"`` → preview tags; anything else → stable).
+
+    Raises :class:`~azure.cli.core.azclierror.CLIInternalError` if tag
+    discovery fails and no env override is set, rather than silently using a
+    potentially stale hardcoded tag.
+    """
+    # 1. Environment variable override (supports non-MCR paths)
+    env_override = os.getenv(consts.Diagnostic_Checks_Registry_Path_Env_Var)
+    if env_override:
+        logger.debug(
+            "Using env override for diagnostic checks registry path: %s", env_override
+        )
+        return env_override
+
+    # 2. Live tag discovery from MCR
+    is_preview = (release_train or "").lower() == "preview"
+    repo_path = consts.Cluster_Diagnostic_Checks_Job_Repo_Path
+    tags = fetch_diagnostic_checks_tags(mcr_url, repo_path)
+    tag_kind = "preview" if is_preview else "stable"
+    if tags:
+        latest_tag = select_latest_diagnostic_checks_tag(tags, is_preview)
+        if latest_tag:
+            registry_path = f"{mcr_url}/{repo_path}:{latest_tag}"
+            logger.debug(
+                "Using latest diagnostic checks tag from MCR: %s", registry_path
+            )
+            return registry_path
+        raise CLIInternalError(
+            f"No {tag_kind} tags found for diagnostic checks chart at '{mcr_url}/{repo_path}'. "
+            f"Set the '{consts.Diagnostic_Checks_Registry_Path_Env_Var}' environment variable "
+            "to specify a custom registry path."
+        )
+
+    raise CLIInternalError(
+        f"Failed to fetch diagnostic checks tags from '{mcr_url}/{repo_path}'. "
+        f"Set the '{consts.Diagnostic_Checks_Registry_Path_Env_Var}' environment variable "
+        "to specify a custom registry path and bypass MCR tag discovery."
+    )
 
 
 def validate_connect_rp_location(cmd: CLICommand, location: str) -> None:
