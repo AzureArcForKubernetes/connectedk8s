@@ -591,3 +591,34 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:
             action="store_true",
             help="Skip SSL verification for any cluster connection.",
         )
+        # AI-powered analysis parameters
+        c.argument(
+            "analyze_with_ai",
+            options_list=["--analyze-with-ai"],
+            action="store_true",
+            arg_group="AI Analysis",
+            help="Enable AI-powered analysis of collected diagnostic logs. Requires --model parameter.",
+            is_preview=True,
+        )
+        c.argument(
+            "model",
+            options_list=["--model"],
+            arg_group="AI Analysis",
+            help="LLM model to use for analysis (e.g., 'azure/gpt-4o', 'gpt-4o', 'ollama/llama2'). Requires corresponding environment variables (AZURE_API_KEY, OPENAI_API_KEY, etc.).",
+            is_preview=True,
+        )
+        c.argument(
+            "api_key",
+            options_list=["--api-key"],
+            arg_group="AI Analysis",
+            help="API key for the LLM provider. If not provided, uses environment variables (AZURE_API_KEY, OPENAI_API_KEY).",
+            is_preview=True,
+        )
+        c.argument(
+            "no_interactive",
+            options_list=["--no-interactive"],
+            action="store_true",
+            arg_group="AI Analysis",
+            help="Run AI analysis in non-interactive batch mode without prompting for input.",
+            is_preview=True,
+        )

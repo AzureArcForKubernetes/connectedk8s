@@ -20,8 +20,6 @@ from base64 import b64decode, b64encode
 from concurrent.futures import ThreadPoolExecutor
 from subprocess import DEVNULL, PIPE, Popen
 from typing import TYPE_CHECKING, Any, Iterable
-
-import oras.client  # type: ignore[import-untyped]
 import yaml
 from azure.cli.command_modules.role import graph_client_factory
 from azure.cli.core import get_default_cli, telemetry
@@ -1255,6 +1253,13 @@ def install_helm_client(cmd: CLICommand) -> str:
     print(
         f"Step: {utils.get_utctimestring()}: Install Helm client if it does not exist"
     )
+    try:
+        import oras.client  # type: ignore[import-untyped]
+    except ModuleNotFoundError as e:
+        raise CLIInternalError(
+            "Missing dependency 'oras'. Reinstall the connectedk8s extension dependencies and try again."
+        ) from e
+
     # Return helm client path set by user
     helm_client_path = os.getenv("HELM_CLIENT_PATH")
     if helm_client_path:
@@ -4125,13 +4130,22 @@ def troubleshoot(
     skip_ssl_verification: bool = False,
     no_wait: bool = False,
     tags: dict[str, str] | None = None,
+    analyze_with_ai: bool = True,
+    model: str | None = None,
+    api_key: str | None = None,
+    no_interactive: bool = False,
 ) -> None:
+    # Initialized before try so the finally block (AI analysis) can always access them
+    filepath_with_timestamp: str | None = None
+    storage_space_available = True
+    diagnostic_checks: dict[str, str] = {}
+    _run_ai_analysis = True  # set to False only on KeyboardInterrupt
+
     try:
-        logger.warning("Diagnoser running. This may take a while ...\n")
+        logger.warning("Diagnoser running for atchub dev box. This may take a while ...\n")
         absolute_path = os.path.abspath(os.path.dirname(__file__))
 
         # Setting the intial values as True
-        storage_space_available = True
         probable_sufficient_resource_for_agents = True
 
         # Setting default values for all checks as True
@@ -4511,11 +4525,66 @@ def troubleshoot(
 
     # Handling the user manual interrupt
     except KeyboardInterrupt:
+        _run_ai_analysis = False
         with contextlib.suppress(Exception):
             troubleshootutils.fetching_cli_output_logs(
                 filepath_with_timestamp, storage_space_available, 0
             )
         raise ManualInterrupt("Process terminated externally.")
+    finally:
+        # AI analysis runs regardless of earlier diagnostic step outcomes,
+        # as long as we have a diagnostic folder and the user requested AI analysis.
+        logger.warning(
+            "[AI Analysis] Gate check: analyze_with_ai=%s, model=%s, "
+            "filepath_with_timestamp=%s, api_key_provided=%s, no_interactive=%s",
+            analyze_with_ai,
+            model,
+            filepath_with_timestamp,
+            bool(api_key),
+            no_interactive,
+        )
+        if _run_ai_analysis and analyze_with_ai and model and filepath_with_timestamp:
+            try:
+                from azext_connectedk8s.ai_analyzer import analyze_diagnostics_with_ai
+
+                logger.warning(
+                    "[AI Analysis] Calling analyze_diagnostics_with_ai with: cmd=%s, "
+                    "diagnostic_folder=%s, diagnostic_checks_count=%s, cluster_name=%s, "
+                    "resource_group=%s, model=%s, api_key_provided=%s, no_interactive=%s",
+                    type(cmd).__name__,
+                    filepath_with_timestamp,
+                    len(diagnostic_checks),
+                    cluster_name,
+                    resource_group_name,
+                    model,
+                    bool(api_key),
+                    no_interactive,
+                )
+                analyze_diagnostics_with_ai(
+                    cmd=cmd,
+                    diagnostic_folder=filepath_with_timestamp,
+                    diagnostic_checks=diagnostic_checks,
+                    cluster_name=cluster_name,
+                    resource_group=resource_group_name,
+                    model=model,
+                    api_key=api_key,
+                    no_interactive=no_interactive,
+                )
+            except Exception as e:
+                logger.warning(
+                    "[AI Analysis] An error occurred during AI analysis: %s\n"
+                    "The diagnostic logs have been collected successfully and can be used for manual troubleshooting.",
+                    str(e),
+                )
+        else:
+            logger.warning(
+                "[AI Analysis] Skipped: _run_ai_analysis=%s, analyze_with_ai=%s, model=%s, "
+                "filepath_with_timestamp=%s",
+                _run_ai_analysis,
+                analyze_with_ai,
+                model,
+                filepath_with_timestamp,
+            )
 
 
 def install_kubectl_client() -> str:

@@ -35,6 +35,8 @@ DEPENDENCIES = [
     "pycryptodome==3.20.0",
     "azure-mgmt-hybridcompute==7.0.0",
     "oras==0.2.25",
+    "litellm>=1.40.0; python_version >= '3.9'",  # Multi-provider LLM support for AI analysis
+    "rich>=13.0.0; python_version >= '3.9'",     # Enhanced console output
 ]
 
 with open("README.md", "r", encoding="utf-8") as f:
