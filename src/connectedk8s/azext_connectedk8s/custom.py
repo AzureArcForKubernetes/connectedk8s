@@ -374,6 +374,10 @@ def create_connectedk8s(
                 )
 
     except Exception as e:
+        precheckutils.send_pre_diagnostic_telemetry(
+            diagnostic_result=diagnostic_checks,
+            execution_status="ExecutionFailed",
+        )
         ex_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         summ_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         telemetry.set_exception(
@@ -401,6 +405,10 @@ def create_connectedk8s(
         and not azure_local_disconnected
         and not lowbandwidth
     ):
+        precheckutils.send_pre_diagnostic_telemetry(
+            diagnostic_result=diagnostic_checks,
+            execution_status="Completed",
+        )
         if storage_space_available:
             logger.warning(
                 "The pre-check result logs logs have been saved at this path: "

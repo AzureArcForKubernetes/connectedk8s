@@ -30,6 +30,38 @@ logger = get_logger(__name__)
 diagnoser_output: list[str] = []
 
 
+def send_pre_diagnostic_telemetry(
+    diagnostic_result: str, execution_status: str
+) -> None:
+    """Send pre-diagnostic telemetry for diagnostics execution failures and check failures."""
+    pre_diagnostic_details = " | ".join(
+        item.strip().replace("\n", " ")
+        for item in diagnoser_output
+        if item and item.strip()
+    )
+
+    prediagnostic_error_messages = (
+        f"executionStatus={execution_status}; diagnosticResult={diagnostic_result}"
+    )
+    if pre_diagnostic_details:
+        prediagnostic_error_messages += (
+            "; details="
+            + (
+                pre_diagnostic_details[:1021] + "..."
+                if len(pre_diagnostic_details) > 1024
+                else pre_diagnostic_details
+            )
+        )
+
+    prediagnostic_error_detail = {
+        "Context.Default.AzureCLI.onboardingErrorType": consts.Install_Prediagnostics_Fault_Type,
+        "Context.Default.AzureCLI.onboardingErrorMessage": prediagnostic_error_messages,
+    }
+
+    logger.warning(f"Sending pre-diagnostic telemetry: {prediagnostic_error_messages}")
+    telemetry.add_extension_event("connectedk8s", prediagnostic_error_detail)
+
+
 def fetch_diagnostic_checks_results(
     cmd: CLICommand,
     corev1_api_instance: CoreV1Api,
