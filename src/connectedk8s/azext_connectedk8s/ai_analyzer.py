@@ -347,16 +347,39 @@ def analyze_diagnostics_with_ai(
 def _validate_environment_variables(model: str) -> None:
     """Validate that required environment variables are set for the specified model."""
     if model.startswith("azure/"):
-        if not os.getenv("AZURE_API_BASE"):
+        api_base = os.getenv("AZURE_API_BASE", "")
+        if not api_base:
             raise CLIError(
                 "Azure OpenAI requires AZURE_API_BASE environment variable. "
-                "Example: export AZURE_API_BASE='https://your-resource.openai.azure.com/'"
+                "Examples:\n"
+                "  Classic Azure OpenAI : AZURE_API_BASE='https://your-resource.openai.azure.com/'\n"
+                "  Azure AI Foundry     : AZURE_API_BASE='https://your-resource.services.ai.azure.com/api/projects/proj-default'"
             )
-        if not os.getenv("AZURE_API_VERSION"):
+
+        # Azure AI Foundry endpoints (services.ai.azure.com) require a newer API version
+        # than classic Azure OpenAI endpoints (openai.azure.com).
+        is_foundry = "services.ai.azure.com" in api_base
+        foundry_version = "2025-01-01-preview"
+        classic_version = "2024-12-01-preview"
+
+        api_version = os.getenv("AZURE_API_VERSION", "")
+        if not api_version:
+            recommended = foundry_version if is_foundry else classic_version
             logger.warning(
-                "AZURE_API_VERSION not set, using default. "
-                "Recommended: export AZURE_API_VERSION='2025-01-01-preview'"
+                "AZURE_API_VERSION not set. Defaulting to '%s'.", recommended
             )
+            os.environ["AZURE_API_VERSION"] = recommended
+        elif is_foundry and api_version < "2025-01-01":
+            # Foundry requires 2025-01-01-preview or newer; older versions return
+            # "API version not supported" at the service layer.
+            logger.warning(
+                "AZURE_API_BASE points to an Azure AI Foundry endpoint but "
+                "AZURE_API_VERSION='%s' is not supported. "
+                "Overriding to '%s'.",
+                api_version,
+                foundry_version,
+            )
+            os.environ["AZURE_API_VERSION"] = foundry_version
     elif model.startswith("ollama/"):
         if not os.getenv("OLLAMA_API_BASE"):
             logger.warning(
