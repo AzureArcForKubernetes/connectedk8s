@@ -213,9 +213,10 @@ def executing_cluster_diagnostic_checks_job(
                     return None
 
         mcr_url = azext_utils.get_mcr_path(cmd.cli_ctx.cloud.endpoints.active_directory)
+        registry_path = azext_utils.get_diagnostic_checks_registry_path(mcr_url)
 
         chart_path = azext_utils.get_chart_path(
-            f"{mcr_url}/{consts.Cluster_Diagnostic_Checks_Job_Registry_Path}",
+            registry_path,
             kube_config,
             kube_context,
             helm_client_location,
