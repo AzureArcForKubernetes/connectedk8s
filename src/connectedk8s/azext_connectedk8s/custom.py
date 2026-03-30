@@ -1886,9 +1886,23 @@ def delete_connectedk8s(
     logger.warning("This operation might take a while ...\n")
 
     # Check if the cluster is of supported type for deletion
-    cluster_resource = client.get(resource_group_name, cluster_name)
-    if (cluster_resource.kind is not None) and (
-        cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind
+    cluster_resource = None
+    try:
+        cluster_resource = client.get(resource_group_name, cluster_name)
+    except HttpResponseError as ex:
+        # If the resource group or cluster resource is not found, proceed with local cleanup
+        if ex.error and ex.error.code in ("ResourceGroupNotFound", "ResourceNotFound"):
+            logger.warning(
+                "Could not find the Azure resource (resource group or cluster may have been deleted). "
+                "Proceeding with local cleanup."
+            )
+        else:
+            raise
+
+    if (
+        cluster_resource is not None
+        and (cluster_resource.kind is not None)
+        and (cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind)
     ):
         err_msg = (
             "Deleting a Provisioned Cluster is not supported from the Connected Cluster CLI. Please use the "
@@ -1929,9 +1943,10 @@ def delete_connectedk8s(
         print(f"Step: {utils.get_utctimestring()}: Performing Force Delete")
         kubectl_client_location = install_kubectl_client()
 
-        delete_cc_resource(
-            client, resource_group_name, cluster_name, no_wait, force=force_delete
-        ).result()
+        if cluster_resource is not None:
+            delete_cc_resource(
+                client, resource_group_name, cluster_name, no_wait, force=force_delete
+            ).result()
 
         # Explicit CRD Deletion
         crd_cleanup_force_delete(
@@ -1951,9 +1966,10 @@ def delete_connectedk8s(
         return
 
     if not release_namespace:
-        delete_cc_resource(
-            client, resource_group_name, cluster_name, no_wait, force=force_delete
-        ).result()
+        if cluster_resource is not None:
+            delete_cc_resource(
+                client, resource_group_name, cluster_name, no_wait, force=force_delete
+            ).result()
         return
 
     # Loading config map
@@ -2004,9 +2020,10 @@ def delete_connectedk8s(
                 recommendation=reco_str,
             )
 
-        delete_cc_resource(
-            client, resource_group_name, cluster_name, no_wait, force=force_delete
-        ).result()
+        if cluster_resource is not None:
+            delete_cc_resource(
+                client, resource_group_name, cluster_name, no_wait, force=force_delete
+            ).result()
     else:
         telemetry.set_exception(
             exception="Unable to delete connected cluster",
