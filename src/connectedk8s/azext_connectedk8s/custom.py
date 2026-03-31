@@ -404,10 +404,7 @@ def create_connectedk8s(
                 )
 
     except Exception as e:
-        precheckutils.send_pre_diagnostic_telemetry(
-            diagnostic_result=diagnostic_checks,
-            execution_status="ExecutionFailed",
-        )
+        precheckutils.send_prediagnostic_job_execution_error_telemetry(reason=str(e))
         ex_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         summ_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         telemetry.set_exception(
@@ -435,9 +432,13 @@ def create_connectedk8s(
         and not azure_local_disconnected
         and not lowbandwidth
     ):
-        precheckutils.send_pre_diagnostic_telemetry(
-            diagnostic_result=diagnostic_checks,
-            execution_status="Completed",
+        precheck_failure_summary = precheckutils.get_precheck_failure_summary()
+        precheck_failure_summary_msg = (
+            f" Details: {precheck_failure_summary}" if precheck_failure_summary else ""
+        )
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            precheckutils.prediagnostic_dns_check,
+            precheckutils.prediagnostic_outbound_check,
         )
         if storage_space_available:
             logger.warning(
@@ -456,6 +457,7 @@ def create_connectedk8s(
                 "meet the prerequisites - "
                 + consts.Doc_Onboarding_PreRequisites_Url
                 + " and try onboarding again."
+                + precheck_failure_summary_msg
             )
             raise ValidationError(err_msg)
 
@@ -468,6 +470,7 @@ def create_connectedk8s(
         err_msg = (
             "One or more pre-onboarding diagnostic checks failed and hence not proceeding with "
             "cluster onboarding. Please resolve them and try onboarding again."
+            + precheck_failure_summary_msg
         )
         raise ValidationError(err_msg)
 
