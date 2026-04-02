@@ -367,6 +367,12 @@ def create_connectedk8s(
                 filepath_with_timestamp, storage_space_available, 1
             )
 
+            if precheckutils.diagnoser_output:
+                print("\n--- Pre-onboarding Diagnostic Check Results ---")
+                for line in precheckutils.diagnoser_output:
+                    print(line.rstrip())
+                print("--- End of Diagnostic Check Results ---\n")
+
             if storage_space_available is False:
                 logger.warning(
                     "There is no storage space available on your device and hence not saving cluster "
@@ -374,6 +380,7 @@ def create_connectedk8s(
                 )
 
     except Exception as e:
+        precheckutils.send_prediagnostic_job_execution_error_telemetry(reason=str(e))
         ex_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         summ_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         telemetry.set_exception(
@@ -401,6 +408,17 @@ def create_connectedk8s(
         and not azure_local_disconnected
         and not lowbandwidth
     ):
+        precheck_failure_summary = precheckutils.get_precheck_failure_summary()
+        precheck_failure_summary_msg = (
+            f" Details: {precheck_failure_summary}" if precheck_failure_summary else ""
+        )
+        if precheckutils.prediagnostic_job_execution_status in ("Completed", "NotCompleted"):
+            precheckutils.send_prediagnostic_check_failure_telemetry(
+                precheckutils.prediagnostic_dns_check,
+                precheckutils.prediagnostic_outbound_check,
+            )
+        else:
+            precheckutils.send_prediagnostic_job_execution_error_telemetry()
         if storage_space_available:
             logger.warning(
                 "The pre-check result logs logs have been saved at this path: "
@@ -418,6 +436,7 @@ def create_connectedk8s(
                 "meet the prerequisites - "
                 + consts.Doc_Onboarding_PreRequisites_Url
                 + " and try onboarding again."
+                + precheck_failure_summary_msg
             )
             raise ValidationError(err_msg)
 
@@ -430,6 +449,7 @@ def create_connectedk8s(
         err_msg = (
             "One or more pre-onboarding diagnostic checks failed and hence not proceeding with "
             "cluster onboarding. Please resolve them and try onboarding again."
+            + precheck_failure_summary_msg
         )
         raise ValidationError(err_msg)
 
@@ -450,6 +470,10 @@ def create_connectedk8s(
             fault_type=consts.Linux_Node_Not_Exists,
             summary="Couldn't find any node on the kubernetes cluster with the OS 'linux'",
         )
+        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+            check_name="LinuxNodeExists",
+            reason="Couldn't find any node on the kubernetes cluster with the OS 'linux'",
+        )
         logger.warning(
             "Please ensure that this Kubernetes cluster has any nodes with OS 'linux', for scheduling the "
             "Arc-Agents onto and connecting to Azure. Learn more at %s",
@@ -467,6 +491,10 @@ def create_connectedk8s(
             exception=ex_msg,
             fault_type=consts.Cannot_Create_ClusterRoleBindings_Fault_Type,
             summary=summ_msg,
+        )
+        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+            check_name="ClusterRoleBindings",
+            reason=ex_msg,
         )
         err_msg = (
             "Your credentials doesn't have permission to create clusterrolebindings on this "
