@@ -1494,7 +1494,7 @@ def get_release_namespace(
     cmd_helm_release = [
         helm_client_location,
         "list",
-        "-a",
+        "--all",
         "--all-namespaces",
         "--output",
         "json",
