@@ -1498,7 +1498,7 @@ def get_helm_major_version(helm_client_location: str) -> int:
         match = re.match(r"v(\d+)\.", version_str)
         if match:
             return int(match.group(1))
-    except Exception:
+    except (OSError, ValueError):
         pass
     return 3  # assume Helm 3 if we cannot determine version
 
