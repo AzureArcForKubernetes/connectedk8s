@@ -1261,14 +1261,10 @@ def _resolve_helm_pull_target(
 ) -> str:
     """Return the ORAS pull target for the helm binary.
 
-    For linux, attempts to resolve a platform-specific digest from the manifest list
-    tag (e.g. ``helm-v3.20.1``), which covers both ``linux/amd64`` and
-    ``linux/arm64`` in a single logical tag.  Falls back to the arch-specific tag
-    (e.g. ``helm-v3.20.1-linux-amd64``) when the manifest list is unavailable or
-    does not contain the requested platform.
-
-    For darwin and windows, no manifest list has been published, so the
-    arch-specific tag is always used directly.
+    Tries the arch-specific tag first (e.g. ``helm-v3.20.1-linux-arm64``).
+    If that tag does not exist, falls back to the manifest list tag
+    (``helm-v3.20.1``) and resolves the correct entry by matching the
+    ``org.opencontainers.image.title`` annotation on each child manifest.
 
     :param client: initialised OrasClient targeting the MCR hostname
     :param mcr_url: MCR hostname (e.g. ``mcr.microsoft.com``)
@@ -1281,15 +1277,30 @@ def _resolve_helm_pull_target(
     arch_specific_tag = f"helm-{helm_version}-{operating_system}-{arch}"
     arch_specific_target = f"{mcr_url}/{helm_mcr_repo}:{arch_specific_tag}"
 
-    # Manifest lists are only published for linux; darwin/windows use
-    # per-platform tags directly so skip the extra network round-trip.
-    if operating_system != "linux":
-        return arch_specific_target
-
-    manifest_list_tag = f"helm-{helm_version}"
-    manifest_list_url = f"{mcr_url}/{helm_mcr_repo}:{manifest_list_tag}"
+    # Check whether the arch-specific tag exists.
     try:
-        container = client.remote.get_container(manifest_list_url)
+        container = client.remote.get_container(arch_specific_target)
+        manifest_url_str = f"{client.remote.prefix}://{container.manifest_url()}"
+        response = client.remote.do_request(manifest_url_str, "HEAD", headers={})
+        if response.status_code == 200:
+            return arch_specific_target
+        logger.debug(
+            "Arch-specific tag %s returned HTTP %d; trying manifest list.",
+            arch_specific_tag,
+            response.status_code,
+        )
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug(
+            "Arch-specific tag check failed (%s); trying manifest list.",
+            e,
+        )
+
+    # Fall back to the manifest list tag and match via annotation title.
+    manifest_list_tag = f"helm-{helm_version}"
+    manifest_list_target = f"{mcr_url}/{helm_mcr_repo}:{manifest_list_tag}"
+    expected_title_prefix = f"helm-{helm_version}-{operating_system}-{arch}"
+    try:
+        container = client.remote.get_container(manifest_list_target)
         index_media_types = [
             "application/vnd.oci.image.index.v1+json",
             "application/vnd.docker.distribution.manifest.list.v2+json",
@@ -1299,50 +1310,53 @@ def _resolve_helm_pull_target(
         response = client.remote.do_request(manifest_url_str, "GET", headers=headers)
         if response.status_code != 200:
             logger.debug(
-                "Helm manifest list tag %s not found (HTTP %d); "
-                "falling back to arch-specific tag %s.",
+                "Manifest list tag %s not found (HTTP %d); "
+                "returning arch-specific target anyway.",
                 manifest_list_tag,
                 response.status_code,
-                arch_specific_tag,
             )
             return arch_specific_target
 
         index = response.json()
-        if "manifests" not in index:
-            # Registry returned a single-arch manifest instead of an index;
-            # treat the manifest list URL as a valid pull target as-is.
-            logger.debug(
-                "Target %s is a single-arch manifest; pulling directly.",
-                manifest_list_url,
-            )
-            return manifest_list_url
-
-        # Find the entry matching linux/<arch>.
         for entry in index.get("manifests", []):
+            # First check platform fields (future-proof for when pipeline adds them).
             plat = entry.get("platform", {})
-            if plat.get("os") == "linux" and plat.get("architecture") == arch:
+            if plat.get("os") == operating_system and plat.get("architecture") == arch:
                 digest = entry["digest"]
-                pull_target = f"{mcr_url}/{helm_mcr_repo}@{digest}"
                 logger.debug(
-                    "Resolved linux/%s from manifest list %s to digest %s.",
+                    "Resolved %s/%s via platform field to digest %s.",
+                    operating_system,
                     arch,
-                    manifest_list_tag,
                     digest,
                 )
-                return pull_target
+                return f"{mcr_url}/{helm_mcr_repo}@{digest}"
+
+            # Otherwise match on the child manifest annotation title.
+            ann = entry.get("annotations", {})
+            title = ann.get("org.opencontainers.image.title", "")
+            if title.startswith(expected_title_prefix):
+                digest = entry["digest"]
+                logger.debug(
+                    "Resolved %s/%s via annotation title '%s' to digest %s.",
+                    operating_system,
+                    arch,
+                    title,
+                    digest,
+                )
+                return f"{mcr_url}/{helm_mcr_repo}@{digest}"
 
         logger.debug(
-            "linux/%s not found in manifest list %s; "
-            "falling back to arch-specific tag %s.",
+            "%s/%s not found in manifest list %s; "
+            "returning arch-specific target anyway.",
+            operating_system,
             arch,
             manifest_list_tag,
-            arch_specific_tag,
         )
     except Exception as e:  # pylint: disable=broad-except
         logger.debug(
-            "Manifest list resolution failed (%s); falling back to arch-specific tag %s.",
+            "Manifest list resolution failed (%s); "
+            "returning arch-specific target anyway.",
             e,
-            arch_specific_tag,
         )
     return arch_specific_target
 
