@@ -1251,6 +1251,102 @@ def check_kube_connection() -> str:
     assert False
 
 
+def _resolve_helm_pull_target(
+    client: oras.client.OrasClient,
+    mcr_url: str,
+    helm_mcr_repo: str,
+    helm_version: str,
+    operating_system: str,
+    arch: str,
+) -> str:
+    """Return the ORAS pull target for the helm binary.
+
+    For linux, attempts to resolve a platform-specific digest from the manifest list
+    tag (e.g. ``helm-v3.20.1``), which covers both ``linux/amd64`` and
+    ``linux/arm64`` in a single logical tag.  Falls back to the arch-specific tag
+    (e.g. ``helm-v3.20.1-linux-amd64``) when the manifest list is unavailable or
+    does not contain the requested platform.
+
+    For darwin and windows, no manifest list has been published, so the
+    arch-specific tag is always used directly.
+
+    :param client: initialised OrasClient targeting the MCR hostname
+    :param mcr_url: MCR hostname (e.g. ``mcr.microsoft.com``)
+    :param helm_mcr_repo: repository path within MCR (e.g. ``azurearck8s/helm``)
+    :param helm_version: helm version string including the leading ``v`` (e.g. ``v3.20.1``)
+    :param operating_system: lower-case OS name: ``linux``, ``darwin``, or ``windows``
+    :param arch: CPU architecture: ``amd64`` or ``arm64``
+    :returns: full ORAS pull target string (tag-based or digest-based)
+    """
+    arch_specific_tag = f"helm-{helm_version}-{operating_system}-{arch}"
+    arch_specific_target = f"{mcr_url}/{helm_mcr_repo}:{arch_specific_tag}"
+
+    # Manifest lists are only published for linux; darwin/windows use
+    # per-platform tags directly so skip the extra network round-trip.
+    if operating_system != "linux":
+        return arch_specific_target
+
+    manifest_list_tag = f"helm-{helm_version}"
+    manifest_list_url = f"{mcr_url}/{helm_mcr_repo}:{manifest_list_tag}"
+    try:
+        container = client.remote.get_container(manifest_list_url)
+        index_media_types = [
+            "application/vnd.oci.image.index.v1+json",
+            "application/vnd.docker.distribution.manifest.list.v2+json",
+        ]
+        headers = {"Accept": ", ".join(index_media_types)}
+        manifest_url_str = f"{client.remote.prefix}://{container.manifest_url()}"
+        response = client.remote.do_request(manifest_url_str, "GET", headers=headers)
+        if response.status_code != 200:
+            logger.debug(
+                "Helm manifest list tag %s not found (HTTP %d); "
+                "falling back to arch-specific tag %s.",
+                manifest_list_tag,
+                response.status_code,
+                arch_specific_tag,
+            )
+            return arch_specific_target
+
+        index = response.json()
+        if "manifests" not in index:
+            # Registry returned a single-arch manifest instead of an index;
+            # treat the manifest list URL as a valid pull target as-is.
+            logger.debug(
+                "Target %s is a single-arch manifest; pulling directly.",
+                manifest_list_url,
+            )
+            return manifest_list_url
+
+        # Find the entry matching linux/<arch>.
+        for entry in index.get("manifests", []):
+            plat = entry.get("platform", {})
+            if plat.get("os") == "linux" and plat.get("architecture") == arch:
+                digest = entry["digest"]
+                pull_target = f"{mcr_url}/{helm_mcr_repo}@{digest}"
+                logger.debug(
+                    "Resolved linux/%s from manifest list %s to digest %s.",
+                    arch,
+                    manifest_list_tag,
+                    digest,
+                )
+                return pull_target
+
+        logger.debug(
+            "linux/%s not found in manifest list %s; "
+            "falling back to arch-specific tag %s.",
+            arch,
+            manifest_list_tag,
+            arch_specific_tag,
+        )
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug(
+            "Manifest list resolution failed (%s); falling back to arch-specific tag %s.",
+            e,
+            arch_specific_tag,
+        )
+    return arch_specific_target
+
+
 def install_helm_client(cmd: CLICommand) -> str:
     print(
         f"Step: {utils.get_utctimestring()}: Install Helm client if it does not exist"
@@ -1326,56 +1422,39 @@ def install_helm_client(cmd: CLICommand) -> str:
 
         retry_count = 3
         retry_delay = 5
-        if arch == "arm64":
-            # ARM64 Helm binaries are downloaded from the official Helm distribution.
-            official_helm_url = f"https://get.helm.sh/{download_file_name}"
-            download_location_file = os.path.expanduser(
-                os.path.join(download_location, download_file_name)
-            )
-            for i in range(retry_count):
-                try:
-                    from urllib.request import urlretrieve
+        # Helm binaries are downloaded from MCR artifacts for all architectures.
+        mcr_url = utils.get_mcr_path(cmd.cli_ctx.cloud.endpoints.active_directory)
 
-                    urlretrieve(official_helm_url, download_location_file)
-                    break
-                except Exception as e:
-                    if i == retry_count - 1:
-                        telemetry.set_exception(
-                            exception=e,
-                            fault_type=consts.Download_Helm_Fault_Type,
-                            summary="Unable to download helm client.",
-                        )
-                        raise CLIInternalError(
-                            f"Failed to download helm client: {e}",
-                            recommendation="Please check your internet connection.",
-                        )
-                    time.sleep(retry_delay)
-        else:
-            # Non-ARM64 binaries continue to use MCR artifacts for existing behavior.
-            mcr_url = utils.get_mcr_path(cmd.cli_ctx.cloud.endpoints.active_directory)
-
-            client = oras.client.OrasClient(hostname=mcr_url)
-            for i in range(retry_count):
-                try:
-                    client.pull(
-                        target=f"{mcr_url}/{consts.HELM_MCR_URL}:{artifactTag}",
-                        outdir=download_location,
+        client = oras.client.OrasClient(hostname=mcr_url)
+        pull_target = _resolve_helm_pull_target(
+            client,
+            mcr_url,
+            consts.HELM_MCR_URL,
+            consts.HELM_VERSION,
+            operating_system,
+            arch,
+        )
+        for i in range(retry_count):
+            try:
+                client.pull(
+                    target=pull_target,
+                    outdir=download_location,
+                )
+                break
+            except Exception as e:
+                if i == retry_count - 1:
+                    if "Connection reset by peer" in str(e):
+                        telemetry.set_user_fault()
+                    telemetry.set_exception(
+                        exception=e,
+                        fault_type=consts.Download_Helm_Fault_Type,
+                        summary="Unable to download helm client.",
                     )
-                    break
-                except Exception as e:
-                    if i == retry_count - 1:
-                        if "Connection reset by peer" in str(e):
-                            telemetry.set_user_fault()
-                        telemetry.set_exception(
-                            exception=e,
-                            fault_type=consts.Download_Helm_Fault_Type,
-                            summary="Unable to download helm client.",
-                        )
-                        raise CLIInternalError(
-                            f"Failed to download helm client: {e}",
-                            recommendation="Please check your internet connection.",
-                        )
-                    time.sleep(retry_delay)
+                    raise CLIInternalError(
+                        f"Failed to download helm client: {e}",
+                        recommendation="Please check your internet connection.",
+                    )
+                time.sleep(retry_delay)
 
         # Extract the archive.
         try:
