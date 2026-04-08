@@ -1373,10 +1373,7 @@ def install_helm_client(cmd: CLICommand) -> str:
     # Fetch system related info
     operating_system = platform.system().lower()
     machine_type = platform.machine()
-    if machine_type.lower() in ("aarch64", "arm64"):
-        arch = "arm64"
-    else:
-        arch = "amd64"
+    arch = "arm64" if machine_type.lower() in ("aarch64", "arm64") else "amd64"
 
     # Send machine telemetry
     telemetry.add_extension_event(
@@ -1391,7 +1388,6 @@ def install_helm_client(cmd: CLICommand) -> str:
         install_location_string = (
             f".azure\\helm\\{consts.HELM_VERSION}\\{operating_system}-{arch}\\helm.exe"
         )
-        artifactTag = f"helm-{consts.HELM_VERSION}-{operating_system}-{arch}"
     elif operating_system == "linux" or operating_system == "darwin":
         download_location_string = f".azure/helm/{consts.HELM_VERSION}"
         download_file_name = (
@@ -1400,7 +1396,6 @@ def install_helm_client(cmd: CLICommand) -> str:
         install_location_string = (
             f".azure/helm/{consts.HELM_VERSION}/{operating_system}-{arch}/helm"
         )
-        artifactTag = f"helm-{consts.HELM_VERSION}-{operating_system}-{arch}"
     else:
         telemetry.set_exception(
             exception="Unsupported OS for installing helm client",
