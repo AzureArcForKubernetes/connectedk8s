@@ -1382,9 +1382,7 @@ def install_helm_client(cmd: CLICommand) -> str:
     # Set helm binary download & install locations
     if operating_system == "windows":
         download_location_string = f".azure\\helm\\{consts.HELM_VERSION}"
-        download_file_name = (
-            f"helm-{consts.HELM_VERSION}-{operating_system}-{arch}.zip"
-        )
+        download_file_name = f"helm-{consts.HELM_VERSION}-{operating_system}-{arch}.zip"
         install_location_string = (
             f".azure\\helm\\{consts.HELM_VERSION}\\{operating_system}-{arch}\\helm.exe"
         )
