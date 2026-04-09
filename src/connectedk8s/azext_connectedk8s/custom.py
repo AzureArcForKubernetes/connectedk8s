@@ -1252,7 +1252,6 @@ def check_kube_connection() -> str:
 
 
 def _resolve_helm_pull_target(
-    client: oras.client.OrasClient,
     mcr_url: str,
     helm_mcr_repo: str,
     helm_version: str,
@@ -1266,7 +1265,9 @@ def _resolve_helm_pull_target(
     (``helm-v3.20.1``) and resolves the correct entry by matching the
     ``org.opencontainers.image.title`` annotation on each child manifest.
 
-    :param client: initialised OrasClient targeting the MCR hostname
+    Uses the OCI Distribution v2 HTTP API directly so that the logic is
+    independent of the ``oras`` library version installed.
+
     :param mcr_url: MCR hostname (e.g. ``mcr.microsoft.com``)
     :param helm_mcr_repo: repository path within MCR (e.g. ``azurearck8s/helm``)
     :param helm_version: helm version string including the leading ``v`` (e.g. ``v3.20.1``)
@@ -1274,14 +1275,17 @@ def _resolve_helm_pull_target(
     :param arch: CPU architecture: ``amd64`` or ``arm64``
     :returns: full ORAS pull target string (tag-based or digest-based)
     """
+    import requests as http_client  # pylint: disable=import-outside-toplevel
+
     arch_specific_tag = f"helm-{helm_version}-{operating_system}-{arch}"
     arch_specific_target = f"{mcr_url}/{helm_mcr_repo}:{arch_specific_tag}"
+    base_api = f"https://{mcr_url}/v2/{helm_mcr_repo}/manifests"
 
     # Check whether the arch-specific tag exists.
     try:
-        container = client.remote.get_container(arch_specific_target)
-        manifest_url_str = f"{client.remote.prefix}://{container.manifest_url()}"
-        response = client.remote.do_request(manifest_url_str, "HEAD", headers={})
+        response = http_client.head(
+            f"{base_api}/{arch_specific_tag}", timeout=30
+        )
         if response.status_code == 200:
             return arch_specific_target
         logger.debug(
@@ -1297,17 +1301,17 @@ def _resolve_helm_pull_target(
 
     # Fall back to the manifest list tag and match via annotation title.
     manifest_list_tag = f"helm-{helm_version}"
-    manifest_list_target = f"{mcr_url}/{helm_mcr_repo}:{manifest_list_tag}"
     expected_title_prefix = f"helm-{helm_version}-{operating_system}-{arch}"
     try:
-        container = client.remote.get_container(manifest_list_target)
-        index_media_types = [
-            "application/vnd.oci.image.index.v1+json",
-            "application/vnd.docker.distribution.manifest.list.v2+json",
-        ]
-        headers = {"Accept": ", ".join(index_media_types)}
-        manifest_url_str = f"{client.remote.prefix}://{container.manifest_url()}"
-        response = client.remote.do_request(manifest_url_str, "GET", headers=headers)
+        index_media_types = (
+            "application/vnd.oci.image.index.v1+json, "
+            "application/vnd.docker.distribution.manifest.list.v2+json"
+        )
+        response = http_client.get(
+            f"{base_api}/{manifest_list_tag}",
+            headers={"Accept": index_media_types},
+            timeout=30,
+        )
         if response.status_code != 200:
             raise CLIInternalError(
                 f"Could not resolve helm binary for {operating_system}/{arch}. "
@@ -1429,7 +1433,6 @@ def install_helm_client(cmd: CLICommand) -> str:
 
         client = oras.client.OrasClient(hostname=mcr_url)
         pull_target = _resolve_helm_pull_target(
-            client,
             mcr_url,
             consts.HELM_MCR_URL,
             consts.HELM_VERSION,
