@@ -1281,10 +1281,30 @@ def _resolve_helm_pull_target(
     arch_specific_target = f"{mcr_url}/{helm_mcr_repo}:{arch_specific_tag}"
     base_api = f"https://{mcr_url}/v2/{helm_mcr_repo}/manifests"
 
+    # MCR requires anonymous bearer-token auth even for public images.
+    auth_headers = {}
+    try:
+        token_resp = http_client.get(
+            f"https://{mcr_url}/oauth2/token",
+            params={
+                "service": mcr_url,
+                "scope": f"repository:{helm_mcr_repo}:pull",
+            },
+            timeout=30,
+        )
+        if token_resp.status_code == 200:
+            access_token = token_resp.json().get("access_token", "")
+            if access_token:
+                auth_headers["Authorization"] = f"Bearer {access_token}"
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug("Failed to obtain MCR token (%s); continuing without auth.", e)
+
     # Check whether the arch-specific tag exists.
     try:
         response = http_client.head(
-            f"{base_api}/{arch_specific_tag}", timeout=30
+            f"{base_api}/{arch_specific_tag}",
+            headers=auth_headers,
+            timeout=30,
         )
         if response.status_code == 200:
             return arch_specific_target
@@ -1309,7 +1329,7 @@ def _resolve_helm_pull_target(
         )
         response = http_client.get(
             f"{base_api}/{manifest_list_tag}",
-            headers={"Accept": index_media_types},
+            headers={**auth_headers, "Accept": index_media_types},
             timeout=30,
         )
         if response.status_code != 200:
