@@ -1281,29 +1281,17 @@ def _resolve_helm_pull_target(
     arch_specific_target = f"{mcr_url}/{helm_mcr_repo}:{arch_specific_tag}"
     base_api = f"https://{mcr_url}/v2/{helm_mcr_repo}/manifests"
 
-    # MCR requires anonymous bearer-token auth even for public images.
-    auth_headers = {}
-    try:
-        token_resp = http_client.get(
-            f"https://{mcr_url}/oauth2/token",
-            params={
-                "service": mcr_url,
-                "scope": f"repository:{helm_mcr_repo}:pull",
-            },
-            timeout=30,
-        )
-        if token_resp.status_code == 200:
-            access_token = token_resp.json().get("access_token", "")
-            if access_token:
-                auth_headers["Authorization"] = f"Bearer {access_token}"
-    except Exception as e:  # pylint: disable=broad-except
-        logger.debug("Failed to obtain MCR token (%s); continuing without auth.", e)
+    # OCI media types required by MCR (HEAD/GET return 404 without Accept).
+    oci_accept = (
+        "application/vnd.oci.image.manifest.v1+json, "
+        "application/vnd.oci.image.index.v1+json"
+    )
 
     # Check whether the arch-specific tag exists.
     try:
         response = http_client.head(
             f"{base_api}/{arch_specific_tag}",
-            headers=auth_headers,
+            headers={"Accept": oci_accept},
             timeout=30,
         )
         if response.status_code == 200:
@@ -1320,16 +1308,14 @@ def _resolve_helm_pull_target(
         )
 
     # Fall back to the manifest list tag and match via annotation title.
+    # Annotations live on each child manifest, not on the index entries,
+    # so we must fetch every child manifest to find the right one.
     manifest_list_tag = f"helm-{helm_version}"
     expected_title_prefix = f"helm-{helm_version}-{operating_system}-{arch}"
     try:
-        index_media_types = (
-            "application/vnd.oci.image.index.v1+json, "
-            "application/vnd.docker.distribution.manifest.list.v2+json"
-        )
         response = http_client.get(
             f"{base_api}/{manifest_list_tag}",
-            headers={**auth_headers, "Accept": index_media_types},
+            headers={"Accept": oci_accept},
             timeout=30,
         )
         if response.status_code != 200:
@@ -1341,7 +1327,7 @@ def _resolve_helm_pull_target(
 
         index = response.json()
         for entry in index.get("manifests", []):
-            # First check platform fields (future-proof for when pipeline adds them).
+            # Check platform fields if present (future-proof).
             plat = entry.get("platform", {})
             if plat.get("os") == operating_system and plat.get("architecture") == arch:
                 digest = entry["digest"]
@@ -1353,19 +1339,32 @@ def _resolve_helm_pull_target(
                 )
                 return f"{mcr_url}/{helm_mcr_repo}@{digest}"
 
-            # Otherwise match on the child manifest annotation title.
-            ann = entry.get("annotations", {})
-            title = ann.get("org.opencontainers.image.title", "")
-            if title.startswith(expected_title_prefix):
-                digest = entry["digest"]
-                logger.debug(
-                    "Resolved %s/%s via annotation title '%s' to digest %s.",
-                    operating_system,
-                    arch,
-                    title,
-                    digest,
+        # Annotations are on child manifests; fetch each one to match.
+        for entry in index.get("manifests", []):
+            digest = entry.get("digest", "")
+            try:
+                child_resp = http_client.get(
+                    f"{base_api}/{digest}",
+                    headers={"Accept": oci_accept},
+                    timeout=30,
                 )
-                return f"{mcr_url}/{helm_mcr_repo}@{digest}"
+                if child_resp.status_code != 200:
+                    continue
+                child = child_resp.json()
+                title = child.get("annotations", {}).get(
+                    "org.opencontainers.image.title", ""
+                )
+                if title.startswith(expected_title_prefix):
+                    logger.debug(
+                        "Resolved %s/%s via child annotation title '%s' to digest %s.",
+                        operating_system,
+                        arch,
+                        title,
+                        digest,
+                    )
+                    return f"{mcr_url}/{helm_mcr_repo}@{digest}"
+            except Exception:  # pylint: disable=broad-except
+                continue
 
         raise CLIInternalError(
             f"Could not resolve helm binary for {operating_system}/{arch}. "
