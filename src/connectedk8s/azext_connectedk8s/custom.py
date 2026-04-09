@@ -1309,13 +1309,11 @@ def _resolve_helm_pull_target(
         manifest_url_str = f"{client.remote.prefix}://{container.manifest_url()}"
         response = client.remote.do_request(manifest_url_str, "GET", headers=headers)
         if response.status_code != 200:
-            logger.debug(
-                "Manifest list tag %s not found (HTTP %d); "
-                "returning arch-specific target anyway.",
-                manifest_list_tag,
-                response.status_code,
+            raise CLIInternalError(
+                f"Could not resolve helm binary for {operating_system}/{arch}. "
+                f"Arch-specific tag '{arch_specific_tag}' check failed and "
+                f"manifest list '{manifest_list_tag}' returned HTTP {response.status_code}."
             )
-            return arch_specific_target
 
         index = response.json()
         for entry in index.get("manifests", []):
@@ -1345,20 +1343,17 @@ def _resolve_helm_pull_target(
                 )
                 return f"{mcr_url}/{helm_mcr_repo}@{digest}"
 
-        logger.debug(
-            "%s/%s not found in manifest list %s; "
-            "returning arch-specific target anyway.",
-            operating_system,
-            arch,
-            manifest_list_tag,
+        raise CLIInternalError(
+            f"Could not resolve helm binary for {operating_system}/{arch}. "
+            f"No matching entry found in manifest list '{manifest_list_tag}'."
         )
+    except CLIInternalError:
+        raise
     except Exception as e:  # pylint: disable=broad-except
-        logger.debug(
-            "Manifest list resolution failed (%s); "
-            "returning arch-specific target anyway.",
-            e,
-        )
-    return arch_specific_target
+        raise CLIInternalError(
+            f"Could not resolve helm binary for {operating_system}/{arch}. "
+            f"Manifest list resolution failed: {e}"
+        ) from e
 
 
 def install_helm_client(cmd: CLICommand) -> str:
