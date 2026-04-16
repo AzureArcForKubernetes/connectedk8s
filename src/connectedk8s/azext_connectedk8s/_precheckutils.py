@@ -62,16 +62,15 @@ def send_prediagnostic_check_failure_telemetry(
     crd_error = ""
     for msg in diagnoser_output:
         msg_lower = msg.lower()
-        # Capture DNS-specific errors
+        # Capture first line of each error message to keep telemetry concise
         if dns_check == "Failed" and "dns" in msg_lower and "error" in msg_lower:
-            dns_error = msg.strip()
-        # Capture outbound connectivity errors
+            dns_error = msg.strip().splitlines()[0]
         if outbound_connectivity_check == "Failed" and "outbound" in msg_lower and "error" in msg_lower:
-            outbound_error = msg.strip()
-        if prediagnostic_entra_check == "Failed" and "entra" in msg_lower:
-            entra_error = msg.strip()
-        if prediagnostic_crd_check == "Failed" and "crd" in msg_lower:
-            crd_error = msg.strip()
+            outbound_error = msg.strip().splitlines()[0]
+        if prediagnostic_entra_check == "Failed" and "entra" in msg_lower and "error" in msg_lower:
+            entra_error = msg.strip().splitlines()[0]
+        if prediagnostic_crd_check == "Failed" and "crd" in msg_lower and "error" in msg_lower:
+            crd_error = msg.strip().splitlines()[0]
 
     check_results = {
         "dnsCheck": dns_check,
@@ -252,6 +251,21 @@ def fetch_diagnostic_checks_results(
             else:
                 prediagnostic_crd_check = consts.Diagnostic_Check_Passed
         else:
+            # Empty log — if job didn't complete (e.g., pod never scheduled), treat as Incomplete not Passed
+            if prediagnostic_job_execution_status == "NotCompleted":
+                # Mark all individual checks as NotApplicable since the pod never produced output
+                prediagnostic_dns_check = "NotApplicable"
+                prediagnostic_outbound_check = "NotApplicable"
+                prediagnostic_entra_check = "NotApplicable"
+                prediagnostic_crd_check = "NotApplicable"
+                diagnoser_output.append(
+                    "Precheck summary: "
+                    f"jobExecutionStatus={prediagnostic_job_execution_status}; "
+                    f"dnsCheck={prediagnostic_dns_check}; outboundConnectivityCheck={prediagnostic_outbound_check}; "
+                    f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
+                )
+                send_prediagnostic_job_execution_error_telemetry()
+                return consts.Diagnostic_Check_Incomplete, storage_space_available
             return consts.Diagnostic_Check_Passed, storage_space_available
 
         diagnoser_output.append(
@@ -562,6 +576,49 @@ def executing_cluster_diagnostic_checks_job(
                 "Cluster diagnostics job didn't reach completed state in the kubernetes cluster. The "
                 "possible reasons can be resource constraints on the cluster.\n"
             )
+
+        # Fetch and save container logs when job completed successfully (always save for diagnostics)
+        if is_job_complete:
+            all_pods = corev1_api_instance.list_namespaced_pod("azure-arc-release")
+            for each_pod in all_pods.items:
+                pod_name = each_pod.metadata.name
+                if not pod_name.startswith(job_name):
+                    continue
+                try:
+                    cluster_diagnostic_checks_container_log = (
+                        corev1_api_instance.read_namespaced_pod_log(
+                            name=pod_name,
+                            container="cluster-diagnostic-checks-container",
+                            namespace="azure-arc-release",
+                        )
+                    )
+                    if storage_space_available:
+                        log_path = os.path.join(
+                            filepath_with_timestamp,
+                            "cluster_diagnostic_checks_job_log.txt",
+                        )
+                        with open(log_path, "w+") as f:
+                            f.write(cluster_diagnostic_checks_container_log)
+                except OSError as e:
+                    if "[Errno 28]" in str(e):
+                        storage_space_available = False
+                        telemetry.set_exception(
+                            exception=e,
+                            fault_type=consts.No_Storage_Space_Available_Fault_Type,
+                            summary="No space left on device",
+                        )
+                        shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
+                    else:
+                        logger.exception(
+                            "An exception has occured while saving the Cluster "
+                            "Diagnostic Checks Job logs in the local machine."
+                        )
+                except Exception as e:
+                    logger.exception(
+                        "An exception has occured while saving the Cluster "
+                        "Diagnostic Checks Job logs in the local machine."
+                    )
+                break
 
         # Clearing all the resources after fetching the cluster diagnostic checks container logs
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
