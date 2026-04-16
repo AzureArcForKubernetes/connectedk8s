@@ -12,7 +12,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Stub out heavy dependencies before importing the module under test
+# Stub out heavy dependencies before importing the module under test.
+# Use setdefault so real modules are preferred when available (e.g. in azdev CI),
+# but stubs are used in lightweight environments without full CLI installed.
 _STUBS = {
     "kubernetes": MagicMock(),
     "kubernetes.config": MagicMock(),
@@ -49,7 +51,7 @@ _STUBS = {
     "azext_connectedk8s._utils": MagicMock(),
 }
 for mod, stub in _STUBS.items():
-    sys.modules[mod] = stub
+    sys.modules.setdefault(mod, stub)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
