@@ -36,23 +36,6 @@ prediagnostic_entra_check = "Starting"
 prediagnostic_crd_check = "Starting"
 
 
-def _debug_add_extension_event(properties: dict) -> None:
-    """Debug wrapper around telemetry.add_extension_event to surface silent failures."""
-    import azure.cli.core.telemetry as _tel_mod  # pylint: disable=import-outside-toplevel
-    session = getattr(_tel_mod, "_session", None)
-    before = len(getattr(session, "events", [])) if session else -1
-    try:
-        telemetry.add_extension_event("connectedk8s", properties)
-    except Exception as ex:  # pylint: disable=broad-except
-        print(f"[Telemetry DEBUG] add_extension_event raised: {ex}")
-    after = len(getattr(session, "events", [])) if session else -1
-    print(f"[Telemetry DEBUG] session.events before={before} after={after} (delta={after - before})")
-    if session:
-        extra = getattr(session, "_extension_events", None) or getattr(session, "extra_events", None)
-        print(f"[Telemetry DEBUG] extension_events count: {len(extra) if extra is not None else 'N/A'}")
-        print(f"[Telemetry DEBUG] is_telemetry_enabled: {getattr(_tel_mod, 'is_telemetry_enabled', lambda: 'N/A')()}")
-
-
 def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
     """Send telemetry when prediagnostic job execution fails."""
     error_detail_msg = {"jobExecutionStatus": prediagnostic_job_execution_status}
@@ -65,7 +48,7 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
         "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
     }
     print(f"[Telemetry] onboardingErrorType={consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type} onboardingErrorMessage={error_message}")
-    _debug_add_extension_event(prediagnostic_error_detail)
+    telemetry.add_extension_event("connectedk8s", prediagnostic_error_detail)
 
 
 def send_prediagnostic_check_failure_telemetry(
@@ -114,7 +97,7 @@ def send_prediagnostic_check_failure_telemetry(
     }
 
     print(f"[Telemetry] onboardingErrorType={consts.Install_Prediagnostics_Fault_Type} onboardingErrorMessage={error_message}")
-    _debug_add_extension_event(prediagnostic_error_detail)
+    telemetry.add_extension_event("connectedk8s", prediagnostic_error_detail)
 
 
 def send_post_diagnostic_precheck_failure_telemetry(check_name: str, reason: str) -> None:
@@ -125,7 +108,7 @@ def send_post_diagnostic_precheck_failure_telemetry(check_name: str, reason: str
         "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
     }
     print(f"[Telemetry] onboardingErrorType={consts.Post_Diagnostic_Precheck_Fault_Type} onboardingErrorMessage={error_message}")
-    _debug_add_extension_event(error_detail)
+    telemetry.add_extension_event("connectedk8s", error_detail)
 
 
 def get_precheck_failure_summary() -> str:
