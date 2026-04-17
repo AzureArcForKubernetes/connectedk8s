@@ -41,7 +41,7 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
     error_detail_msg = {"jobExecutionStatus": prediagnostic_job_execution_status}
     if reason:
         error_detail_msg["reason"] = reason
-    error_message = json.dumps(error_detail_msg)
+    error_message = azext_utils.process_helm_error_detail(json.dumps(error_detail_msg))
 
     prediagnostic_error_detail = {
         "Context.Default.AzureCLI.onboardingErrorType": consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
@@ -89,7 +89,7 @@ def send_prediagnostic_check_failure_telemetry(
     if crd_error:
         check_results["crdError"] = crd_error
         
-    error_message = json.dumps(check_results)
+    error_message = azext_utils.process_helm_error_detail(json.dumps(check_results))
 
     prediagnostic_error_detail = {
         "Context.Default.AzureCLI.onboardingErrorType": consts.Install_Prediagnostics_Fault_Type,
@@ -102,7 +102,7 @@ def send_prediagnostic_check_failure_telemetry(
 
 def send_post_diagnostic_precheck_failure_telemetry(check_name: str, reason: str) -> None:
     """Send telemetry for individual precheck failures that occur after the diagnostic job."""
-    error_message = json.dumps({"checkName": check_name, "reason": reason})
+    error_message = azext_utils.process_helm_error_detail(json.dumps({"checkName": check_name, "reason": reason}))
     error_detail = {
         "Context.Default.AzureCLI.onboardingErrorType": consts.Post_Diagnostic_Precheck_Fault_Type,
         "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
@@ -613,7 +613,7 @@ def executing_cluster_diagnostic_checks_job(
                             "An exception has occured while saving the Cluster "
                             "Diagnostic Checks Job logs in the local machine."
                         )
-                except Exception as e:
+                except Exception:
                     logger.exception(
                         "An exception has occured while saving the Cluster "
                         "Diagnostic Checks Job logs in the local machine."
@@ -684,6 +684,7 @@ def helm_install_release_cluster_diagnostic_checks(
     _, error_helm_install = response_helm_install.communicate()
     if response_helm_install.returncode != 0:
         error = error_helm_install.decode("ascii")
+        error = azext_utils.process_helm_error_detail(error)
         if "forbidden" in error or "timed out waiting for the condition" in error:
             telemetry.set_user_fault()
 
