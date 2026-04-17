@@ -420,7 +420,10 @@ def create_connectedk8s(
                 precheckutils.prediagnostic_dns_check,
                 precheckutils.prediagnostic_outbound_check,
             )
-        elif precheckutils.prediagnostic_job_execution_status not in ("Completed", "NotCompleted"):
+        elif precheckutils.prediagnostic_job_execution_status not in (
+            "Completed",
+            "NotCompleted",
+        ):
             precheckutils.send_prediagnostic_job_execution_error_telemetry()
         if storage_space_available:
             logger.warning(
