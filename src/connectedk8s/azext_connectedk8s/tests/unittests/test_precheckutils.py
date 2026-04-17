@@ -1,8 +1,9 @@
-﻿# --------------------------------------------------------------------------------------------
+# --------------------------------------------------------------------------------------------
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 """Unit tests for prediagnostic telemetry functions in _precheckutils.py."""
+
 from __future__ import annotations
 
 import json
@@ -63,6 +64,7 @@ import azext_connectedk8s._precheckutils as precheckutils  # noqa: E402
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _reset_globals():
     """Reset module-level globals to a clean state before each test."""
     precheckutils.diagnoser_output = []
@@ -74,6 +76,7 @@ def _reset_globals():
 # ---------------------------------------------------------------------------
 # send_prediagnostic_job_execution_error_telemetry
 # ---------------------------------------------------------------------------
+
 
 class TestSendJobExecutionErrorTelemetry:
     def setup_method(self):
@@ -88,7 +91,10 @@ class TestSendJobExecutionErrorTelemetry:
         args = mock_telemetry.add_extension_event.call_args
         assert args[0][0] == "connectedk8s"
         props = args[0][1]
-        assert props["Context.Default.AzureCLI.onboardingErrorType"] == consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type
+        assert (
+            props["Context.Default.AzureCLI.onboardingErrorType"]
+            == consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type
+        )
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_includes_job_execution_status(self, mock_telemetry):
@@ -102,7 +108,9 @@ class TestSendJobExecutionErrorTelemetry:
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_includes_reason_when_provided(self, mock_telemetry):
         precheckutils.prediagnostic_job_execution_status = "NotCompleted"
-        precheckutils.send_prediagnostic_job_execution_error_telemetry(reason="ImagePullBackOff")
+        precheckutils.send_prediagnostic_job_execution_error_telemetry(
+            reason="ImagePullBackOff"
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
         msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
@@ -118,7 +126,9 @@ class TestSendJobExecutionErrorTelemetry:
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_is_valid_json(self, mock_telemetry):
-        precheckutils.send_prediagnostic_job_execution_error_telemetry(reason="ContainerCreating")
+        precheckutils.send_prediagnostic_job_execution_error_telemetry(
+            reason="ContainerCreating"
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
         msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
@@ -128,6 +138,7 @@ class TestSendJobExecutionErrorTelemetry:
 # ---------------------------------------------------------------------------
 # send_prediagnostic_check_failure_telemetry
 # ---------------------------------------------------------------------------
+
 
 class TestSendCheckFailureTelemetry:
     def setup_method(self):
@@ -139,7 +150,10 @@ class TestSendCheckFailureTelemetry:
 
         mock_telemetry.add_extension_event.assert_called_once()
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        assert props["Context.Default.AzureCLI.onboardingErrorType"] == consts.Install_Prediagnostics_Fault_Type
+        assert (
+            props["Context.Default.AzureCLI.onboardingErrorType"]
+            == consts.Install_Prediagnostics_Fault_Type
+        )
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_check_results_in_message(self, mock_telemetry):
@@ -247,21 +261,29 @@ class TestSendCheckFailureTelemetry:
 # send_post_diagnostic_precheck_failure_telemetry
 # ---------------------------------------------------------------------------
 
+
 class TestSendPostDiagnosticPrecheckFailureTelemetry:
     def setup_method(self):
         _reset_globals()
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_sends_event_with_correct_error_type(self, mock_telemetry):
-        precheckutils.send_post_diagnostic_precheck_failure_telemetry("LinuxNodeExists", "No Linux nodes found")
+        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+            "LinuxNodeExists", "No Linux nodes found"
+        )
 
         mock_telemetry.add_extension_event.assert_called_once()
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        assert props["Context.Default.AzureCLI.onboardingErrorType"] == consts.Post_Diagnostic_Precheck_Fault_Type
+        assert (
+            props["Context.Default.AzureCLI.onboardingErrorType"]
+            == consts.Post_Diagnostic_Precheck_Fault_Type
+        )
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_includes_check_name_and_reason(self, mock_telemetry):
-        precheckutils.send_post_diagnostic_precheck_failure_telemetry("ClusterRoleBindings", "Insufficient permissions")
+        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+            "ClusterRoleBindings", "Insufficient permissions"
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
         msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
@@ -270,7 +292,9 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_is_valid_json(self, mock_telemetry):
-        precheckutils.send_post_diagnostic_precheck_failure_telemetry("SomeCheck", "Some reason")
+        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+            "SomeCheck", "Some reason"
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
         msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
@@ -278,12 +302,20 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_different_check_names_produce_separate_events(self, mock_telemetry):
-        precheckutils.send_post_diagnostic_precheck_failure_telemetry("LinuxNodeExists", "No nodes")
-        precheckutils.send_post_diagnostic_precheck_failure_telemetry("ClusterRoleBindings", "No perms")
+        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+            "LinuxNodeExists", "No nodes"
+        )
+        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+            "ClusterRoleBindings", "No perms"
+        )
 
         assert mock_telemetry.add_extension_event.call_count == 2
         calls = mock_telemetry.add_extension_event.call_args_list
-        msg1 = json.loads(calls[0][0][1]["Context.Default.AzureCLI.onboardingErrorMessage"])
-        msg2 = json.loads(calls[1][0][1]["Context.Default.AzureCLI.onboardingErrorMessage"])
+        msg1 = json.loads(
+            calls[0][0][1]["Context.Default.AzureCLI.onboardingErrorMessage"]
+        )
+        msg2 = json.loads(
+            calls[1][0][1]["Context.Default.AzureCLI.onboardingErrorMessage"]
+        )
         assert msg1["checkName"] == "LinuxNodeExists"
         assert msg2["checkName"] == "ClusterRoleBindings"

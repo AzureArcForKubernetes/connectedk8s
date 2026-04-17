@@ -49,7 +49,6 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
         "Context.Default.AzureCLI.onboardingErrorType": consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
         "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
     }
-    print(f"[Telemetry] onboardingErrorType={consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type} onboardingErrorMessage={error_message}")
     telemetry.add_extension_event("connectedk8s", prediagnostic_error_detail)
 
 
@@ -67,11 +66,23 @@ def send_prediagnostic_check_failure_telemetry(
         # Capture first line of each error message to keep telemetry concise
         if dns_check == "Failed" and "dns" in msg_lower and "error" in msg_lower:
             dns_error = msg.strip().splitlines()[0]
-        if outbound_connectivity_check == "Failed" and "outbound" in msg_lower and "error" in msg_lower:
+        if (
+            outbound_connectivity_check == "Failed"
+            and "outbound" in msg_lower
+            and "error" in msg_lower
+        ):
             outbound_error = msg.strip().splitlines()[0]
-        if prediagnostic_entra_check == "Failed" and "entra" in msg_lower and "error" in msg_lower:
+        if (
+            prediagnostic_entra_check == "Failed"
+            and "entra" in msg_lower
+            and "error" in msg_lower
+        ):
             entra_error = msg.strip().splitlines()[0]
-        if prediagnostic_crd_check == "Failed" and "crd" in msg_lower and "error" in msg_lower:
+        if (
+            prediagnostic_crd_check == "Failed"
+            and "crd" in msg_lower
+            and "error" in msg_lower
+        ):
             crd_error = msg.strip().splitlines()[0]
 
     check_results = {
@@ -80,7 +91,7 @@ def send_prediagnostic_check_failure_telemetry(
         "entraCheck": prediagnostic_entra_check,
         "crdCheck": prediagnostic_crd_check,
     }
-    
+
     # Only add error details if checks actually failed
     if dns_error:
         check_results["dnsError"] = dns_error
@@ -90,7 +101,7 @@ def send_prediagnostic_check_failure_telemetry(
         check_results["entraError"] = entra_error
     if crd_error:
         check_results["crdError"] = crd_error
-        
+
     error_message = azext_utils.process_helm_error_detail(json.dumps(check_results))
 
     prediagnostic_error_detail = {
@@ -98,18 +109,26 @@ def send_prediagnostic_check_failure_telemetry(
         "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
     }
 
-    print(f"[Telemetry] onboardingErrorType={consts.Install_Prediagnostics_Fault_Type} onboardingErrorMessage={error_message}")
+    print(
+        f"[Telemetry] onboardingErrorType={consts.Install_Prediagnostics_Fault_Type} onboardingErrorMessage={error_message}"
+    )
     telemetry.add_extension_event("connectedk8s", prediagnostic_error_detail)
 
 
-def send_post_diagnostic_precheck_failure_telemetry(check_name: str, reason: str) -> None:
+def send_post_diagnostic_precheck_failure_telemetry(
+    check_name: str, reason: str
+) -> None:
     """Send telemetry for individual precheck failures that occur after the diagnostic job."""
-    error_message = azext_utils.process_helm_error_detail(json.dumps({"checkName": check_name, "reason": reason}))
+    error_message = azext_utils.process_helm_error_detail(
+        json.dumps({"checkName": check_name, "reason": reason})
+    )
     error_detail = {
         "Context.Default.AzureCLI.onboardingErrorType": consts.Post_Diagnostic_Precheck_Fault_Type,
         "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
     }
-    print(f"[Telemetry] onboardingErrorType={consts.Post_Diagnostic_Precheck_Fault_Type} onboardingErrorMessage={error_message}")
+    print(
+        f"[Telemetry] onboardingErrorType={consts.Post_Diagnostic_Precheck_Fault_Type} onboardingErrorMessage={error_message}"
+    )
     telemetry.add_extension_event("connectedk8s", error_detail)
 
 
@@ -137,7 +156,12 @@ def fetch_diagnostic_checks_results(
     filepath_with_timestamp: str,
     storage_space_available: bool,
 ) -> tuple[str, bool]:
-    global prediagnostic_job_execution_status, prediagnostic_dns_check, prediagnostic_outbound_check, prediagnostic_entra_check, prediagnostic_crd_check
+    global \
+        prediagnostic_job_execution_status, \
+        prediagnostic_dns_check, \
+        prediagnostic_outbound_check, \
+        prediagnostic_entra_check, \
+        prediagnostic_crd_check
     try:
         diagnoser_output.clear()
         prediagnostic_job_execution_status = "NotStarted"
