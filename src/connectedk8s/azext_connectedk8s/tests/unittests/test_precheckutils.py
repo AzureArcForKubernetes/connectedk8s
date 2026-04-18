@@ -49,6 +49,7 @@ _STUBS = {
     # Stub the sibling module to avoid its transitive imports
     "azext_connectedk8s._utils": MagicMock(),
 }
+_ORIGINAL_MODULES = {mod: sys.modules.get(mod) for mod in _STUBS}
 for mod, stub in _STUBS.items():
     sys.modules.setdefault(mod, stub)
 
@@ -59,6 +60,12 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 import azext_connectedk8s._constants as consts  # noqa: E402
 import azext_connectedk8s._precheckutils as precheckutils  # noqa: E402
+
+for mod, original_module in _ORIGINAL_MODULES.items():
+    if original_module is None:
+        sys.modules.pop(mod, None)
+    else:
+        sys.modules[mod] = original_module
 
 # ---------------------------------------------------------------------------
 # Helpers
