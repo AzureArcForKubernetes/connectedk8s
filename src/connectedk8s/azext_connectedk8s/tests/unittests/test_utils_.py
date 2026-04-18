@@ -5,11 +5,39 @@
 import os
 import sys
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-from azext_connectedk8s._utils import (
+
+if isinstance(sys.modules.get("azext_connectedk8s._utils"), MagicMock):
+    sys.modules.pop("azext_connectedk8s._utils", None)
+
+_STUBS = {
+    "azure": MagicMock(),
+    "azure.cli": MagicMock(),
+    "azure.cli.core": MagicMock(),
+    "azure.cli.core.azclierror": MagicMock(),
+    "azure.cli.core.commands": MagicMock(),
+    "azure.cli.core.commands.client_factory": MagicMock(),
+    "azure.cli.core.util": MagicMock(),
+    "azure.core": MagicMock(),
+    "azure.core.exceptions": MagicMock(),
+    "knack": MagicMock(),
+    "knack.log": MagicMock(),
+    "knack.prompting": MagicMock(),
+    "kubernetes": MagicMock(),
+    "kubernetes.client": MagicMock(),
+    "kubernetes.client.rest": MagicMock(),
+    "msrest": MagicMock(),
+    "msrest.exceptions": MagicMock(),
+    "azext_connectedk8s._client_factory": MagicMock(),
+}
+for mod, stub in _STUBS.items():
+    sys.modules.setdefault(mod, stub)
+
+from azext_connectedk8s._utils import (  # noqa: E402
     _build_helm_timeout_telemetry_properties,
     _collect_timeout_diagnostics_from_events,
     _collect_timeout_diagnostics_from_pods,
