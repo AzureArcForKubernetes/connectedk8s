@@ -53,8 +53,12 @@ _ORIGINAL_MODULES = {mod: sys.modules.get(mod) for mod in _STUBS}
 for mod, stub in _STUBS.items():
     sys.modules.setdefault(mod, stub)
 
-# Make process_helm_error_detail a transparent passthrough so telemetry message assertions work
-sys.modules["azext_connectedk8s._utils"].process_helm_error_detail = lambda x: x
+# Make process_helm_error_detail a transparent passthrough so telemetry message assertions work.
+# Only patch if this is our MagicMock stub — if the real module is already loaded (e.g. in full
+# azdev CI), patching it here would permanently mutate its attribute on the shared module object.
+_utils_stub = sys.modules.get("azext_connectedk8s._utils")
+if isinstance(_utils_stub, MagicMock):
+    _utils_stub.process_helm_error_detail = lambda x: x
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
