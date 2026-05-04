@@ -1513,7 +1513,18 @@ def connected_cluster_exists(
     client: ConnectedClusterOperations, resource_group_name: str, cluster_name: str
 ) -> bool:
     try:
-        client.get(resource_group_name, cluster_name)
+        connected_cluster = client.get(resource_group_name, cluster_name)
+
+        # Allow AgentNotInstalled -> Agent conversion:
+        # treat an existing ARM resource in AgentNotInstalled state as non-existent for onboarding flows.
+        if getattr(connected_cluster, "connectivity_status", None) == "AgentNotInstalled":
+            logger.info(
+                "Arc enabling the %s in resource group %s with connectivity status %s",
+                cluster_name,
+                resource_group_name,
+                connected_cluster.connectivity_status,
+            )
+            return False
     except Exception as e:  # pylint: disable=broad-except
         utils.arm_exception_handler(
             e,
