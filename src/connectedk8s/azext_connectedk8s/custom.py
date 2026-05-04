@@ -1512,24 +1512,25 @@ def resource_group_exists(
 def connected_cluster_exists(
     client: ConnectedClusterOperations, resource_group_name: str, cluster_name: str
 ) -> bool:
-    cluster = None
     try:
-         cluster = client.get(resource_group_name, cluster_name)
+        connected_cluster = client.get(resource_group_name, cluster_name)
+
+        # Allow AgentNotInstalled -> Agent conversion:
+        # treat an existing ARM resource in AgentNotInstalled state as non-existent for onboarding flows.
+        if getattr(connected_cluster, "connectivity_status", None) == "AgentNotInstalled":
+            logger.info(
+                "Arc enabling the %s in resource group %s with connectivity status %s",
+                cluster_name,
+                resource_group_name,
+                connected_cluster.connectivity_status,
+            )
+            return False
     except Exception as e:  # pylint: disable=broad-except
         utils.arm_exception_handler(
             e,
             consts.Get_ConnectedCluster_Fault_Type,
             "Failed to check if connected cluster resource already exists.",
             return_if_not_found=True,
-        )
-        return False
-    if cluster is not None and getattr(cluster, "connectivity_status", None) == "AgentNotInstalled":
-        logger.info(
-            "Arc enabling the cluster '%s' in resource group '%s'. "
-            "Current connectivity status: %s.",
-            cluster.name,
-            resource_group_name,
-            cluster.connectivity_status,
         )
         return False
     return True
