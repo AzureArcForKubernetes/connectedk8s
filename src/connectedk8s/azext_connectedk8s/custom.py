@@ -1517,7 +1517,10 @@ def connected_cluster_exists(
 
         # Allow AgentNotInstalled -> Agent conversion:
         # treat an existing ARM resource in AgentNotInstalled state as non-existent for onboarding flows.
-        if getattr(connected_cluster, "connectivity_status", None) == "AgentNotInstalled":
+        if (
+            getattr(connected_cluster, "connectivity_status", None)
+            == "AgentNotInstalled"
+        ):
             logger.info(
                 "Arc enabling the %s in resource group %s with connectivity status %s",
                 cluster_name,
