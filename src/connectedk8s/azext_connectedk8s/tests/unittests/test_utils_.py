@@ -14,6 +14,7 @@ from azext_connectedk8s._utils import (
     redact_sensitive_fields_from_string,
     remove_rsa_private_key,
     scrub_proxy_url,
+    should_use_secret_injection_flow,
 )
 
 
@@ -97,6 +98,44 @@ def test_get_mcr_path():
     input_active_directory = "https://login.microsoftonline.some.cloud.bar"
     expected_output = "mcr.microsoft.some.cloud.bar"
     assert get_mcr_path(input_active_directory) == expected_output
+
+
+@pytest.mark.parametrize(
+    "release_train,agent_version,expected",
+    [
+        # Stable train, agents older than 1.35.0 must use the legacy flow
+        # (helm value injection) to avoid zeroing out the secret.
+        ("stable", "1.34.9", False),
+        ("stable", "1.20.0", False),
+        ("STABLE", "1.14.0", False),
+        # Stable train at or above the cutoff uses the secure flow.
+        ("stable", "1.35.0", True),
+        ("stable", "1.36.2", True),
+        ("stable", "2.0.0", True),
+        # Preview train uses 1.35.0-preview as the cutoff (same scheme).
+        ("preview", "1.34.0", False),
+        ("preview", "1.35.0-preview", True),
+        ("preview", "1.36.0-preview", True),
+        ("PREVIEW", "1.20.0", False),
+        # Dev-suffixed agent versions always use the secure flow, regardless of
+        ("preview", "0.2.5738-dev", True),
+        ("stable", "0.2.6689-dev", True),
+        ("STABLE", "1.34.0-DEV", True),
+        (None, "0.2.5738-dev", True),
+        # Missing version on a gated train -> safe default (legacy flow).
+        ("stable", None, False),
+        ("preview", "", False),
+        # Missing release train defaults to "stable".
+        (None, "1.34.0", False),
+        (None, "1.35.0", True),
+        # Unparseable version on a gated train -> safe default (legacy flow).
+        ("stable", "not-a-version", False),
+    ],
+)
+def test_should_use_secret_injection_flow(release_train, agent_version, expected):
+    assert (
+        should_use_secret_injection_flow(release_train, agent_version) is expected
+    )
 
 
 if __name__ == "__main__":
