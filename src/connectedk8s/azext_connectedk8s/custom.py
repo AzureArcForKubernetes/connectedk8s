@@ -73,11 +73,11 @@ from .vendored_sdks.preview_2025_08_01.models import (
     ConnectedClusterPatch,
     ConnectedClusterPatchProperties,
     ConnectedClusterProperties,
+    ConnectivityStatus,
     Gateway,
     OidcIssuerProfile,
     SecurityProfile,
     SecurityProfileWorkloadIdentity,
-    ConnectivityStatus,
 )
 
 if TYPE_CHECKING:
