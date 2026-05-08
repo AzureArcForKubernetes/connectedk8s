@@ -77,6 +77,7 @@ from .vendored_sdks.preview_2025_08_01.models import (
     OidcIssuerProfile,
     SecurityProfile,
     SecurityProfileWorkloadIdentity,
+    ConnectivityStatus,
 )
 
 if TYPE_CHECKING:
@@ -133,6 +134,8 @@ def create_connectedk8s(
     gateway_resource_id: str = "",
     configuration_settings: dict[str, Any] | None = None,
     configuration_protected_settings: dict[str, Any] | None = None,
+    connectivity_status: str | None = None,
+    kind: str | None = None,
 ) -> ConnectedCluster:
     logger.warning("This operation might take a while...\n")
     # changing cli config to push telemetry in 1 hr interval
@@ -865,6 +868,19 @@ def create_connectedk8s(
             )
         oidc_profile = set_oidc_issuer_profile(enable_oidc_issuer, self_hosted_issuer)
 
+   # Getting the ConnectivityStatus and Kind to support AgentNotInstalled scenario
+    try:
+        connected_cluster = client.get(resource_group_name, cluster_name)
+        connectivity_status = getattr(connected_cluster, "connectivity_status", None)
+        kind = getattr(connected_cluster, "kind", None)
+    except Exception as e:  # pylint: disable=broad-except
+        utils.arm_exception_handler(
+            e,
+            consts.Get_ConnectedCluster_Fault_Type,
+            "Failed to get connectivityStatus and kind if connected cluster resource already exists.",
+            return_if_not_found=True,
+        )
+
     print(f"Step: {utils.get_utctimestring()}: Generating ARM Request Payload")
     # Generate request payload
     cc = generate_request_payload(
@@ -882,6 +898,8 @@ def create_connectedk8s(
         None,
         arc_agentry_configurations,
         arc_agent_profile,
+        connectivity_status,
+        kind,
     )
 
     print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
@@ -1514,18 +1532,16 @@ def connected_cluster_exists(
 ) -> bool:
     try:
         connected_cluster = client.get(resource_group_name, cluster_name)
+        connectivity_status = getattr(connected_cluster, "connectivity_status", None)
 
         # Allow AgentNotInstalled -> Agent conversion:
         # treat an existing ARM resource in AgentNotInstalled state as non-existent for onboarding flows.
-        if (
-            getattr(connected_cluster, "connectivity_status", None)
-            == "AgentNotInstalled"
-        ):
+        if connectivity_status == ConnectivityStatus.AGENT_NOT_INSTALLED:
             logger.info(
                 "Arc enabling the %s in resource group %s with connectivity status %s",
                 cluster_name,
                 resource_group_name,
-                connected_cluster.connectivity_status,
+                connectivity_status,
             )
             return False
     except Exception as e:  # pylint: disable=broad-except
@@ -1814,6 +1830,8 @@ def generate_request_payload(
     gateway: Gateway | None,
     arc_agentry_configurations: list[ArcAgentryConfigurations] | None,
     arc_agent_profile: ArcAgentProfile | None,
+    connectivity_status: str | None,
+    kind: str | None,
 ) -> ConnectedCluster:
     # Create connected cluster resource object
     identity = ConnectedClusterIdentity(type="SystemAssigned")
@@ -1872,6 +1890,10 @@ def generate_request_payload(
             properties=properties,
             tags=tags,
         )
+
+    if connectivity_status == ConnectivityStatus.AGENT_NOT_INSTALLED:
+        cc.properties.connectivity_status=connectivity_status
+        cc.kind=kind
 
     return cc
 
