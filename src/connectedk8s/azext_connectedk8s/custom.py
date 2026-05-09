@@ -1893,10 +1893,23 @@ def generate_request_payload(
             tags=tags,
         )
 
-    if connectivity_status == ConnectivityStatus.AGENT_NOT_INSTALLED:
-        cc.properties.connectivity_status = connectivity_status
-        cc.kind = kind
+        if connectivity_status is not None:
+            try:
+                status_enum = ConnectivityStatus(connectivity_status)
+                if status_enum == ConnectivityStatus.AGENT_NOT_INSTALLED:
+                    logger.info(
+                        "AgentNotInstalled logging connectivity status %s",
+                        connectivity_status,
+                    )
+                    cc.properties.connectivity_status = status_enum
+                    cc.kind = kind
+            except ValueError:
+                logger.warning("Invalid connectivity_status: %s", connectivity_status)
 
+    logger.info(
+        "AgentNotInstalled logging cc %s",
+        cc,
+    )
     return cc
 
 
