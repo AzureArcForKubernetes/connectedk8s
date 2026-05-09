@@ -134,8 +134,6 @@ def create_connectedk8s(
     gateway_resource_id: str = "",
     configuration_settings: dict[str, Any] | None = None,
     configuration_protected_settings: dict[str, Any] | None = None,
-    connectivity_status: str | None = None,
-    kind: str | None = None,
 ) -> ConnectedCluster:
     logger.warning("This operation might take a while...\n")
     # changing cli config to push telemetry in 1 hr interval
@@ -657,6 +655,8 @@ def create_connectedk8s(
                 gateway,
                 arc_agentry_configurations,
                 arc_agent_profile,
+                None,
+                None,
             )
             cc_poller = create_cc_resource(
                 client, resource_group_name, cluster_name, cc, no_wait
@@ -868,7 +868,9 @@ def create_connectedk8s(
             )
         oidc_profile = set_oidc_issuer_profile(enable_oidc_issuer, self_hosted_issuer)
 
-   # Getting the ConnectivityStatus and Kind to support AgentNotInstalled scenario
+    # Getting the ConnectivityStatus and Kind to support AgentNotInstalled scenario
+    connectivity_status = None
+    kind = None
     try:
         connected_cluster = client.get(resource_group_name, cluster_name)
         connectivity_status = getattr(connected_cluster, "connectivity_status", None)
@@ -1892,8 +1894,8 @@ def generate_request_payload(
         )
 
     if connectivity_status == ConnectivityStatus.AGENT_NOT_INSTALLED:
-        cc.properties.connectivity_status=connectivity_status
-        cc.kind=kind
+        cc.properties.connectivity_status = connectivity_status
+        cc.kind = kind
 
     return cc
 
