@@ -875,6 +875,14 @@ def create_connectedk8s(
         connected_cluster = client.get(resource_group_name, cluster_name)
         connectivity_status = getattr(connected_cluster, "connectivity_status", None)
         kind = getattr(connected_cluster, "kind", None)
+        logger.info(
+            "Logging  the debug  details of Arc enabling the %s in resource group %s with connectivity status %s and kind %s",
+            cluster_name,
+            resource_group_name,
+            connectivity_status,
+            kind,
+        )
+
     except Exception as e:  # pylint: disable=broad-except
         utils.arm_exception_handler(
             e,
@@ -1903,6 +1911,17 @@ def generate_request_payload(
                     )
                     cc.properties.connectivity_status = status_enum
                     cc.kind = kind
+                else:
+                    logger.warning(
+                        "Connectivity status %s is not AgentNotInstalled, ignoring with kind %s",
+                        connectivity_status,
+                        kind,
+                    )
+                    cc.properties.connectivity_status = (
+                        ConnectivityStatus.AGENT_NOT_INSTALLED
+                    )
+                    cc.kind = "AWS"
+
             except ValueError:
                 logger.warning("Invalid connectivity_status: %s", connectivity_status)
 

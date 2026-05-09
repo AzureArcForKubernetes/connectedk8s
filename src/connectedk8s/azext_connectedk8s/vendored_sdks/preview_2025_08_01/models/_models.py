@@ -615,7 +615,7 @@ class ConnectedClusterProperties(_Model):
     """Represents the connectivity status of the connected cluster. Known values are: \"Connecting\",
      \"Connected\", \"Offline\", \"Expired\", and \"AgentNotInstalled\"."""
     private_link_state: Optional[Union[str, "_models.PrivateLinkState"]] = rest_field(
-        name="privateLinkState", visibility=["read", "create", "update", "delete", "query"]
+        name="privateLinkState", visibility=["read"]
     )
     """Property which describes the state of private link on a connected cluster resource. Known
      values are: \"Enabled\" and \"Disabled\"."""
