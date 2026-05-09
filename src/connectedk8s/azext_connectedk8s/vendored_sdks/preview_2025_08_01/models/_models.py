@@ -610,7 +610,7 @@ class ConnectedClusterProperties(_Model):
     )
     """Time representing the last instance when heart beat was received from the cluster."""
     connectivity_status: Optional[Union[str, "_models.ConnectivityStatus"]] = rest_field(
-        name="connectivityStatus", visibility=["read"]
+        name="connectivityStatus", visibility=["read", "create", "update", "delete", "query"]
     )
     """Represents the connectivity status of the connected cluster. Known values are: \"Connecting\",
      \"Connected\", \"Offline\", \"Expired\", and \"AgentNotInstalled\"."""
