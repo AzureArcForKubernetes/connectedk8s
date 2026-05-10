@@ -70,7 +70,6 @@ from .vendored_sdks.preview_2025_08_01.models import (
     ArcAgentryConfigurations,
     ConnectedCluster,
     ConnectedClusterIdentity,
-    ConnectedClusterKind,
     ConnectedClusterPatch,
     ConnectedClusterPatchProperties,
     ConnectedClusterProperties,
@@ -656,8 +655,6 @@ def create_connectedk8s(
                 gateway,
                 arc_agentry_configurations,
                 arc_agent_profile,
-                None,
-                None,
             )
             cc_poller = create_cc_resource(
                 client, resource_group_name, cluster_name, cc, no_wait
@@ -869,33 +866,6 @@ def create_connectedk8s(
             )
         oidc_profile = set_oidc_issuer_profile(enable_oidc_issuer, self_hosted_issuer)
 
-    # Getting the ConnectivityStatus and Kind to support AgentNotInstalled scenario
-    connectivity_status = None
-    kind = None
-    try:
-        connected_cluster = client.get(resource_group_name, cluster_name)
-        get_connectivity_status = getattr(
-            connected_cluster, "connectivity_status", None
-        )
-        get_kind = getattr(connected_cluster, "kind", None)
-        connectivity_status = ConnectivityStatus(get_connectivity_status)
-        kind = ConnectedClusterKind(get_kind)
-        logger.info(
-            "Logging  the debug  details of Arc enabling the %s in resource group %s with connectivity status %s and kind %s",
-            cluster_name,
-            resource_group_name,
-            connectivity_status,
-            kind,
-        )
-
-    except Exception as e:  # pylint: disable=broad-except
-        utils.arm_exception_handler(
-            e,
-            consts.Get_ConnectedCluster_Fault_Type,
-            "Failed to get connectivityStatus and kind if connected cluster resource already exists.",
-            return_if_not_found=True,
-        )
-
     print(f"Step: {utils.get_utctimestring()}: Generating ARM Request Payload")
     # Generate request payload
     cc = generate_request_payload(
@@ -913,8 +883,6 @@ def create_connectedk8s(
         None,
         arc_agentry_configurations,
         arc_agent_profile,
-        connectivity_status,
-        kind,
     )
 
     print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
@@ -1845,8 +1813,6 @@ def generate_request_payload(
     gateway: Gateway | None,
     arc_agentry_configurations: list[ArcAgentryConfigurations] | None,
     arc_agent_profile: ArcAgentProfile | None,
-    connectivity_status: ConnectivityStatus | None,
-    kind: ConnectedClusterKind | None,
 ) -> ConnectedCluster:
     # Create connected cluster resource object
     identity = ConnectedClusterIdentity(type="SystemAssigned")
@@ -1906,19 +1872,6 @@ def generate_request_payload(
             tags=tags,
         )
 
-    if connectivity_status == ConnectivityStatus.AGENT_NOT_INSTALLED:
-        logger.info(
-            "Inside: AgentNotInstalled logging connectivity status %s with kind %s",
-            connectivity_status,
-            kind,
-        )
-        cc.properties.connectivity_status = connectivity_status
-        cc.kind = kind
-
-    logger.info(
-        "AgentNotInstalled logging cc %s",
-        cc,
-    )
     return cc
 
 
