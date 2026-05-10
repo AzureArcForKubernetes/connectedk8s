@@ -70,6 +70,7 @@ from .vendored_sdks.preview_2025_08_01.models import (
     ArcAgentryConfigurations,
     ConnectedCluster,
     ConnectedClusterIdentity,
+    ConnectedClusterKind,
     ConnectedClusterPatch,
     ConnectedClusterPatchProperties,
     ConnectedClusterProperties,
@@ -1840,8 +1841,8 @@ def generate_request_payload(
     gateway: Gateway | None,
     arc_agentry_configurations: list[ArcAgentryConfigurations] | None,
     arc_agent_profile: ArcAgentProfile | None,
-    connectivity_status: str | None,
-    kind: str | None,
+    connectivity_status: ConnectivityStatus | None,
+    kind: ConnectedClusterKind | None,
 ) -> ConnectedCluster:
     # Create connected cluster resource object
     identity = ConnectedClusterIdentity(type="SystemAssigned")
@@ -1901,29 +1902,23 @@ def generate_request_payload(
             tags=tags,
         )
 
-        if connectivity_status is not None:
-            try:
-                status_enum = ConnectivityStatus(connectivity_status)
-                if status_enum == ConnectivityStatus.AGENT_NOT_INSTALLED:
-                    logger.info(
-                        "AgentNotInstalled logging connectivity status %s",
-                        connectivity_status,
-                    )
-                    cc.properties.connectivity_status = status_enum
-                    cc.kind = kind
-                else:
-                    logger.warning(
-                        "Connectivity status %s is not AgentNotInstalled, ignoring with kind %s",
-                        connectivity_status,
-                        kind,
-                    )
-                    cc.properties.connectivity_status = (
-                        ConnectivityStatus.AGENT_NOT_INSTALLED
-                    )
-                    cc.kind = "AWS"
-
-            except ValueError:
-                logger.warning("Invalid connectivity_status: %s", connectivity_status)
+        if connectivity_status == ConnectivityStatus.AGENT_NOT_INSTALLED:
+            status_enum = ConnectivityStatus(connectivity_status)
+            logger.info(
+                "AgentNotInstalled logging connectivity status %s with kind %s",
+                connectivity_status,
+                kind,
+            )
+            cc.properties.connectivity_status = status_enum
+            cc.kind = kind
+        else:
+            logger.warning(
+                "Connectivity status %s is not AgentNotInstalled, ignoring with kind %s",
+                connectivity_status,
+                kind,
+            )
+            cc.properties.connectivity_status = ConnectivityStatus.AGENT_NOT_INSTALLED
+            cc.kind = ConnectedClusterKind.AWS
 
     logger.info(
         "AgentNotInstalled logging cc %s",
