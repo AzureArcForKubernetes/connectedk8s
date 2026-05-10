@@ -874,8 +874,12 @@ def create_connectedk8s(
     kind = None
     try:
         connected_cluster = client.get(resource_group_name, cluster_name)
-        connectivity_status = getattr(connected_cluster, "connectivity_status", None)
-        kind = getattr(connected_cluster, "kind", None)
+        get_connectivity_status = getattr(
+            connected_cluster, "connectivity_status", None
+        )
+        get_kind = getattr(connected_cluster, "kind", None)
+        connectivity_status = ConnectivityStatus(get_connectivity_status)
+        kind = ConnectedClusterKind(get_kind)
         logger.info(
             "Logging  the debug  details of Arc enabling the %s in resource group %s with connectivity status %s and kind %s",
             cluster_name,
@@ -1902,17 +1906,23 @@ def generate_request_payload(
             tags=tags,
         )
 
+        logger.info(
+            "Before: AgentNotInstalled logging connectivity status %s with kind %s",
+            connectivity_status,
+            kind,
+        )
+
+        cc.properties.connectivity_status = connectivity_status
+        cc.kind = kind
+
         if connectivity_status == ConnectivityStatus.AGENT_NOT_INSTALLED:
-            status_enum = ConnectivityStatus(connectivity_status)
             logger.info(
-                "AgentNotInstalled logging connectivity status %s with kind %s",
+                "Inside: AgentNotInstalled logging connectivity status %s with kind %s",
                 connectivity_status,
                 kind,
             )
-            cc.properties.connectivity_status = status_enum
-            cc.kind = kind
         else:
-            logger.warning(
+            logger.info(
                 "Connectivity status %s is not AgentNotInstalled, ignoring with kind %s",
                 connectivity_status,
                 kind,
