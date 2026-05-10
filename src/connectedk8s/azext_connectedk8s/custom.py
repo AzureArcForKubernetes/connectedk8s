@@ -1906,29 +1906,29 @@ def generate_request_payload(
             tags=tags,
         )
 
+    logger.info(
+        "Before: AgentNotInstalled logging connectivity status %s with kind %s",
+        connectivity_status,
+        kind,
+    )
+
+    cc.properties.connectivity_status = connectivity_status
+    cc.kind = kind
+
+    if connectivity_status == ConnectivityStatus.AGENT_NOT_INSTALLED:
         logger.info(
-            "Before: AgentNotInstalled logging connectivity status %s with kind %s",
+            "Inside: AgentNotInstalled logging connectivity status %s with kind %s",
             connectivity_status,
             kind,
         )
-
-        cc.properties.connectivity_status = connectivity_status
-        cc.kind = kind
-
-        if connectivity_status == ConnectivityStatus.AGENT_NOT_INSTALLED:
-            logger.info(
-                "Inside: AgentNotInstalled logging connectivity status %s with kind %s",
-                connectivity_status,
-                kind,
-            )
-        else:
-            logger.info(
-                "Connectivity status %s is not AgentNotInstalled, ignoring with kind %s",
-                connectivity_status,
-                kind,
-            )
-            cc.properties.connectivity_status = ConnectivityStatus.AGENT_NOT_INSTALLED
-            cc.kind = ConnectedClusterKind.AWS
+    else:
+        logger.info(
+            "Connectivity status %s is not AgentNotInstalled, ignoring with kind %s",
+            connectivity_status,
+            kind,
+        )
+        cc.properties.connectivity_status = ConnectivityStatus.AGENT_NOT_INSTALLED
+        cc.kind = ConnectedClusterKind.AWS
 
     logger.info(
         "AgentNotInstalled logging cc %s",
