@@ -31,7 +31,7 @@ CLASSIFIERS = [
 
 # TODO: Add any additional SDK dependencies here
 DEPENDENCIES = [
-    "kubernetes==24.2.0",
+    "kubernetes==29.0.0",
     "pycryptodome==3.20.0",
     "azure-mgmt-hybridcompute==7.0.0",
     "oras==0.2.25",
