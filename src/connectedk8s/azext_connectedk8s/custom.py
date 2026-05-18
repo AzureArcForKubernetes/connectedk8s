@@ -1020,6 +1020,13 @@ def create_connectedk8s(
         f"Step: {utils.get_utctimestring()}: Starting to install Azure arc agents on the Kubernetes cluster."
     )
 
+    # Diagnostic: print the kubernetes/urllib3 module versions and paths that
+    # this extension actually loaded. Used to root-cause an environment-skew
+    # bug between local dev and e2e runners where `kubernetes==24.2.0` calls
+    # `urllib3.HTTPResponse.getheaders()` (removed in urllib3 v2) when
+    # constructing ApiException on non-2xx responses. Remove once resolved.
+    utils.log_python_dependency_diagnostics("create_connectedk8s")
+
     # Decide which onboarding flow to use. Stable agents below 1.35.0 still need
     # the legacy flow (private key in helm values), because their helm chart
     # always renders the privatekey secret from helm values and would zero it

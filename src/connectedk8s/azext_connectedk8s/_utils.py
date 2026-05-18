@@ -1319,12 +1319,103 @@ def should_use_secret_injection_flow(
         return False
 
 
+def log_python_dependency_diagnostics(context: str) -> None:
+    """
+    Emit diagnostic info about the python kubernetes/urllib3 packages this
+    extension actually loaded at runtime, plus the source of the
+    ``ApiException.__init__`` line that has been the root cause of the
+    urllib3 v2 ``getheaders`` incompatibility. Intended for root-causing
+    environment-skew bugs between local dev and CI/e2e runners.
+
+    Safe to call any number of times; all introspection is wrapped in
+    try/except so this diagnostic can never break onboarding itself.
+    """
+    import inspect
+    import sys as _sys
+
+    def _safe(fn: "callable[[], str]") -> str:
+        try:
+            return fn()
+        except Exception as _e:  # pylint: disable=broad-except
+            return f"<error: {_e!r}>"
+
+    print(
+        f"Step: {get_utctimestring()}: [diagnostics:{context}] "
+        f"python={_sys.version.split()[0]} executable={_sys.executable}"
+    )
+
+    try:
+        import kubernetes as _k8s
+
+        print(
+            f"Step: {get_utctimestring()}: [diagnostics:{context}] "
+            f"kubernetes version={getattr(_k8s, '__version__', '<unknown>')} "
+            f"path={getattr(_k8s, '__file__', '<unknown>')}"
+        )
+    except Exception as e:  # pylint: disable=broad-except
+        print(
+            f"Step: {get_utctimestring()}: [diagnostics:{context}] "
+            f"kubernetes import failed: {e!r}"
+        )
+
+    try:
+        import urllib3 as _u3
+        from urllib3.response import HTTPResponse as _U3HTTPResponse
+
+        has_getheaders = hasattr(_U3HTTPResponse, "getheaders")
+        print(
+            f"Step: {get_utctimestring()}: [diagnostics:{context}] "
+            f"urllib3 version={getattr(_u3, '__version__', '<unknown>')} "
+            f"path={getattr(_u3, '__file__', '<unknown>')} "
+            f"HTTPResponse.getheaders_present={has_getheaders}"
+        )
+        if has_getheaders:
+            src = _safe(lambda: inspect.getsource(_U3HTTPResponse.getheaders))
+            # collapse whitespace for single-line log
+            print(
+                f"Step: {get_utctimestring()}: [diagnostics:{context}] "
+                f"urllib3 HTTPResponse.getheaders source="
+                f"{' '.join(src.split())}"
+            )
+    except Exception as e:  # pylint: disable=broad-except
+        print(
+            f"Step: {get_utctimestring()}: [diagnostics:{context}] "
+            f"urllib3 import failed: {e!r}"
+        )
+
+    try:
+        src = inspect.getsource(ApiException.__init__)
+        print(
+            f"Step: {get_utctimestring()}: [diagnostics:{context}] "
+            f"kubernetes ApiException.__init__ source={' '.join(src.split())}"
+        )
+    except Exception as e:  # pylint: disable=broad-except
+        print(
+            f"Step: {get_utctimestring()}: [diagnostics:{context}] "
+            f"ApiException.__init__ introspection failed: {e!r}"
+        )
+
+    # First few sys.path entries that the extension is using -- helps catch
+    # cases where a different copy of kubernetes/urllib3 is being loaded from
+    # an unexpected directory (az core, system site-packages, etc.).
+    print(
+        f"Step: {get_utctimestring()}: [diagnostics:{context}] "
+        f"sys.path[0:6]={_sys.path[:6]}"
+    )
+
+
 def ensure_arc_namespace_with_helm_metadata() -> None:
     """
     Ensure the ``azure-arc`` namespace exists and is annotated/labeled so that
     the subsequent ``helm install`` can adopt it without erroring out with
     "exists and cannot be imported into the current release".
     """
+    # Diagnostic: capture which kubernetes/urllib3 are actually loaded right
+    # before the call that has been failing in e2e (read_namespace -> 404 ->
+    # ApiException construction -> AttributeError on urllib3 v2 missing
+    # `getheaders`). Remove once the version-skew root cause is resolved.
+    log_python_dependency_diagnostics("ensure_arc_namespace")
+
     api_instance = kube_client.CoreV1Api()
     helm_labels = {"app.kubernetes.io/managed-by": "Helm"}
     helm_annotations = {
