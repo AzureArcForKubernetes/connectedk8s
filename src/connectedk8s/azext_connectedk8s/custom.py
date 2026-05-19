@@ -302,25 +302,9 @@ def create_connectedk8s(
 
     # Install kubectl and helm
     try:
-        # Skip kubectl and helm install for AGC
-        cloud_name = azure_cloud.lower()
-        if cloud_name == "ussec" or cloud_name == "usnat":
-            logger.info(
-                "Skipping kubectl and helm install for AGC. Expecting them to be pre-installed."
-            )
-            kubectl_client_location = shutil.which("kubectl")
-            helm_client_location = shutil.which("helm")
-            if not kubectl_client_location:
-                raise CLIInternalError(
-                    "kubectl not found in PATH for AGC environment. Please install it or add to PATH."
-                )
-            if not helm_client_location:
-                raise CLIInternalError(
-                    "helm not found in PATH for AGC environment. Please install it or add to PATH."
-                )
-        else:
-            kubectl_client_location = install_kubectl_client()
-            helm_client_location = install_helm_client(cmd)
+        kubectl_client_location, helm_client_location = get_cli_tool_locations(
+            cmd, install_helm=True, install_kubectl=True, azure_cloud=azure_cloud
+        )
     except Exception as e:
         raise CLIInternalError(
             f"An exception has occured while trying to perform kubectl or helm install: {e}"
@@ -2050,7 +2034,7 @@ def delete_connectedk8s(
         raise InvalidArgumentValueError(err_msg)
 
     # Send cloud information to telemetry
-    send_cloud_telemetry(cmd)
+    azure_cloud = send_cloud_telemetry(cmd)
 
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
@@ -2063,8 +2047,9 @@ def delete_connectedk8s(
     # AKS clusters if the user had not logged in.
     check_kube_connection()
 
-    # Install helm client
-    helm_client_location = install_helm_client(cmd)
+    _, helm_client_location = get_cli_tool_locations(
+        cmd, install_helm=True, azure_cloud=azure_cloud
+    )
 
     # Check Release Existance
     release_namespace = utils.get_release_namespace(
@@ -2079,7 +2064,9 @@ def delete_connectedk8s(
     # Check forced delete flag
     if force_delete:
         print(f"Step: {utils.get_utctimestring()}: Performing Force Delete")
-        kubectl_client_location = install_kubectl_client()
+        kubectl_client_location, _ = get_cli_tool_locations(
+            cmd, install_kubectl=True, azure_cloud=azure_cloud
+        )
 
         delete_cc_resource(
             client, resource_group_name, cluster_name, no_wait, force=force_delete
@@ -2330,7 +2317,7 @@ def update_connected_cluster(
         utils.user_confirmation(confirmation_message, yes)
 
     # Send cloud information to telemetry
-    send_cloud_telemetry(cmd)
+    azure_cloud = send_cloud_telemetry(cmd)
 
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
@@ -2455,8 +2442,9 @@ def update_connected_cluster(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-    # Install helm client
-    helm_client_location = install_helm_client(cmd)
+    _, helm_client_location = get_cli_tool_locations(
+        cmd, install_helm=True, azure_cloud=azure_cloud
+    )
 
     release_namespace = validate_release_namespace(
         client,
@@ -2700,7 +2688,7 @@ def upgrade_agents(
     logger.warning("This operation might take a while...\n")
 
     # Send cloud information to telemetry
-    send_cloud_telemetry(cmd)
+    azure_cloud = send_cloud_telemetry(cmd)
 
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
@@ -2718,8 +2706,9 @@ def upgrade_agents(
 
     api_instance = kube_client.CoreV1Api()
 
-    # Install helm client
-    helm_client_location = install_helm_client(cmd)
+    _, helm_client_location = get_cli_tool_locations(
+        cmd, install_helm=True, azure_cloud=azure_cloud
+    )
 
     # Check Release Existence
     release_namespace = utils.get_release_namespace(
@@ -3200,7 +3189,7 @@ def enable_features(
                 raise ClientRequestError("Failed to enable 'custom-locations' feature.")
 
     # Send cloud information to telemetry
-    send_cloud_telemetry(cmd)
+    azure_cloud = send_cloud_telemetry(cmd)
 
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
@@ -3216,8 +3205,9 @@ def enable_features(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-    # Install helm client
-    helm_client_location = install_helm_client(cmd)
+    _, helm_client_location = get_cli_tool_locations(
+        cmd, install_helm=True, azure_cloud=azure_cloud
+    )
 
     release_namespace = validate_release_namespace(
         client,
@@ -3394,7 +3384,7 @@ def disable_features(
     )
 
     # Send cloud information to telemetry
-    send_cloud_telemetry(cmd)
+    azure_cloud = send_cloud_telemetry(cmd)
 
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
@@ -3410,8 +3400,9 @@ def disable_features(
     # if the user had not logged in.
     kubernetes_version = check_kube_connection()
 
-    # Install helm client
-    helm_client_location = install_helm_client(cmd)
+    _, helm_client_location = get_cli_tool_locations(
+        cmd, install_helm=True, azure_cloud=azure_cloud
+    )
 
     release_namespace = validate_release_namespace(
         client,
@@ -4310,11 +4301,11 @@ def troubleshoot(
         # Loading the kubeconfig file in kubernetes client configuration
         load_kube_config(kube_config, kube_context, skip_ssl_verification)
 
-        # Install helm client
-        helm_client_location = install_helm_client(cmd)
-
-        # Install kubectl client
-        kubectl_client_location = install_kubectl_client()
+        kubectl_client_location, helm_client_location = get_cli_tool_locations(
+            cmd,
+            install_helm=True,
+            install_kubectl=True,
+        )
         release_namespace = validate_release_namespace(
             client,
             cluster_name,
@@ -4866,3 +4857,41 @@ def add_config_protected_settings(
         configuration_protected_settings,
         redacted_protected_values,
     )
+
+
+def get_cli_tool_locations(
+    cmd: CLICommand,
+    install_helm: bool = False,
+    install_kubectl: bool = False,
+    azure_cloud: str | None = None,
+) -> tuple[str | None, str | None]:
+
+    azure_cloud = azure_cloud or send_cloud_telemetry(cmd)
+    cloud_name = azure_cloud.lower()
+
+    kubectl_client_location = None
+    helm_client_location = None
+    if cloud_name == "ussec" or cloud_name == "usnat":
+        if install_kubectl or install_helm:
+            logger.info(
+                "Skipping kubectl and helm install for AGC. Expecting them to be pre-installed."
+            )
+        if install_kubectl:
+            kubectl_client_location = shutil.which("kubectl")
+            if not kubectl_client_location:
+                raise CLIInternalError(
+                    "kubectl not found in PATH for AGC environment. Please install it or add to PATH."
+                )
+        if install_helm:
+            helm_client_location = shutil.which("helm")
+            if not helm_client_location:
+                raise CLIInternalError(
+                    "helm not found in PATH for AGC environment. Please install it or add to PATH."
+                )
+    else:
+        if install_kubectl:
+            kubectl_client_location = install_kubectl_client()
+        if install_helm:
+            helm_client_location = install_helm_client(cmd)
+
+    return kubectl_client_location, helm_client_location
