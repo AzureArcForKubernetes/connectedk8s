@@ -10,6 +10,37 @@ from azure.cli.core import AzCommandsLoader
 
 from azext_connectedk8s._help import helps
 
+
+def _patch_urllib3_getheaders_compat() -> None:
+    """
+    Restore ``urllib3.response.HTTPResponse.getheaders`` if the urllib3 that
+    az core loads is v2.x and dropped the method. The kubernetes python client
+    (through at least 29.x) still calls ``http_resp.getheaders()`` inside
+    ``ApiException.__init__``, so without this shim any non-2xx Kubernetes API
+    response (e.g. a 404 on ``read_namespace('azure-arc')`` during onboarding)
+    crashes with ``AttributeError: 'HTTPResponse' object has no attribute
+    'getheaders'``.
+
+    We can't fix this by pinning urllib3 in setup.py: az core's site-packages
+    appears earlier on sys.path than the extension's bundled copy, so az's
+    urllib3 always wins. The patch is idempotent and a no-op when getheaders
+    already exists.
+    """
+    try:
+        from urllib3.response import HTTPResponse
+    except Exception:  # pylint: disable=broad-except
+        return
+    if hasattr(HTTPResponse, "getheaders"):
+        return
+
+    def getheaders(self):  # type: ignore[no-untyped-def]
+        return self.headers
+
+    HTTPResponse.getheaders = getheaders  # type: ignore[attr-defined,method-assign]
+
+
+_patch_urllib3_getheaders_compat()
+
 if TYPE_CHECKING:
     from azure.cli.core import AzCli
     from knack.commands import CLICommand
