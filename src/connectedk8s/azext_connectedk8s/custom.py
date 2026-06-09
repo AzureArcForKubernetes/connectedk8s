@@ -4893,5 +4893,6 @@ def get_cli_tool_locations(
             kubectl_client_location = install_kubectl_client()
         if install_helm:
             helm_client_location = install_helm_client(cmd)
+            logger.debug("Using helm binary: %s", helm_client_location)
 
     return kubectl_client_location, helm_client_location
