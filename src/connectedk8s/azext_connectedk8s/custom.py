@@ -305,9 +305,7 @@ def create_connectedk8s(
         kubectl_client_location = get_kubectl_client_location(
             cmd, azure_cloud=azure_cloud
         )
-        helm_client_location = get_helm_client_location(
-            cmd, azure_cloud=azure_cloud
-        )
+        helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
     except Exception as e:
         raise CLIInternalError(
             f"An exception has occured while trying to perform kubectl or helm install: {e}"
@@ -4295,7 +4293,9 @@ def troubleshoot(
         load_kube_config(kube_config, kube_context, skip_ssl_verification)
 
         azure_cloud = send_cloud_telemetry(cmd)
-        kubectl_client_location = get_kubectl_client_location(cmd, azure_cloud=azure_cloud)
+        kubectl_client_location = get_kubectl_client_location(
+            cmd, azure_cloud=azure_cloud
+        )
         helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
         release_namespace = validate_release_namespace(
             client,
@@ -4862,9 +4862,7 @@ def get_helm_client_location(
     azure_cloud = azure_cloud or send_cloud_telemetry(cmd)
 
     if _is_agc_cloud(azure_cloud):
-        logger.info(
-            "Skipping helm install for AGC. Expecting it to be pre-installed."
-        )
+        logger.info("Skipping helm install for AGC. Expecting it to be pre-installed.")
         helm_client_location = shutil.which("helm")
         if not helm_client_location:
             raise CLIInternalError(
