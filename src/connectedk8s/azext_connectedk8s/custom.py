@@ -3790,6 +3790,12 @@ def client_side_proxy_wrapper(
     profile = Profile()
     tenant_id = profile.get_subscription()["tenantId"]
 
+    # Mint one correlation id for this proxy session. The helper stamps it on
+    # every outbound ARM call via az-cli's pipeline header bag; we then thread
+    # the same value into every localhost call to arcProxy below so the entire
+    # session (ARM → arcProxy → Relay → ConnectedProxyAgent) shares one guid.
+    correlation_id = utils.ensure_correlation_id(cmd, log_prefix="Arc proxy")
+
     client_proxy_port = consts.CLIENT_PROXY_PORT
 
     # Check if the internal port is already open. If so and the user has specified a port,
@@ -3944,6 +3950,7 @@ def client_side_proxy_wrapper(
         token=token,
         path=path,
         context_name=context_name,
+        correlation_id=correlation_id,
     )
 
 
@@ -3960,6 +3967,7 @@ def client_side_proxy_main(
     token: str | None = None,
     path: str = os.path.join(os.path.expanduser("~"), ".kube", "config"),
     context_name: str | None = None,
+    correlation_id: str | None = None,
 ) -> None:
     hc_expiry, at_expiry, clientproxy_process = client_side_proxy(
         cmd,
@@ -3976,6 +3984,7 @@ def client_side_proxy_main(
         path=path,
         context_name=context_name,
         clientproxy_process=None,
+        correlation_id=correlation_id,
     )
 
     while True:
@@ -4003,6 +4012,7 @@ def client_side_proxy_main(
                     path=path,
                     context_name=context_name,
                     clientproxy_process=clientproxy_process,
+                    correlation_id=correlation_id,
                 )
                 if flag == ProxyStatus.HCTokenRefresh:
                     hc_expiry = new_hc_expiry
@@ -4033,6 +4043,7 @@ def client_side_proxy(
     path: str = os.path.join(os.path.expanduser("~"), ".kube", "config"),
     context_name: str | None = None,
     clientproxy_process: Popen[bytes] | None = None,
+    correlation_id: str | None = None,
 ) -> tuple[int, int, Popen[bytes]]:
     subscription_id = get_subscription_id(cmd.cli_ctx)
     auth_method = "Token" if token is not None else "AAD"
@@ -4050,6 +4061,7 @@ def client_side_proxy(
                 resource_group_name,
                 cluster_name,
                 auth_method,
+                correlation_id,
             )
 
     # Starting the client proxy process, if this is the first time that this function is invoked
@@ -4074,7 +4086,8 @@ def client_side_proxy(
     if token is None and ProxyStatus.should_access_token_refresh(flag):
         # jwt token approach if cli is using MSAL. This is for cli >= 2.30.0
         at_expiry = proxylogic.handle_post_at_to_csp(
-            cmd, api_server_port, tenant_id, clientproxy_process
+            cmd, api_server_port, tenant_id, clientproxy_process,
+            correlation_id=correlation_id,
         )
 
     # Check hybrid connection details from Userrp
@@ -4103,6 +4116,7 @@ def client_side_proxy(
             resource_group_name,
             cluster_name,
             clientproxy_process,
+            correlation_id=correlation_id,
         )
 
     if flag == ProxyStatus.FirstRun:
