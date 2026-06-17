@@ -683,7 +683,7 @@ def check_cluster_outbound_connectivity(
 
 def create_folder_diagnosticlogs(time_stamp: str, folder_name: str) -> tuple[str, bool]:
     print(
-        f"Step: {get_utctimestring()}: Creating folder for Cluster Diagnostic Checks Logs"
+        f"Step: {get_utctimestring()}: Creating folder for Cluster Diagnostic Checks Logs at {folder_name}"
     )
     try:
         # Fetching path to user directory to create the arc diagnostic folder

@@ -2498,6 +2498,7 @@ def fetching_cli_output_logs(
             cli_output_logger_path = os.path.join(
                 filepath_with_timestamp, consts.Diagnoser_Results
             )
+            print(f"CLI output logger path: {cli_output_logger_path}")
             # If any results are obtained during the process than we will add it to the text file.
             if len(diagnoser_output) > 0:
                 with open(cli_output_logger_path, "w+") as cli_output_writer:
@@ -2542,5 +2543,5 @@ def fetching_cli_output_logs(
             fault_type=consts.Diagnoser_Result_Fault_Type,
             summary="Error while storing the diagnoser results",
         )
-
+    print(f"Step: {get_utctimestring()}: end Fetching the CLI output logs")
     return consts.Diagnostic_Check_Failed

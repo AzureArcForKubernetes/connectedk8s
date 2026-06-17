@@ -145,7 +145,31 @@ helps["connectedk8s disable-features"] = """
 helps["connectedk8s troubleshoot"] = """
   type: command
   short-summary: Perform diagnostic checks on an Arc enabled Kubernetes cluster.
+  long-summary: |
+    Diagnose and collect logs from Arc-enabled Kubernetes clusters. 
+    Optionally analyze logs with AI by using --analyze-with-ai --model parameters.
+    AI analysis requires Python 3.10+ and appropriate environment variables set:
+      - Azure OpenAI: AZURE_API_BASE, AZURE_API_VERSION, AZURE_API_KEY
+      - OpenAI: OPENAI_API_KEY
+      - Ollama (local): OLLAMA_API_BASE (e.g., http://localhost:11434)
   examples:
-  - name: Perform diagnostic checks on an Arc enabled Kubernetes cluster.
+  - name: Perform diagnostic checks and collect logs.
     text: az connectedk8s troubleshoot -n clusterName -g resourceGroupName
+  - name: Collect diagnostics and analyze with Azure OpenAI.
+    text: |
+      export AZURE_API_BASE="https://my-service.openai.azure.com/"
+      export AZURE_API_VERSION="2025-01-01-preview"
+      export AZURE_API_KEY="sk-xxx"
+      az connectedk8s troubleshoot -n clusterName -g resourceGroupName --analyze-with-ai --model azure/gpt-4o
+  - name: Collect diagnostics and analyze with OpenAI.
+    text: |
+      export OPENAI_API_KEY="sk-xxx"
+      az connectedk8s troubleshoot -n clusterName -g resourceGroupName --analyze-with-ai --model gpt-4o
+  - name: Collect diagnostics and analyze with local Ollama model.
+    text: |
+      export OLLAMA_API_BASE="http://localhost:11434"
+      az connectedk8s troubleshoot -n clusterName -g resourceGroupName --analyze-with-ai --model ollama/llama2
+  - name: Use API key parameter instead of environment variable.
+    text: |
+      az connectedk8s troubleshoot -n clusterName -g resourceGroupName --analyze-with-ai --model gpt-4o --api-key "sk-xxx"
 """
