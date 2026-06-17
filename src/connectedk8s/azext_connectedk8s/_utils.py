@@ -383,6 +383,9 @@ def check_cluster_DNS(
         if (
             "NXDOMAIN" in formatted_dns_log
             or "connection timed out" in formatted_dns_log
+            or "no servers could be reached" in formatted_dns_log
+            or "communications error" in formatted_dns_log
+            or "timed out" in formatted_dns_log
         ):
             logger.warning(
                 "Error: We found an issue with the DNS resolution on your cluster. For details about debugging DNS "

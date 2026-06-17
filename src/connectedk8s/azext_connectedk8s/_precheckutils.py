@@ -4,6 +4,7 @@
 # --------------------------------------------------------------------------------------------
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from subprocess import PIPE, Popen
@@ -28,6 +29,112 @@ logger = get_logger(__name__)
 # pylint: disable
 
 diagnoser_output: list[str] = []
+prediagnostic_job_execution_status = "NotStarted"
+prediagnostic_dns_check = "Starting"
+prediagnostic_outbound_check = "Starting"
+prediagnostic_entra_check = "Starting"
+prediagnostic_crd_check = "Starting"
+
+
+def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
+    """Send telemetry when prediagnostic job execution fails."""
+    error_detail_msg = {"jobExecutionStatus": prediagnostic_job_execution_status}
+    if reason:
+        error_detail_msg["reason"] = reason
+    error_message = azext_utils.process_helm_error_detail(json.dumps(error_detail_msg))
+
+    prediagnostic_error_detail = {
+        "Context.Default.AzureCLI.onboardingErrorType": consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
+        "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
+    }
+    telemetry.add_extension_event("connectedk8s", prediagnostic_error_detail)
+
+
+def send_prediagnostic_check_failure_telemetry(
+    dns_check: str, outbound_connectivity_check: str
+) -> None:
+    """Send telemetry when prediagnostic checks fail (job completed but checks did not pass)."""
+    # Extract error messages from diagnoser_output
+    dns_error = ""
+    outbound_error = ""
+    entra_error = ""
+    crd_error = ""
+    for msg in diagnoser_output:
+        msg_lower = msg.lower()
+        # Capture first line of each error message to keep telemetry concise
+        if dns_check == "Failed" and "dns" in msg_lower and "error" in msg_lower:
+            dns_error = msg.strip().splitlines()[0]
+        if (
+            outbound_connectivity_check == "Failed"
+            and "outbound" in msg_lower
+            and "error" in msg_lower
+        ):
+            outbound_error = msg.strip().splitlines()[0]
+        if (
+            prediagnostic_entra_check == "Failed"
+            and "entra" in msg_lower
+            and "error" in msg_lower
+        ):
+            entra_error = msg.strip().splitlines()[0]
+        if (
+            prediagnostic_crd_check == "Failed"
+            and "crd" in msg_lower
+            and "error" in msg_lower
+        ):
+            crd_error = msg.strip().splitlines()[0]
+
+    check_results = {
+        "dnsCheck": dns_check,
+        "outboundConnectivityCheck": outbound_connectivity_check,
+        "entraCheck": prediagnostic_entra_check,
+        "crdCheck": prediagnostic_crd_check,
+    }
+
+    # Only add error details if checks actually failed
+    if dns_error:
+        check_results["dnsError"] = dns_error
+    if outbound_error:
+        check_results["outboundError"] = outbound_error
+    if entra_error:
+        check_results["entraError"] = entra_error
+    if crd_error:
+        check_results["crdError"] = crd_error
+
+    error_message = azext_utils.process_helm_error_detail(json.dumps(check_results))
+
+    prediagnostic_error_detail = {
+        "Context.Default.AzureCLI.onboardingErrorType": consts.Install_Prediagnostics_Fault_Type,
+        "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
+    }
+
+    print(
+        f"[Telemetry] onboardingErrorType={consts.Install_Prediagnostics_Fault_Type} onboardingErrorMessage={error_message}"
+    )
+    telemetry.add_extension_event("connectedk8s", prediagnostic_error_detail)
+
+
+def send_post_diagnostic_precheck_failure_telemetry(
+    check_name: str, reason: str
+) -> None:
+    """Send telemetry for individual precheck failures that occur after the diagnostic job."""
+    error_message = azext_utils.process_helm_error_detail(
+        json.dumps({"checkName": check_name, "reason": reason})
+    )
+    error_detail = {
+        "Context.Default.AzureCLI.onboardingErrorType": consts.Post_Diagnostic_Precheck_Fault_Type,
+        "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
+    }
+    print(
+        f"[Telemetry] onboardingErrorType={consts.Post_Diagnostic_Precheck_Fault_Type} onboardingErrorMessage={error_message}"
+    )
+    telemetry.add_extension_event("connectedk8s", error_detail)
+
+
+def get_precheck_failure_summary() -> str:
+    for output in reversed(diagnoser_output):
+        if output.startswith("Precheck summary:"):
+            return output
+    return ""
 
 
 def fetch_diagnostic_checks_results(
@@ -47,10 +154,19 @@ def fetch_diagnostic_checks_results(
     filepath_with_timestamp: str,
     storage_space_available: bool,
 ) -> tuple[str, bool]:
+    global \
+        prediagnostic_job_execution_status, \
+        prediagnostic_dns_check, \
+        prediagnostic_outbound_check, \
+        prediagnostic_entra_check, \
+        prediagnostic_crd_check
     try:
-        # Setting DNS and Outbound Check as working
-        dns_check = "Starting"
-        outbound_connectivity_check = "Starting"
+        diagnoser_output.clear()
+        prediagnostic_job_execution_status = "NotStarted"
+        prediagnostic_dns_check = "Starting"
+        prediagnostic_outbound_check = "Starting"
+        prediagnostic_entra_check = "Starting"
+        prediagnostic_crd_check = "Starting"
         # Executing the cluster_diagnostic_checks job and fetching the logs obtained
         cluster_diagnostic_checks_container_log = (
             executing_cluster_diagnostic_checks_job(
@@ -72,16 +188,25 @@ def fetch_diagnostic_checks_results(
             )
         )
         # If cluster_diagnostic_checks_container_log is not empty there were errors.  Try to read the logs.
-        if (
-            cluster_diagnostic_checks_container_log is not None
-            and cluster_diagnostic_checks_container_log != ""
-        ):
+        if cluster_diagnostic_checks_container_log is None:
+            diagnoser_output.append(
+                "Precheck summary: "
+                f"jobExecutionStatus={prediagnostic_job_execution_status}; "
+                f"dnsCheck={prediagnostic_dns_check}; outboundConnectivityCheck={prediagnostic_outbound_check}; "
+                f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
+            )
+            send_prediagnostic_job_execution_error_telemetry()
+            return consts.Diagnostic_Check_Incomplete, storage_space_available
+
+        if cluster_diagnostic_checks_container_log != "":
             cluster_diagnostic_checks_container_log_list = (
                 cluster_diagnostic_checks_container_log.split("\n")
             )
             cluster_diagnostic_checks_container_log_list.pop(-1)
             dns_check_log = ""
             outbound_connectivity_check_log = ""
+            entra_check_log = ""
+            crd_check_log = ""
             counter_container_logs = 1
             # For retrieving only cluster_diagnostic_checks logs from the output
             for outputs in cluster_diagnostic_checks_container_log_list:
@@ -91,6 +216,12 @@ def fetch_diagnostic_checks_results(
                         outbound_connectivity_check_log += outputs
                     else:
                         outbound_connectivity_check_log += "  " + outputs
+                elif consts.Entra_Connectivity_Check_Result_String in outputs:
+                    entra_check_log = outputs
+                    counter_container_logs = 1
+                elif consts.CRD_Ownership_Check_Failed_String in outputs:
+                    crd_check_log += outputs + "\n"
+                    counter_container_logs = 1
                 elif consts.DNS_Check_Result_String in outputs:
                     dns_check_log += outputs
                     counter_container_logs = 0
@@ -102,6 +233,7 @@ def fetch_diagnostic_checks_results(
                 storage_space_available,
                 diagnoser_output,
             )
+            prediagnostic_dns_check = dns_check
             outbound_connectivity_check, storage_space_available = (
                 azext_utils.check_cluster_outbound_connectivity(
                     outbound_connectivity_check_log,
@@ -110,17 +242,82 @@ def fetch_diagnostic_checks_results(
                     diagnoser_output,
                 )
             )
+            prediagnostic_outbound_check = outbound_connectivity_check
+
+            # Parse Entra check result
+            # If no Entra result line found, the helm chart version may not support it — treat as NotApplicable (skip)
+            if entra_check_log:
+                # Format: "Entra Authentication Endpoint Connectivity Check Result : <endpoint> : <response_code>"
+                parts = entra_check_log.strip().split(" : ")
+                if len(parts) >= 3:
+                    entra_response_code = parts[-1].strip()
+                    if entra_response_code in ("200", "404"):
+                        prediagnostic_entra_check = consts.Diagnostic_Check_Passed
+                    else:
+                        prediagnostic_entra_check = consts.Diagnostic_Check_Failed
+                        diagnoser_output.append(
+                            f"Error: Entra authentication endpoint connectivity check failed. "
+                            f"Response code: {entra_response_code}. "
+                            "Please ensure outbound connectivity to the Entra (Azure AD) authentication endpoint.\n"
+                        )
+                else:
+                    prediagnostic_entra_check = consts.Diagnostic_Check_Incomplete
+            else:
+                # Entra check not present in logs — older helm chart version, not applicable
+                prediagnostic_entra_check = "NotApplicable"
+
+            # Parse CRD ownership check result
+            if crd_check_log:
+                prediagnostic_crd_check = consts.Diagnostic_Check_Failed
+                diagnoser_output.append(
+                    f"Error: CRD ownership validation failed.\n{crd_check_log.strip()}"
+                )
+            else:
+                prediagnostic_crd_check = consts.Diagnostic_Check_Passed
         else:
+            # Empty log — if job didn't complete (e.g., pod never scheduled), treat as Incomplete not Passed
+            if prediagnostic_job_execution_status == "NotCompleted":
+                # Mark all individual checks as NotApplicable since the pod never produced output
+                prediagnostic_dns_check = "NotApplicable"
+                prediagnostic_outbound_check = "NotApplicable"
+                prediagnostic_entra_check = "NotApplicable"
+                prediagnostic_crd_check = "NotApplicable"
+                diagnoser_output.append(
+                    "Precheck summary: "
+                    f"jobExecutionStatus={prediagnostic_job_execution_status}; "
+                    f"dnsCheck={prediagnostic_dns_check}; outboundConnectivityCheck={prediagnostic_outbound_check}; "
+                    f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
+                )
+                send_prediagnostic_job_execution_error_telemetry()
+                return consts.Diagnostic_Check_Incomplete, storage_space_available
             return consts.Diagnostic_Check_Passed, storage_space_available
 
-        # If any of the check remain Incomplete than we will return Incomplete
+        diagnoser_output.append(
+            "Precheck summary: "
+            f"jobExecutionStatus={prediagnostic_job_execution_status}; "
+            f"dnsCheck={dns_check}; outboundConnectivityCheck={outbound_connectivity_check}; "
+            f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
+        )
+
+        # Return Incomplete if any mandatory check couldn't be determined
         if (
             dns_check == consts.Diagnostic_Check_Incomplete
             or outbound_connectivity_check == consts.Diagnostic_Check_Incomplete
+            or prediagnostic_entra_check == consts.Diagnostic_Check_Incomplete
         ):
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
-        return consts.Diagnostic_Check_Failed, storage_space_available
+        # Return Failed only if at least one check actually failed
+        if (
+            dns_check == consts.Diagnostic_Check_Failed
+            or outbound_connectivity_check == consts.Diagnostic_Check_Failed
+            or prediagnostic_entra_check == consts.Diagnostic_Check_Failed
+            or prediagnostic_crd_check == consts.Diagnostic_Check_Failed
+        ):
+            return consts.Diagnostic_Check_Failed, storage_space_available
+
+        # All checks passed or not applicable
+        return consts.Diagnostic_Check_Passed, storage_space_available
 
     # To handle any exception that may occur during the execution
     except Exception as e:
@@ -128,6 +325,7 @@ def fetch_diagnostic_checks_results(
             "An exception has occured while trying to execute cluster diagnostic checks "
             "container on the cluster."
         )
+        send_prediagnostic_job_execution_error_telemetry(reason=str(e))
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Cluster_Diagnostic_Checks_Execution_Failed_Fault_Type,
@@ -154,6 +352,7 @@ def executing_cluster_diagnostic_checks_job(
     filepath_with_timestamp: str,
     storage_space_available: bool,
 ) -> str | None:
+    global prediagnostic_job_execution_status
     job_name = "cluster-diagnostic-checks-job"
     # Setting the log output as Empty
     cluster_diagnostic_checks_container_log = ""
@@ -174,6 +373,7 @@ def executing_cluster_diagnostic_checks_job(
 
     # To handle the user keyboard Interrupt
     try:
+        prediagnostic_job_execution_status = "Running"
         # Executing the Cluster Diagnostic Checks Job yaml
         config.load_kube_config(kube_config, kube_context)
         # checking existence of the release and if present we delete the stale release
@@ -200,6 +400,7 @@ def executing_cluster_diagnostic_checks_job(
                         exception_occured_counter = 1
                 # If any exception occured we will print the exception and return
                 if exception_occured_counter == 1:
+                    prediagnostic_job_execution_status = "CleanupFailed"
                     logger.warning(
                         "Cleanup of previous diagnostic checks helm release failed and hence couldn't "
                         'install the new helm release. Please cleanup older release using "helm delete '
@@ -308,6 +509,7 @@ def executing_cluster_diagnostic_checks_job(
 
         # If job is not scheduled then we will delete the helm release
         if is_job_scheduled is False:
+            prediagnostic_job_execution_status = "NotScheduled"
             telemetry.set_exception(
                 exception="Couldn't schedule Cluster Diagnostic Checks Job in the cluster",
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Scheduled,
@@ -325,6 +527,7 @@ def executing_cluster_diagnostic_checks_job(
             return None
 
         if is_job_complete is False:
+            prediagnostic_job_execution_status = "NotCompleted"
             # Job was scheduled successfully, but didn't complete. We will fetch the logs and delete helm release.
             logger.debug(
                 "Cluster Diagnostic Checks Job Failed.  Fetch results and delete Helm release in the cluster"
@@ -399,14 +602,60 @@ def executing_cluster_diagnostic_checks_job(
                 "possible reasons can be resource constraints on the cluster.\n"
             )
 
+        # Fetch and save container logs when job completed successfully (always save for diagnostics)
+        if is_job_complete:
+            all_pods = corev1_api_instance.list_namespaced_pod("azure-arc-release")
+            for each_pod in all_pods.items:
+                pod_name = each_pod.metadata.name
+                if not pod_name.startswith(job_name):
+                    continue
+                try:
+                    cluster_diagnostic_checks_container_log = (
+                        corev1_api_instance.read_namespaced_pod_log(
+                            name=pod_name,
+                            container="cluster-diagnostic-checks-container",
+                            namespace="azure-arc-release",
+                        )
+                    )
+                    if storage_space_available:
+                        log_path = os.path.join(
+                            filepath_with_timestamp,
+                            "cluster_diagnostic_checks_job_log.txt",
+                        )
+                        with open(log_path, "w+") as f:
+                            f.write(cluster_diagnostic_checks_container_log)
+                except OSError as e:
+                    if "[Errno 28]" in str(e):
+                        storage_space_available = False
+                        telemetry.set_exception(
+                            exception=e,
+                            fault_type=consts.No_Storage_Space_Available_Fault_Type,
+                            summary="No space left on device",
+                        )
+                        shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
+                    else:
+                        logger.exception(
+                            "An exception has occured while saving the Cluster "
+                            "Diagnostic Checks Job logs in the local machine."
+                        )
+                except Exception:
+                    logger.exception(
+                        "An exception has occured while saving the Cluster "
+                        "Diagnostic Checks Job logs in the local machine."
+                    )
+                break
+
         # Clearing all the resources after fetching the cluster diagnostic checks container logs
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
 
     # To handle any exception that may occur during the execution
     except Exception as e:
+        prediagnostic_job_execution_status = "ExecutionFailed"
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
         raise CLIInternalError(f"Failed to execute Cluster Diagnostic Checks Job: {e}")
-
+    if is_job_complete:
+        prediagnostic_job_execution_status = "Completed"
+    logger.debug(cluster_diagnostic_checks_container_log)
     return cluster_diagnostic_checks_container_log
 
 
@@ -463,6 +712,7 @@ def helm_install_release_cluster_diagnostic_checks(
     _, error_helm_install = response_helm_install.communicate()
     if response_helm_install.returncode != 0:
         error = error_helm_install.decode("ascii")
+        error = azext_utils.process_helm_error_detail(error)
         if "forbidden" in error or "timed out waiting for the condition" in error:
             telemetry.set_user_fault()
 

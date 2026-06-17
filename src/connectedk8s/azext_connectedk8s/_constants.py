@@ -124,6 +124,11 @@ KeyPair_Generate_Fault_Type = "keypair-generation-error"
 PublicKey_Export_Fault_Type = "publickey-export-error"
 PrivateKey_Export_Fault_Type = "privatekey-export-error"
 Install_HelmRelease_Fault_Type = "helm-release-install-error"
+Install_Prediagnostics_Fault_Type = "prediagnostics-failure"
+Install_Prediagnostics_Job_Execution_Error_Fault_Type = (
+    "prediagnostics-job-execution-error"
+)
+Post_Diagnostic_Precheck_Fault_Type = "post-diagnostic-precheck-failure"
 Delete_HelmRelease_Fault_Type = "helm-release-delete-error"
 Check_PodStatus_Fault_Type = "check-pod-status-error"
 Kubernetes_Connectivity_FaultType = "kubernetes-cluster-connection-error"
@@ -418,7 +423,7 @@ SigningKey_CR_Snapshot = "signingkey_cr_snapshot.txt"
 
 # Connect Precheck Diagnoser constants
 Cluster_Diagnostic_Checks_Job_Registry_Path = (
-    "azurearck8s/helmchart/stable/clusterdiagnosticchecks:1.31.2"
+    "azurearck8s/helmchart/stable/clusterdiagnosticchecks:1.33.0"
 )
 Cluster_Diagnostic_Checks_Helm_Install_Failed_Fault_Type = (
     "Error while installing cluster diagnostic checks helm release"
@@ -475,6 +480,10 @@ Outbound_Connectivity_Check_Failed_For_Cluster_Connect = (
     "Outbound network connectivity check failed for Cluster Connect"
 )
 DNS_Check_Result_String = "DNS Result:"
+Entra_Connectivity_Check_Result_String = (
+    "Entra Authentication Endpoint Connectivity Check Result"
+)
+CRD_Ownership_Check_Failed_String = "Check Failed: CRD"
 AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION = "2.30.0"
 CLIENT_PROXY_VERSION = "1.3.034371"
 CLIENT_PROXY_FOLDER = ".clientproxy"
