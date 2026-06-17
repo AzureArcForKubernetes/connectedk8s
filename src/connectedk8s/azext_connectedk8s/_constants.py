@@ -92,28 +92,6 @@ USGovCloud_OriginalName = "AZUREUSGOVERNMENT"
 Dogfood_RMEndpoint = "https://api-dogfood.resources.windows-int.net/"
 Client_Request_Id_Header = "x-ms-client-request-id"
 Correlation_Request_Id_Header = "x-ms-correlation-request-id"
-
-# Sentinel correlation id used when an inbound request arrives without an
-# `x-ms-correlation-request-id` header. The sentinel is GUID-shaped (so it
-# never breaks downstream systems that expect a uuid) but contains the
-# non-hex marker `miss` in segment 4 plus the originating repo name in the
-# last 12-char segment, which guarantees it can never collide with a real
-# RFC 4122 uuid AND tells you at a glance which service stamped it.
-#
-# Format:    00000000-0000-0000-miss-<repo-name-padded-to-12>
-# Example:   00000000-0000-0000-miss-connectedk8s   (this extension)
-#
-# Repo / service names are globally unique, so the suffix doubles as a
-# service tag. Stamping a sentinel instead of minting a fresh
-# `uuid.uuid4()` makes the propagation gap observable in Kusto:
-#   K8ConnectRPLogs
-#   | where CorrelationId contains "-miss-"
-# returns every broken hop across every Arc service in one query, and
-# `extract("-miss-(.+)$", 1, CorrelationId)` pulls out the originating repo.
-Missing_Correlation_Id_Sentinel_Prefix = "00000000-0000-0000-miss-"
-Missing_Correlation_Id_CLI_Extension = (
-    Missing_Correlation_Id_Sentinel_Prefix + "connectedk8s"
-)
 Default_Onboarding_Source_Tracking_Guid = "77ade16b-0f55-403b-b7d2-739554a897f2"
 Custom_Access_Token_Env_Var_Sub_Id_Missing_Fault_Type = "Required environment variable SubscriptionId not set, for custom Azure access token"
 Custom_Access_Token_Env_Var_Tenant_Id_Missing_Fault_Type = (

@@ -61,32 +61,6 @@ logger = get_logger(__name__)
 
 def ensure_correlation_id(cmd: CLICommand, log_prefix: str = "connectedk8s") -> str:
     """Ensure ``x-ms-correlation-request-id`` is present for this command session.
-
-    az-cli core does **not** stamp ``x-ms-correlation-request-id`` on outbound
-    ARM requests today; ARM mints one server-side and returns it on the
-    response. That makes ARM-minted ids unsuitable as the *session* id for
-    this command, because the localhost calls into arcProxy that follow the
-    ARM round-trip would have to wait for the response to learn the id —
-    and any failure before then would leave operators with no id to grep.
-
-    Instead we mint one ``uuid.uuid4()`` here at the top of the command,
-    stamp it into the az-cli header bag so the SDK call can forward it on
-    the outbound ARM request, and reuse the same value for every
-    downstream localhost / Relay / agent call. ARM honors a client-supplied
-    correlation id and echoes it back, so the customer sees one id end to
-    end across every log surface (CLI ``--debug`` output, ARM Geneva,
-    arcProxy, Relay, ConnectedProxyAgent ``ConnectAgentTraces``).
-
-    Idempotent within a single command run: calling this multiple times
-    returns the same id (already in the header bag from the first call).
-
-    The chosen id is surfaced via ``logger.warning`` so the customer can
-    quote it in support tickets, and registered with CLI telemetry.
-
-    This helper is intentionally generic. Owners of other ``az connectedk8s``
-    subcommands (connect, update, delete, troubleshoot, ...) can call it once
-    at the top of their entrypoint to opt in to end-to-end correlation
-    without changing any downstream code.
     """
     headers = cmd.cli_ctx.data.setdefault("headers", {})
     existing = headers.get(consts.Correlation_Request_Id_Header)

@@ -3804,7 +3804,7 @@ def client_side_proxy_wrapper(
     # Mint one correlation id for this proxy session. The helper stamps it on
     # every outbound ARM call via az-cli's pipeline header bag; we then thread
     # the same value into every localhost call to arcProxy below so the entire
-    # session (ARM → arcProxy → Relay → ConnectedProxyAgent) shares one guid.
+    # session (ARM → arcProxy → Relay → ConnectedProxyAgent -> kap) shares one guid.
     correlation_id = utils.ensure_correlation_id(cmd, log_prefix="Arc proxy")
 
     client_proxy_port = consts.CLIENT_PROXY_PORT
