@@ -417,9 +417,13 @@ Wiextension_Helm_Values = "helm_values_arc_workload_identity.txt"
 SigningKey_CR_Snapshot = "signingkey_cr_snapshot.txt"
 
 # Connect Precheck Diagnoser constants
-Cluster_Diagnostic_Checks_Job_Registry_Path = (
-    "azurearck8s/helmchart/stable/clusterdiagnosticchecks:1.31.2"
+
+# Repository path (without tag) for the diagnostic checks helm chart on MCR
+Cluster_Diagnostic_Checks_Job_Repo_Path = (
+    "azurearck8s/helmchart/stable/clusterdiagnosticchecks"
 )
+# Environment variable that, when set, overrides the full registry path (supports non-MCR paths)
+Diagnostic_Checks_Registry_Path_Env_Var = "DIAGNOSTIC_CHECKS_REGISTRY_PATH"
 Cluster_Diagnostic_Checks_Helm_Install_Failed_Fault_Type = (
     "Error while installing cluster diagnostic checks helm release"
 )
