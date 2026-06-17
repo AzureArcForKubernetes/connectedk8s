@@ -2,6 +2,8 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
+# pylint: disable=broad-exception-caught
+# Broad exception catching is necessary for robust error handling in CLI commands
 from __future__ import annotations
 
 import contextlib
@@ -94,19 +96,18 @@ if TYPE_CHECKING:
     )
 
 logger = get_logger(__name__)
-# pylint:disable=unused-argument
-# pylint: disable=too-many-locals
-# pylint: disable=too-many-branches
-# pylint: disable=too-many-statements
-# pylint: disable=line-too-long
 
 
+# pylint: disable=unused-argument,too-many-locals,too-many-branches
+# cmd is required by Azure CLI command signature but may not be used in all command handlers
+# Too many locals and branches are due to complex onboarding logic with multiple branches for
+# different infrastructure types (generic, AKS-HCI, Azure Stack, etc.)
 def create_connectedk8s(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
     resource_group_name: str,
     cluster_name: str,
-    correlation_id: str | None = None,
+    correlation_id: str | None = None,  # pylint: disable=unused-argument
     https_proxy: str = "",
     http_proxy: str = "",
     no_proxy: str = "",
@@ -557,8 +558,8 @@ def create_connectedk8s(
                     summary="Pls resource does not exist",
                 )
                 err_msg = (
-                    f"The private link scope resource '{private_link_scope_resource_id}' does not exist. Please ensure that "
-                    "you pass a valid ARM Resource Id."
+                    f"The private link scope resource '{private_link_scope_resource_id}' does not "
+                    "exist. Please ensure that you pass a valid ARM Resource Id."
                 )
                 raise ArgumentUsageError(err_msg)
             logger.warning(
@@ -586,9 +587,9 @@ def create_connectedk8s(
             )
         except Exception as e:  # pylint: disable=broad-except
             not_found_msg = (
-                "The helm release 'azure-arc' is present but azure-arc namespace/configmap is missing "
-                f"is missing. Please run 'helm delete azure-arc --namespace {release_namespace} --no-hooks' to cleanup the release "
-                "before onboarding the cluster again."
+                "The helm release 'azure-arc' is present but azure-arc namespace/configmap is "
+                f"missing. Please run 'helm delete azure-arc --namespace {release_namespace} "
+                "--no-hooks' to cleanup the release before onboarding the cluster again."
             )
             utils.kubernetes_exception_handler(
                 e,
@@ -740,7 +741,8 @@ def create_connectedk8s(
 
                 helm_content_values = helm_values_dp["helmValuesContent"]
 
-                # Substitute any protected helm values as the value for that will be 'redacted-<feature>-<protectedSetting>'
+                # Substitute any protected helm values as the value for that will be
+                # 'redacted-<feature>-<protectedSetting>'
                 for helm_parameter, helm_value in helm_content_values.items():
                     if "redacted" in helm_value:
                         _, feature, protectedSetting = helm_value.split(":")
@@ -1055,7 +1057,8 @@ def create_connectedk8s(
     #     - If workload identity is enabled, extension is installed, poll for agent state.
     if (enable_oidc_issuer and self_hosted_issuer == "") or enable_workload_identity:
         print(
-            f"Step: {utils.get_utctimestring()}: Wait for Agent State to reach terminal state, with timeout of {consts.Agent_State_Timeout}"
+            f"Step: {utils.get_utctimestring()}: Wait for Agent State to reach terminal "
+            f"state, with timeout of {consts.Agent_State_Timeout}"
         )
         terminal, connected_cluster = poll_for_agent_state(
             client, resource_group_name, cluster_name
@@ -1106,7 +1109,7 @@ def validate_existing_provisioned_cluster_for_reput(
     cluster_resource: ConnectedCluster,
     kubernetes_distro: str,
     kubernetes_infra: str,
-    enable_private_link: bool | None,
+    enable_private_link: bool | None,  # pylint: disable=unused-argument
     private_link_scope_resource_id: str,
     distribution_version: str | None,
     azure_hybrid_benefit: str | None,
@@ -1623,6 +1626,8 @@ def get_private_key(key_pair: RsaKey) -> str:
 
 
 # Updated function to include more Kubernetes distributions based on provided criteria
+# pylint: disable=too-many-return-statements,too-many-branches
+# Multiple distribution detection logic requires many conditional branches
 def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
     if api_response is None:
         return "generic"
@@ -1692,6 +1697,8 @@ def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
         return "generic"
 
 
+# pylint: disable=too-many-return-statements
+# Infrastructure detection requires many conditional returns for different platforms
 def get_kubernetes_infra(api_response: V1NodeList) -> str:  # Heuristic
     if api_response is None:
         return "generic"
@@ -1835,7 +1842,7 @@ def generate_request_payload(
     )
 
     if (
-        enable_private_link is not None
+        enable_private_link is not None  # pylint: disable=too-many-boolean-expressions
         or distribution_version is not None
         or azure_hybrid_benefit is not None
         or oidc_profile is not None
@@ -1991,7 +1998,7 @@ def get_server_address(kube_config: str | None, kube_context: str | None) -> str
 
 
 def get_connectedk8s(
-    cmd: AzCliCommand,
+    cmd: AzCliCommand,  # pylint: disable=unused-argument
     client: ConnectedClusterOperations,
     resource_group_name: str,
     cluster_name: str,
@@ -2000,7 +2007,7 @@ def get_connectedk8s(
 
 
 def list_connectedk8s(
-    cmd: AzCliCommand,
+    cmd: AzCliCommand,  # pylint: disable=unused-argument
     client: ConnectedClusterOperations,
     resource_group_name: str | None = None,
 ) -> Iterable[ConnectedCluster]:
@@ -2009,6 +2016,8 @@ def list_connectedk8s(
     return client.list_by_resource_group(resource_group_name)
 
 
+# pylint: disable=too-many-locals
+# Multiple local variables needed for deletion workflow (config, context, cleanup, etc.)
 def delete_connectedk8s(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -2115,8 +2124,8 @@ def delete_connectedk8s(
     except Exception as e:  # pylint: disable=broad-except
         err_msg = (
             "The helm release 'azure-arc' is present but the azure-arc namespace/configmap "
-            f"is missing. Please run 'helm delete azure-arc --namepace {release_namespace} --no-hooks' to cleanup the release "
-            "before onboarding the cluster again."
+            f"is missing. Please run 'helm delete azure-arc --namepace {release_namespace} "
+            "--no-hooks' to cleanup the release before onboarding the cluster again."
         )
         utils.kubernetes_exception_handler(
             e,
@@ -2137,7 +2146,10 @@ def delete_connectedk8s(
         and configmap.data["AZURE_RESOURCE_NAME"].lower() == cluster_name.lower()
         and configmap.data["AZURE_SUBSCRIPTION_ID"].lower() == subscription_id.lower()
     ):
-        armid = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}"
+        armid = (
+            f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/"
+            f"providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}"
+        )
         arm_hash = hashlib.sha256(armid.lower().encode("utf-8")).hexdigest()
 
         if check_proxy_kubeconfig(kube_config, kube_context, arm_hash):
@@ -2419,7 +2431,7 @@ def update_connected_cluster(
             and distribution_version is None
             and azure_hybrid_benefit is not None
         )
-        if (
+        if (  # pylint: disable=too-many-boolean-expressions
             proxy_params_unset
             and auto_upgrade is None
             and container_log_path is None
@@ -2427,7 +2439,7 @@ def update_connected_cluster(
         ):
             return patch_cc_response
 
-    if (
+    if (  # pylint: disable=too-many-boolean-expressions
         proxy_params_unset
         and not auto_upgrade
         and arm_properties_unset
@@ -3818,7 +3830,7 @@ def client_side_proxy_wrapper(
         )
 
     args = []
-    operating_system = proxybinaryutils._get_client_operating_system()
+    operating_system = proxybinaryutils._get_client_operating_system()  # pylint: disable=protected-access
     proc_name = f"arcProxy_{operating_system.lower()}"
 
     telemetry.set_debug_info("CSP Version is ", consts.CLIENT_PROXY_VERSION)

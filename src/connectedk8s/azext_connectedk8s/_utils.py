@@ -2,6 +2,8 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
+# pylint: disable=broad-exception-caught
+# Broad exception catching is necessary for robust error handling in utility functions
 from __future__ import annotations
 
 import contextlib
@@ -458,6 +460,8 @@ def check_cluster_DNS(
     return consts.Diagnostic_Check_Incomplete, storage_space_available
 
 
+# pylint: disable=too-many-return-statements
+# Outbound connectivity check returns different results based on connection state
 def check_cluster_outbound_connectivity(
     outbound_connectivity_check_log: str,
     filepath_with_timestamp: str,
@@ -957,7 +961,10 @@ def update_gateway_cluster_link(
 
     if response.status_code == 200:
         logger.info(
-            f"Gateway {operation_type} succeeded for cluster '{cluster_name}' in resource group '{resource_group}'."
+            "Gateway %s succeeded for cluster '%s' in resource group '%s'.",
+            operation_type,
+            cluster_name,
+            resource_group,
         )
         return True
 
@@ -1266,7 +1273,11 @@ def cleanup_release_install_namespace_if_exists() -> None:
         )
 
 
-# DO NOT use this method for re-put scenarios. This method involves new NS creation for helm release. For re-put scenarios, brownfield scenario needs to be handled where helm release still stays in default NS
+# DO NOT use this method for re-put scenarios. This method involves new NS creation for helm
+# release. For re-put scenarios, brownfield scenario needs to be handled where helm release
+# still stays in default NS
+# pylint: disable=too-many-locals
+# Multiple local variables needed for helm release configuration and installation
 def helm_install_release(
     resource_manager: str,
     chart_path: str,

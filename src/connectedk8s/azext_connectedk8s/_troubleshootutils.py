@@ -2,6 +2,8 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
+# pylint: disable=broad-exception-caught
+# Broad exception catching is necessary for robust error handling in utility functions
 from __future__ import annotations
 
 import contextlib
@@ -773,7 +775,7 @@ def check_agent_state(
                     namespace="azure-arc"
                 )
                 # Check if any arc agent is not in Running state
-                for each_agent_pod in arc_agents_pod_list.items:
+                for each_agent_pod in arc_agents_pod_list.items:  # pylint: disable=too-many-nested-blocks
                     if storage_space_available:
                         # Storing the state of the arc agent in the user machine
                         agent_state.write(
@@ -1153,6 +1155,8 @@ def check_diagnoser_container(
     return consts.Diagnostic_Check_Incomplete, storage_space_available
 
 
+# pylint: disable=too-many-return-statements
+# Diagnostic execution returns different results based on multiple conditions
 def executing_diagnoser_job(
     corev1_api_instance: CoreV1Api,
     batchv1_api_instance: BatchV1Api,

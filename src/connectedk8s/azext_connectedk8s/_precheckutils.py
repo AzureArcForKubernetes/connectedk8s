@@ -2,6 +2,8 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
+# pylint: disable=broad-exception-caught
+# Broad exception catching is necessary for robust error handling in utility functions
 from __future__ import annotations
 
 import os
