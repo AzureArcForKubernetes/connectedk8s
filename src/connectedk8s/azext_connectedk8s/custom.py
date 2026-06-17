@@ -3,7 +3,7 @@
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
 # pylint: disable=broad-exception-caught
-# Broad exception catching is necessary for robust error handling in CLI commands
+# TODO: Narrow exception types in incremental refactor PRs to avoid behavior regressions.
 from __future__ import annotations
 
 import contextlib

@@ -2,8 +2,6 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
-# pylint: disable=broad-exception-caught
-# Broad exception catching is necessary for robust error handling in utility functions
 from __future__ import annotations
 
 import base64
@@ -49,7 +47,15 @@ def check_if_port_is_open(port: int) -> bool:
         for tup in connections:
             if int(tup[3][1]) == port:  # type: ignore[misc]
                 return True
-    except Exception as e:
+    except (
+        AccessDenied,
+        NoSuchProcess,
+        ZombieProcess,
+        OSError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ) as e:
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Port_Check_Fault_Type,
@@ -86,7 +92,7 @@ def make_api_call_with_retries(
         try:
             response = requests.request(method, uri, json=data, verify=tls_verify)
             return response
-        except Exception as e:
+        except requests.RequestException as e:
             time.sleep(5)
             if i != consts.API_CALL_RETRIES - 1:
                 pass
@@ -154,7 +160,7 @@ def fetch_and_post_at_to_csp(
             consts.KAP_1P_Server_App_Scope, data=token_data
         )
         jwtToken = accessToken.token
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Post_AT_To_ClientProxy_Failed_Fault_Type,
