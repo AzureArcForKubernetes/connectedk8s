@@ -56,6 +56,7 @@ def check_if_port_is_open(port: int) -> bool:
         TypeError,
         ValueError,
     ) as e:
+        # Port inspection can fail when the process table is transient or inaccessible.
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Port_Check_Fault_Type,
@@ -93,16 +94,16 @@ def make_api_call_with_retries(
             response = requests.request(method, uri, json=data, verify=tls_verify)
             return response
         except requests.RequestException as e:
+            # Retry transient request failures while clientproxy is still coming up.
             time.sleep(5)
             if i != consts.API_CALL_RETRIES - 1:
-                pass
-            else:
-                telemetry.set_exception(
-                    exception=e, fault_type=fault_type, summary=summary
-                )
-                close_subprocess_and_raise_cli_error(
-                    clientproxy_process, cli_error + str(e)
-                )
+                continue
+            telemetry.set_exception(
+                exception=e, fault_type=fault_type, summary=summary
+            )
+            close_subprocess_and_raise_cli_error(
+                clientproxy_process, cli_error + str(e)
+            )
 
     assert False
 
@@ -251,5 +252,6 @@ def check_process(processName: str) -> bool:
             if proc.name().startswith(processName):
                 return True
         except (NoSuchProcess, AccessDenied, ZombieProcess):
+            # Process handle may become stale or inaccessible during iteration; continue scanning.
             pass
     return False
