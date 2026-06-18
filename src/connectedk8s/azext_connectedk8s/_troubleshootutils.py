@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 # pylint: disable=unused-argument, too-many-locals, too-many-branches, too-many-statements, line-too-long
+# Troubleshooter intentionally aggregates many checks in a single execution path for user support runs.
+# Suppressions here avoid noisy lint while preserving the existing operational troubleshooting behavior.
 
 diagnoser_output: list[str] = []
 

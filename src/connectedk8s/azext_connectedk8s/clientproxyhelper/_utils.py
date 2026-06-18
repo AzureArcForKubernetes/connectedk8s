@@ -160,6 +160,8 @@ def fetch_and_post_at_to_csp(
             consts.KAP_1P_Server_App_Scope, data=token_data
         )
         jwtToken = accessToken.token
+    # Token acquisition may raise multiple provider-specific exceptions.
+    # Keep one boundary for consistent CLI error mapping.
     except Exception as e:  # pylint: disable=broad-exception-caught
         telemetry.set_exception(
             exception=e,

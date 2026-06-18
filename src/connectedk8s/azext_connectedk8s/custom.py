@@ -107,6 +107,7 @@ def create_connectedk8s(
     client: ConnectedClusterOperations,
     resource_group_name: str,
     cluster_name: str,
+    # Kept for backward-compatible telemetry and correlation plumbed by callers.
     correlation_id: str | None = None,  # pylint: disable=unused-argument
     https_proxy: str = "",
     http_proxy: str = "",
@@ -1109,6 +1110,7 @@ def validate_existing_provisioned_cluster_for_reput(
     cluster_resource: ConnectedCluster,
     kubernetes_distro: str,
     kubernetes_infra: str,
+    # Input is retained for signature compatibility across connect/re-put validation paths.
     enable_private_link: bool | None,  # pylint: disable=unused-argument
     private_link_scope_resource_id: str,
     distribution_version: str | None,

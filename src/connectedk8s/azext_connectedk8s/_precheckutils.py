@@ -26,6 +26,8 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 # pylint: disable=unused-argument, too-many-locals, too-many-branches, too-many-statements, line-too-long
 # pylint: disable
+# Precheck flow orchestrates many steps and captures rich diagnostics, so complexity is currently centralized.
+# Keep these suppressions local to this module until the precheck workflow is split into smaller units.
 
 diagnoser_output: list[str] = []
 

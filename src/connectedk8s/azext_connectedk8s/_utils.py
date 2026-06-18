@@ -58,6 +58,8 @@ logger = get_logger(__name__)
 
 # pylint: disable=line-too-long
 # pylint: disable=bare-except
+# Long diagnostic and command strings are kept readable in one place for operator troubleshooting.
+# Some broad exception boundaries are retained to keep best-effort cleanup and telemetry collection.
 
 
 def get_mcr_path(active_directory_endpoint: str) -> str:
@@ -960,6 +962,7 @@ def update_gateway_cluster_link(
     )
 
     if response.status_code == 200:
+        # Use lazy interpolation to satisfy pylint W1203 and avoid eager string formatting.
         logger.info(
             "Gateway %s succeeded for cluster '%s' in resource group '%s'.",
             operation_type,
