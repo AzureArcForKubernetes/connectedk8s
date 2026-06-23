@@ -286,7 +286,7 @@ def executing_cluster_diagnostic_checks_job(
                             "Cluster Diagnostic Checks Job reached completed state"
                         )
                         w.stop()
-            except Exception:  # pylint: disable=broad-exception-caught
+            except (KeyError, AttributeError, TypeError):
                 logger.debug(
                     "Caught Exception, executing Cluster Diagnostic Checks job: ",
                     exc_info=True,
@@ -379,7 +379,7 @@ def executing_cluster_diagnostic_checks_job(
                         )
 
                 # To handle any exception that may occur during the execution
-                except Exception as e:  # pylint: disable=broad-exception-caught
+                except (ValueError, TypeError) as e:
                     logger.exception(
                         "An exception has occured while saving the Cluster "
                         "Diagnostic Checks Job logs in the local machine."
@@ -525,7 +525,7 @@ def fetching_cli_output_logs(
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
 
     # To handle any exception that may occur during the execution
-    except Exception as e:  # pylint: disable=broad-exception-caught
+    except (ValueError, TypeError) as e:
         logger.exception(
             "An exception has occured while trying to store the diagnoser results."
         )

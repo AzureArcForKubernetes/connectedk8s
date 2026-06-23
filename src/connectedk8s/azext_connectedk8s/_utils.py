@@ -2,8 +2,6 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
-# pylint: disable=broad-exception-caught
-# TODO: Narrow exception types in incremental refactor PRs to avoid behavior regressions.
 from __future__ import annotations
 
 import contextlib
@@ -101,7 +99,7 @@ def validate_connect_rp_location(cmd: CLICommand, location: str) -> None:
 
     try:
         providerDetails = resourceClient.get("Microsoft.Kubernetes")
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-exception-caught
         arm_exception_handler(
             e,
             consts.Get_ResourceProvider_Fault_Type,
@@ -158,7 +156,7 @@ def validate_custom_token(
                 )
                 rg = resource_client.get(resource_group_name)
                 location = rg.location
-            except Exception as ex:
+            except Exception as ex:  # pylint: disable=broad-exception-caught
                 telemetry.set_exception(
                     exception=ex,
                     fault_type=consts.Location_Fetch_Fault_Type,
@@ -361,7 +359,7 @@ def save_cluster_diagnostic_checks_pod_description(
             )
 
     # To handle any exception that may occur during the execution
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         logger.exception(
             "An exception has occured while saving the cluster diagnostic checks pod "
             "description in the local machine."
@@ -445,7 +443,7 @@ def check_cluster_DNS(
             )
 
     # To handle any exception that may occur during the execution
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         logger.exception(
             "An exception has occured while performing the DNS check on the cluster."
         )
@@ -669,7 +667,7 @@ def check_cluster_outbound_connectivity(
             )
 
     # To handle any exception that may occur during the execution
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         logger.exception(
             "An exception has occured while performing the outbound connectivity check "
             "on the cluster."
@@ -731,7 +729,7 @@ def create_folder_diagnosticlogs(time_stamp: str, folder_name: str) -> tuple[str
         return "", False
 
     # To handle any exception that may occur during the execution
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         logger.exception(
             "An exception has occured while creating the diagnostic logs folder in "
             "your local machine."
@@ -800,7 +798,7 @@ def get_helm_registry(
         try:
             repository_path: str = r.json().get("repositoryPath")
             return repository_path
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             telemetry.set_exception(
                 exception=e,
                 fault_type=consts.Get_HelmRegistery_Path_Fault_Type,
@@ -861,7 +859,7 @@ def get_helm_values(
         try:
             content: dict[str, Any] = r.json()
             return content
-        except Exception as e:
+        except (ValueError, KeyError) as e:
             telemetry.set_exception(
                 exception=e,
                 fault_type=consts.Get_HelmRegistery_Path_Fault_Type,
@@ -1007,7 +1005,7 @@ def send_request_with_retries(
                 body=request_body,
             )
             return response
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             if i == retry_count - 1:
                 telemetry.set_exception(
                     exception=e, fault_type=fault_type, summary=summary
@@ -1172,7 +1170,7 @@ def ensure_namespace_cleanup() -> None:
             if not api_response.items:
                 return
             time.sleep(5)
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.exception("Error while retrieving namespace information.")
             kubernetes_exception_handler(
                 e,
@@ -1576,7 +1574,7 @@ def flatten(dd: Any, separator: str = ".", prefix: str = "") -> dict[str, Any]:
 
         return {prefix: dd}
 
-    except Exception as e:
+    except (TypeError, AttributeError, RecursionError) as e:
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Error_Flattening_User_Supplied_Value_Dict,
@@ -1682,7 +1680,7 @@ def check_provider_registrations(
                 raise ValidationError(err_msg)
     except ValidationError as e:
         raise e
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Couldn't check the required provider's registration status")
 
 
@@ -1701,7 +1699,7 @@ def can_create_clusterrolebindings() -> bool | str:
         response = api_instance.create_self_subject_access_review(access_review)
         allowed: bool = response.status.allowed
         return allowed
-    except Exception as ex:
+    except Exception as ex:  # pylint: disable=broad-exception-caught
         warn_msg = (
             "Couldn't check for the permission to create clusterrolebindings on this k8s cluster. "
             f"Error: {ex}"
@@ -1714,7 +1712,7 @@ def validate_node_api_response(api_instance: CoreV1Api) -> V1NodeList | None:
     try:
         node_api_response = api_instance.list_node()
         return node_api_response
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.debug(
             "Error occcured while listing nodes on this kubernetes cluster:",
             exc_info=True,
@@ -1738,7 +1736,7 @@ def is_cli_using_msal_auth() -> bool:
     response_cli_version = az_cli("version --output json")
     try:
         cli_version = response_cli_version["azure-cli"]
-    except Exception as ex:
+    except (KeyError, TypeError) as ex:
         raise CLIInternalError(f"Unable to decode the az cli version installed: {ex}")
     v1 = cli_version
     v2 = consts.AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION
@@ -1765,7 +1763,7 @@ def get_metadata(arm_endpoint: str, api_version: str = "2022-09-01") -> dict[str
         msg = f"ARM metadata endpoint '{metadata_endpoint}' returned status code {response.status_code}."
         raise HttpResponseError(msg)
 
-    except Exception as err:
+    except Exception as err:  # pylint: disable=broad-exception-caught
         msg = f"Failed to request ARM metadata {metadata_endpoint}."
         print(msg, file=sys.stderr)
         print(
