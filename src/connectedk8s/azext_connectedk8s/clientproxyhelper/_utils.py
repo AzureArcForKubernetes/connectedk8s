@@ -98,9 +98,7 @@ def make_api_call_with_retries(
             time.sleep(5)
             if i != consts.API_CALL_RETRIES - 1:
                 continue
-            telemetry.set_exception(
-                exception=e, fault_type=fault_type, summary=summary
-            )
+            telemetry.set_exception(exception=e, fault_type=fault_type, summary=summary)
             close_subprocess_and_raise_cli_error(
                 clientproxy_process, cli_error + str(e)
             )
