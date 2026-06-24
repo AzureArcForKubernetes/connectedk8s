@@ -59,6 +59,7 @@ logger = get_logger(__name__)
 # pylint: disable=consider-using-with
 # pylint: disable=too-many-positional-arguments
 # pylint: disable=too-many-statements
+# pylint: disable=too-many-lines
 # Long diagnostic and command strings are kept readable in one place for operator troubleshooting.
 # Some broad exception boundaries are retained to keep best-effort cleanup and telemetry collection.
 
@@ -499,8 +500,9 @@ def check_cluster_outbound_connectivity(
                         consts.Outbound_Network_Connectivity_Check_for_cluster_connect,
                     )
                     with open(
-                        cluster_connect_outbound_connectivity_check_path, "w+"
-                    , encoding="utf-8") as outbound:
+                        cluster_connect_outbound_connectivity_check_path,
+                        "w+", encoding="utf-8"
+                    ) as outbound:
                         outbound.write(
                             "Response code "
                             + Cluster_Connect_Precheck_Endpoint_response_code
@@ -528,8 +530,9 @@ def check_cluster_outbound_connectivity(
                         consts.Outbound_Network_Connectivity_Check_for_cluster_connect,
                     )
                     with open(
-                        cluster_connect_outbound_connectivity_check_path, "w+"
-                    , encoding="utf-8") as outbound:
+                        cluster_connect_outbound_connectivity_check_path,
+                        "w+", encoding="utf-8"
+                    ) as outbound:
                         outbound.write(
                             "Response code "
                             + Cluster_Connect_Precheck_Endpoint_response_code
@@ -1766,8 +1769,6 @@ def get_metadata(arm_endpoint: str, api_version: str = "2022-09-01") -> dict[str
         raise HttpResponseError(msg)
 
     except Exception as err:  # pylint: disable=broad-exception-caught
-# pylint: disable=too-many-lines
-# pylint: disable=too-many-statements
         msg = f"Failed to request ARM metadata {metadata_endpoint}."
         print(msg, file=sys.stderr)
         print(

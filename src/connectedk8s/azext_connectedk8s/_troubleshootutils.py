@@ -520,8 +520,9 @@ def retrieve_arc_workload_identity_pod_logs(
                         agent_name_logs_path, container_name + ".txt"
                     )
                     with open(
-                        arc_workload_identity_container_logs_path, "w+"
-                    , encoding="utf-8") as container_file:
+                        arc_workload_identity_container_logs_path,
+                        "w+", encoding="utf-8"
+                    ) as container_file:
                         container_file.write(str(container_log))
 
         return consts.Diagnostic_Check_Passed, storage_space_available
@@ -705,8 +706,9 @@ def retrieve_arc_workload_identity_deployments_logs(
                 )
                 # Creating a text file with the name of the deployment and adding deployment status in it
                 with open(
-                    arc_workload_identity_deployment_logs_path, "w+"
-                , encoding="utf-8") as deployment_file:
+                    arc_workload_identity_deployment_logs_path,
+                    "w+", encoding="utf-8"
+                ) as deployment_file:
                     deployment_file.write(str(deployment.status))
 
         return consts.Diagnostic_Check_Passed, storage_space_available
@@ -1498,8 +1500,9 @@ def executing_diagnoser_job(
                     events_json = json.loads(output_kubectl_get_events)
                     if len(events_json["items"]) != 0:
                         with open(
-                            unfinished_diagnoser_job_path, "w+"
-                        , encoding="utf-8") as unfinished_diagnoser_job:
+                            unfinished_diagnoser_job_path,
+                            "w+", encoding="utf-8"
+                        ) as unfinished_diagnoser_job:
                             # Adding all the individual events
                             for events in events_json["items"]:
                                 unfinished_diagnoser_job.write(str(events) + "\n")
