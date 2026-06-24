@@ -56,6 +56,9 @@ logger = get_logger(__name__)
 
 # pylint: disable=line-too-long
 # pylint: disable=bare-except
+# pylint: disable=consider-using-with
+# pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-statements
 # Long diagnostic and command strings are kept readable in one place for operator troubleshooting.
 # Some broad exception boundaries are retained to keep best-effort cleanup and telemetry collection.
 
@@ -164,7 +167,7 @@ def validate_custom_token(
                 )
                 raise ValidationError(
                     f"Unable to fetch location from resource group: '{ex}'"
-                )
+                ) from ex
         return True, location
     return False, location
 
@@ -330,7 +333,7 @@ def save_cluster_diagnostic_checks_pod_description(
                             filepath_with_timestamp,
                             "cluster_diagnostic_checks_pod_description.txt",
                         )
-                        with open(dns_check_path, "w+") as f:
+                        with open(dns_check_path, "w+", encoding="utf-8") as f:
                             f.write(pod_description)
                 else:
                     telemetry.set_exception(
@@ -396,7 +399,7 @@ def check_cluster_DNS(
             )
             if storage_space_available:
                 dns_check_path = os.path.join(filepath_with_timestamp, consts.DNS_Check)
-                with open(dns_check_path, "w+") as dns:
+                with open(dns_check_path, "w+", encoding="utf-8") as dns:
                     dns.write(
                         formatted_dns_log
                         + "\nWe found an issue with the DNS resolution on your cluster."
@@ -410,7 +413,7 @@ def check_cluster_DNS(
 
         if storage_space_available:
             dns_check_path = os.path.join(filepath_with_timestamp, consts.DNS_Check)
-            with open(dns_check_path, "w+") as dns:
+            with open(dns_check_path, "w+", encoding="utf-8") as dns:
                 dns.write(
                     formatted_dns_log + "\nCluster DNS check passed successfully."
                 )
@@ -497,7 +500,7 @@ def check_cluster_outbound_connectivity(
                     )
                     with open(
                         cluster_connect_outbound_connectivity_check_path, "w+"
-                    ) as outbound:
+                    , encoding="utf-8") as outbound:
                         outbound.write(
                             "Response code "
                             + Cluster_Connect_Precheck_Endpoint_response_code
@@ -526,7 +529,7 @@ def check_cluster_outbound_connectivity(
                     )
                     with open(
                         cluster_connect_outbound_connectivity_check_path, "w+"
-                    ) as outbound:
+                    , encoding="utf-8") as outbound:
                         outbound.write(
                             "Response code "
                             + Cluster_Connect_Precheck_Endpoint_response_code
@@ -549,7 +552,7 @@ def check_cluster_outbound_connectivity(
                         filepath_with_timestamp,
                         consts.Outbound_Network_Connectivity_Check_for_onboarding,
                     )
-                    with open(outbound_connectivity_check_path, "w+") as outbound:
+                    with open(outbound_connectivity_check_path, "w+", encoding="utf-8") as outbound:
                         outbound.write(
                             "Response code "
                             + Onboarding_Precheck_Endpoint_outbound_connectivity_response
@@ -576,7 +579,7 @@ def check_cluster_outbound_connectivity(
                     filepath_with_timestamp,
                     consts.Outbound_Network_Connectivity_Check_for_onboarding,
                 )
-                with open(outbound_connectivity_check_path, "w+") as outbound:
+                with open(outbound_connectivity_check_path, "w+", encoding="utf-8") as outbound:
                     outbound.write(
                         "Response code "
                         + Onboarding_Precheck_Endpoint_outbound_connectivity_response
@@ -605,7 +608,7 @@ def check_cluster_outbound_connectivity(
                         filepath_with_timestamp,
                         consts.Outbound_Network_Connectivity_Check,
                     )
-                    with open(outbound_connectivity_check_path, "w+") as outbound:
+                    with open(outbound_connectivity_check_path, "w+", encoding="utf-8") as outbound:
                         outbound.write(
                             "Response code "
                             + outbound_connectivity_response
@@ -628,7 +631,7 @@ def check_cluster_outbound_connectivity(
                 outbound_connectivity_check_path = os.path.join(
                     filepath_with_timestamp, consts.Outbound_Network_Connectivity_Check
                 )
-                with open(outbound_connectivity_check_path, "w+") as outbound:
+                with open(outbound_connectivity_check_path, "w+", encoding="utf-8") as outbound:
                     outbound.write(
                         "Response code "
                         + outbound_connectivity_response
@@ -782,7 +785,7 @@ def get_helm_registry(
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     headers = None
     if os.getenv("AZURE_ACCESS_TOKEN"):
-        headers = ["Authorization=Bearer {}".format(os.getenv("AZURE_ACCESS_TOKEN"))]
+        headers = [f"Authorization=Bearer {os.getenv('AZURE_ACCESS_TOKEN')}"]
     # Sending request with retries
     r = send_request_with_retries(
         cmd.cli_ctx,
@@ -806,7 +809,7 @@ def get_helm_registry(
             )
             raise CLIInternalError(
                 f"Error while fetching helm chart registry path from JSON response: {e}"
-            )
+            ) from e
     else:
         telemetry.set_exception(
             exception="No content in response",
@@ -842,7 +845,7 @@ def get_helm_values(
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     headers = None
     if os.getenv("AZURE_ACCESS_TOKEN"):
-        headers = ["Authorization=Bearer {}".format(os.getenv("AZURE_ACCESS_TOKEN"))]
+        headers = [f"Authorization=Bearer {os.getenv('AZURE_ACCESS_TOKEN')}"]
     # Sending request with retries
     r = send_request_with_retries(
         cmd.cli_ctx,
@@ -867,7 +870,7 @@ def get_helm_values(
             )
             raise CLIInternalError(
                 f"Error while fetching helm values from DP from JSON response: {e}"
-            )
+            ) from e
     else:
         telemetry.set_exception(
             exception="No content in response",
@@ -888,7 +891,7 @@ def health_check_dp(cmd: CLICommand, config_dp_endpoint: str) -> bool:
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     headers = None
     if os.getenv("AZURE_ACCESS_TOKEN"):
-        headers = ["Authorization=Bearer {}".format(os.getenv("AZURE_ACCESS_TOKEN"))]
+        headers = [f"Authorization=Bearer {os.getenv('AZURE_ACCESS_TOKEN')}"]
     # Sending request with retries
     r = send_request_with_retries(
         cmd.cli_ctx,
@@ -1012,7 +1015,7 @@ def send_request_with_retries(
                 )
                 raise CLIInternalError(
                     f"Error while fetching helm chart registry path: {e}"
-                )
+                ) from e
             time.sleep(retry_delay)
 
     assert False
@@ -1367,9 +1370,8 @@ def helm_install_release(
                     "--set",
                     f"systemDefaultValues.activeDirectoryEndpoint={active_directory}",
                     "--set",
-                    "systemDefaultValues.image.repository={}".format(
-                        registry_path.split("/")[0]
-                    ),
+                    "systemDefaultValues.image.repository="
+                    f"{registry_path.split('/')[0]}",
                 ]
             )
         else:
@@ -1582,7 +1584,7 @@ def flatten(dd: Any, separator: str = ".", prefix: str = "") -> dict[str, Any]:
         )
         raise CLIInternalError(
             "Error while flattening the user supplied helm values dict"
-        )
+        ) from e
 
 
 def check_features_to_update(features_to_update: list[str]) -> tuple[bool, bool, bool]:
@@ -1603,10 +1605,10 @@ def user_confirmation(message: str, yes: bool = False) -> None:
     try:
         if not prompt_y_n(message):
             raise ManualInterrupt("Operation cancelled.")
-    except NoTTYException:
+    except NoTTYException as exc:
         raise CLIInternalError(
             "Unable to prompt for confirmation as no tty available. Use --yes."
-        )
+        ) from exc
 
 
 def is_guid(guid: str) -> bool:
@@ -1679,7 +1681,7 @@ def check_provider_registrations(
                 )
                 raise ValidationError(err_msg)
     except ValidationError as e:
-        raise e
+        raise e from e
     except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Couldn't check the required provider's registration status")
 
@@ -1723,7 +1725,7 @@ def validate_node_api_response(api_instance: CoreV1Api) -> V1NodeList | None:
 def az_cli(args_str: str) -> Any:
     args = args_str.split()
     cli: AzCli = get_default_cli()
-    with open(os.devnull, "w") as devnull:
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
         cli.invoke(args, out_file=devnull)
     if cli.result.result:
         return cli.result.result
@@ -1737,7 +1739,7 @@ def is_cli_using_msal_auth() -> bool:
     try:
         cli_version = response_cli_version["azure-cli"]
     except (KeyError, TypeError) as ex:
-        raise CLIInternalError(f"Unable to decode the az cli version installed: {ex}")
+        raise CLIInternalError(f"Unable to decode the az cli version installed: {ex}") from ex
     v1 = cli_version
     v2 = consts.AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION
     for i, j in zip(map(int, v1.split(".")), map(int, v2.split("."))):
@@ -1764,6 +1766,8 @@ def get_metadata(arm_endpoint: str, api_version: str = "2022-09-01") -> dict[str
         raise HttpResponseError(msg)
 
     except Exception as err:  # pylint: disable=broad-exception-caught
+# pylint: disable=too-many-lines
+# pylint: disable=too-many-statements
         msg = f"Failed to request ARM metadata {metadata_endpoint}."
         print(msg, file=sys.stderr)
         print(
@@ -1817,7 +1821,7 @@ def helm_update_agent(
     user_values_location = os.path.join(
         os.path.expanduser("~"), ".azure", "userValues.txt"
     )
-    with open(user_values_location, "w+") as existing_user_values:
+    with open(user_values_location, "w+", encoding="utf-8") as existing_user_values:
         response_helm_values_get = Popen(
             cmd_helm_values, stdout=existing_user_values, stderr=PIPE
         )

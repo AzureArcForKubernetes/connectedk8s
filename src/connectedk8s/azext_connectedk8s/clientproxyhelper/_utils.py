@@ -2,6 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
+# pylint: disable=too-many-positional-arguments
 from __future__ import annotations
 
 import base64
@@ -112,7 +113,7 @@ def fetch_pop_publickey_kid(
     poppublickey_uri = f"https://localhost:{api_server_port}/identity/poppublickey"
     # Needed to prevent skip tls warning from printing to the console
     original_stderr = sys.stderr
-    with open(os.devnull, "w") as f:
+    with open(os.devnull, "w", encoding="utf-8") as f:
         sys.stderr = f
 
         get_publickey_response = make_api_call_with_retries(
@@ -180,7 +181,7 @@ def fetch_and_post_at_to_csp(
     post_at_uri = f"https://localhost:{api_server_port}/identity/at"
     # Needed to prevent skip tls warning from printing to the console
     original_stderr = sys.stderr
-    with open(os.devnull, "w") as f:
+    with open(os.devnull, "w", encoding="utf-8") as f:
         sys.stderr = f
         post_at_response = make_api_call_with_retries(
             post_at_uri,
