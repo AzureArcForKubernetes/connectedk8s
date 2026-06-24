@@ -1066,6 +1066,11 @@ def create_connectedk8s(
             )
             return connected_cluster
 
+        telemetry.set_exception(
+            exception="Timed out waiting for Agent State to reach terminal state",
+            fault_type=consts.Agent_State_Timeout_Fault_Type,
+            summary="Agent state did not reach terminal state within timeout during create",
+        )
         raise CLIInternalError(
             "Timed out waiting for Agent State to reach terminal state."
         )
@@ -1121,6 +1126,12 @@ def validate_existing_provisioned_cluster_for_reput(
             + consts.Doc_Provisioned_Cluster_Update_Url
         )
         if azure_hybrid_benefit is not None:
+            telemetry.set_exception(
+                exception=err_msg,
+                fault_type=consts.Provisioned_Cluster_Operation_Fault_Type,
+                summary="Provisioned cluster AHB update not supported via connectedk8s CLI",
+            )
+            telemetry.set_user_fault()
             raise InvalidArgumentValueError(err_msg)
 
         validation_values = [
@@ -1141,6 +1152,12 @@ def validate_existing_provisioned_cluster_for_reput(
                     "public_key.\n\nPlease use the 'az aksarc update' CLI command. "
                     + consts.Doc_Provisioned_Cluster_Update_Url
                 )
+                telemetry.set_exception(
+                    exception=err_msg,
+                    fault_type=consts.Provisioned_Cluster_Operation_Fault_Type,
+                    summary="Provisioned cluster property update not supported via connectedk8s CLI",
+                )
+                telemetry.set_user_fault()
                 raise InvalidArgumentValueError(err_msg)
 
 
@@ -2045,6 +2062,12 @@ def delete_connectedk8s(
             "'az aksarc delete' CLI command.\n"
             + consts.Doc_Provisioned_Cluster_Delete_Url
         )
+        telemetry.set_exception(
+            exception=err_msg,
+            fault_type=consts.Provisioned_Cluster_Operation_Fault_Type,
+            summary="Provisioned cluster delete not supported via connectedk8s CLI",
+        )
+        telemetry.set_user_fault()
         raise InvalidArgumentValueError(err_msg)
 
     # Send cloud information to telemetry
@@ -2384,6 +2407,12 @@ def update_connected_cluster(
             "Please use the 'az aksarc update' CLI command.\n"
             + consts.Doc_Provisioned_Cluster_Update_Url
         )
+        telemetry.set_exception(
+            exception=err_msg,
+            fault_type=consts.Provisioned_Cluster_Operation_Fault_Type,
+            summary="Provisioned cluster update not supported via connectedk8s CLI",
+        )
+        telemetry.set_user_fault()
         raise InvalidArgumentValueError(err_msg)
 
     # Patching the connected cluster ARM resource
@@ -2438,9 +2467,21 @@ def update_connected_cluster(
         and gateway_resource_id == ""
         and not disable_gateway
     ):
+        telemetry.set_exception(
+            exception=consts.No_Param_Error,
+            fault_type=consts.Update_No_Params_Fault_Type,
+            summary="No update parameters specified",
+        )
+        telemetry.set_user_fault()
         raise RequiredArgumentMissingError(consts.No_Param_Error)
 
     if (https_proxy or http_proxy or no_proxy) and disable_proxy:
+        telemetry.set_exception(
+            exception=consts.EnableProxy_Conflict_Error,
+            fault_type=consts.Update_Proxy_Conflict_Fault_Type,
+            summary="Proxy enable and disable specified simultaneously",
+        )
+        telemetry.set_user_fault()
         raise MutuallyExclusiveArgumentError(consts.EnableProxy_Conflict_Error)
 
     # Checking whether optional extra values file has been provided.
@@ -2468,6 +2509,11 @@ def update_connected_cluster(
     # Fetch Connected Cluster for agent version
     connected_cluster = client.get(resource_group_name, cluster_name)
     if connected_cluster.id is None:
+        telemetry.set_exception(
+            exception="Connected cluster resource 'id' is None",
+            fault_type=consts.Connected_Cluster_Resource_Id_None_Fault_Type,
+            summary="Connected cluster ARM resource missing 'id' field",
+        )
         raise CLIInternalError(
             "Connected cluster resource 'id' is None. Cannot extract subscription id."
         )
@@ -2664,6 +2710,11 @@ def update_connected_cluster(
 
     # If we didn't see a terminal agent state, now's the time to throw an error.
     if not terminal_agent_state:
+        telemetry.set_exception(
+            exception="Timed out waiting for Agent State to reach terminal state",
+            fault_type=consts.Agent_State_Timeout_Fault_Type,
+            summary="Agent state did not reach terminal state within timeout during update",
+        )
         raise CLIInternalError(
             "Timed out waiting for Agent State to reach terminal state."
         )
@@ -2693,6 +2744,12 @@ def upgrade_agents(
             "'az aksarc upgrade' CLI command. \n"
             + consts.Doc_Provisioned_Cluster_Upgrade_Url
         )
+        telemetry.set_exception(
+            exception=err_msg,
+            fault_type=consts.Provisioned_Cluster_Operation_Fault_Type,
+            summary="Provisioned cluster upgrade not supported via connectedk8s CLI",
+        )
+        telemetry.set_user_fault()
         raise InvalidArgumentValueError(err_msg)
 
     logger.warning("This operation might take a while...\n")
@@ -3155,6 +3212,12 @@ def enable_features(
             "information on how to enable a feature on a Provisioned Cluster using a cluster extension, "
             "please refer to: https://learn.microsoft.com/en-us/azure/aks/deploy-extensions-az-cli"
         )
+        telemetry.set_exception(
+            exception=err_msg,
+            fault_type=consts.Provisioned_Cluster_Operation_Fault_Type,
+            summary="Provisioned cluster enable feature not supported via connectedk8s CLI",
+        )
+        telemetry.set_user_fault()
         raise InvalidArgumentValueError(err_msg)
 
     if connected_cluster.private_link_state.lower() == "enabled" and (
@@ -3194,6 +3257,11 @@ def enable_features(
             features.remove("custom-locations")
             logger.warning(consts.Custom_Location_Enable_Failed_warning)
             if len(features) == 0:
+                telemetry.set_exception(
+                    exception="Failed to enable 'custom-locations' feature",
+                    fault_type=consts.Custom_Locations_Enable_Failed_Fault_Type,
+                    summary="Custom locations enablement failed with no other features to enable",
+                )
                 raise ClientRequestError("Failed to enable 'custom-locations' feature.")
 
     # Send cloud information to telemetry
@@ -3381,6 +3449,12 @@ def disable_features(
             "information on how to disable a feature on a Provisioned Cluster using a cluster extension, please "
             "refer to: https://learn.microsoft.com/en-us/azure/aks/deploy-extensions-az-cli"
         )
+        telemetry.set_exception(
+            exception=err_msg,
+            fault_type=consts.Provisioned_Cluster_Operation_Fault_Type,
+            summary="Provisioned cluster disable feature not supported via connectedk8s CLI",
+        )
+        telemetry.set_user_fault()
         raise InvalidArgumentValueError(err_msg)
 
     logger.warning("This operation might take a while...\n")
