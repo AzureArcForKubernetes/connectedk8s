@@ -156,7 +156,9 @@ def fetch_connected_cluster_resource(
         if storage_space_available:
             connected_cluster_dict = connected_cluster.as_dict()
             # If storage space is available then only store the connected cluster resource
-            with open(connected_cluster_resource_file_path, "w+", encoding="utf-8") as cc:
+            with open(
+                connected_cluster_resource_file_path, "w+", encoding="utf-8"
+            ) as cc:
                 json.dump(connected_cluster_dict, cc, indent=2)
 
         return consts.Diagnostic_Check_Passed, storage_space_available
@@ -244,7 +246,9 @@ def retrieve_arc_agents_logs(
                     arc_agent_container_logs_path = os.path.join(
                         agent_name_logs_path, container_name + ".txt"
                     )
-                    with open(arc_agent_container_logs_path, "w+", encoding="utf-8") as container_file:
+                    with open(
+                        arc_agent_container_logs_path, "w+", encoding="utf-8"
+                    ) as container_file:
                         container_file.write(str(container_log))
 
         return consts.Diagnostic_Check_Passed, storage_space_available
@@ -425,7 +429,9 @@ def retrieve_deployments_logs(
                     deployments_path, deployment_name + ".txt"
                 )
                 # Creating a text file with the name of the deployment and adding deployment status in it
-                with open(arc_deployment_logs_path, "w+", encoding="utf-8") as deployment_file:
+                with open(
+                    arc_deployment_logs_path, "w+", encoding="utf-8"
+                ) as deployment_file:
                     deployment_file.write(str(deployment.status))
 
         return consts.Diagnostic_Check_Passed, storage_space_available
@@ -521,7 +527,8 @@ def retrieve_arc_workload_identity_pod_logs(
                     )
                     with open(
                         arc_workload_identity_container_logs_path,
-                        "w+", encoding="utf-8"
+                        "w+",
+                        encoding="utf-8",
                     ) as container_file:
                         container_file.write(str(container_log))
 
@@ -706,8 +713,7 @@ def retrieve_arc_workload_identity_deployments_logs(
                 )
                 # Creating a text file with the name of the deployment and adding deployment status in it
                 with open(
-                    arc_workload_identity_deployment_logs_path,
-                    "w+", encoding="utf-8"
+                    arc_workload_identity_deployment_logs_path, "w+", encoding="utf-8"
                 ) as deployment_file:
                     deployment_file.write(str(deployment.status))
 
@@ -1133,8 +1139,9 @@ def check_diagnoser_container(
             return consts.Diagnostic_Check_Passed, storage_space_available
 
         # If any of the check remain Incomplete than we will return Incomplete
-        if (
-            consts.Diagnostic_Check_Incomplete in (dns_check, outbound_connectivity_check)
+        if consts.Diagnostic_Check_Incomplete in (
+            dns_check,
+            outbound_connectivity_check,
         ):
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
@@ -1500,8 +1507,7 @@ def executing_diagnoser_job(
                     events_json = json.loads(output_kubectl_get_events)
                     if len(events_json["items"]) != 0:
                         with open(
-                            unfinished_diagnoser_job_path,
-                            "w+", encoding="utf-8"
+                            unfinished_diagnoser_job_path, "w+", encoding="utf-8"
                         ) as unfinished_diagnoser_job:
                             # Adding all the individual events
                             for events in events_json["items"]:
@@ -2445,7 +2451,9 @@ def get_signingkey_cr_snapshot(
                 filepath_with_timestamp, consts.SigningKey_CR_Snapshot
             )
 
-            with open(signingkey_cr_logs_path, "w+", encoding="utf-8") as signingkey_cr_log:
+            with open(
+                signingkey_cr_logs_path, "w+", encoding="utf-8"
+            ) as signingkey_cr_log:
                 signingkey_cr_log.write(signingkey_cr_json)
 
             return storage_space_available
@@ -2509,7 +2517,9 @@ def fetching_cli_output_logs(
             )
             # If any results are obtained during the process than we will add it to the text file.
             if len(diagnoser_output) > 0:
-                with open(cli_output_logger_path, "w+", encoding="utf-8") as cli_output_writer:
+                with open(
+                    cli_output_logger_path, "w+", encoding="utf-8"
+                ) as cli_output_writer:
                     for output in diagnoser_output:
                         cli_output_writer.write(output + "\n")
                     # If flag is 0 that means that process was terminated using the Keyboard Interrupt so adding that
@@ -2519,13 +2529,17 @@ def fetching_cli_output_logs(
 
             # If no issues was found during the whole troubleshoot execution
             elif flag:
-                with open(cli_output_logger_path, "w+", encoding="utf-8") as cli_output_writer:
+                with open(
+                    cli_output_logger_path, "w+", encoding="utf-8"
+                ) as cli_output_writer:
                     cli_output_writer.write(
                         "The diagnoser didn't find any issues on the cluster.\n"
                     )
             # If process was terminated by user
             else:
-                with open(cli_output_logger_path, "w+", encoding="utf-8") as cli_output_writer:
+                with open(
+                    cli_output_logger_path, "w+", encoding="utf-8"
+                ) as cli_output_writer:
                     cli_output_writer.write("Process terminated externally.\n")
 
         return consts.Diagnostic_Check_Passed

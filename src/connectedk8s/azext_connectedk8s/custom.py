@@ -841,7 +841,9 @@ def create_connectedk8s(
             fault_type=consts.KeyPair_Generate_Fault_Type,
             summary="Failed to generate public-private key pair",
         )
-        raise CLIInternalError(f"Failed to generate public-private key pair: {e}") from e
+        raise CLIInternalError(
+            f"Failed to generate public-private key pair: {e}"
+        ) from e
     try:
         public_key = get_public_key(key_pair)
     except Exception as e:
@@ -1447,7 +1449,9 @@ def install_helm_client(cmd: CLICommand) -> str:
                     fault_type=consts.Create_Directory_Fault_Type,
                     summary="Unable to create helm directory",
                 )
-                raise ClientRequestError("Failed to create helm directory." + str(e)) from e
+                raise ClientRequestError(
+                    "Failed to create helm directory." + str(e)
+                ) from e
 
         # Downloading compressed helm client executable
         logger.warning(
@@ -1620,7 +1624,9 @@ def load_kube_config(
             summary="Problem loading the kubeconfig file",
         )
         logger.warning(consts.Kubeconfig_Load_Failed_Warning)
-        raise FileOperationError("Problem loading the kubeconfig file. " + str(e)) from e
+        raise FileOperationError(
+            "Problem loading the kubeconfig file. " + str(e)
+        ) from e
 
 
 def get_private_key(key_pair: RsaKey) -> str:
@@ -2963,9 +2969,7 @@ def upgrade_agents(
         cmd_helm_upgrade.extend(["--set", f"global.isProxyEnabled={False}"])
 
     if not infra_added:
-        cmd_helm_upgrade.extend(
-            ["--set", "global.kubernetesInfra=generic"]
-        )
+        cmd_helm_upgrade.extend(["--set", "global.kubernetesInfra=generic"])
 
     if values_file:
         cmd_helm_upgrade.extend(["-f", values_file])
@@ -3566,9 +3570,7 @@ def get_chart_and_disable_features(
         cmd_helm_upgrade.extend(
             ["--set", "systemDefaultValues.customLocations.enabled=false"]
         )
-        cmd_helm_upgrade.extend(
-            ["--set", "systemDefaultValues.customLocations.oid="]
-        )
+        cmd_helm_upgrade.extend(["--set", "systemDefaultValues.customLocations.oid="])
 
     response_helm_upgrade = Popen(cmd_helm_upgrade, stdout=PIPE, stderr=PIPE)
     _, error_helm_upgrade = response_helm_upgrade.communicate()
@@ -3749,7 +3751,9 @@ def merge_kubernetes_configurations(
                 fault_type=consts.Failed_To_Merge_Kubeconfig_File,
                 summary="Exception while merging the kubeconfig file",
             )
-            raise CLIInternalError(f"Exception while merging the kubeconfig file: {e}") from e
+            raise CLIInternalError(
+                f"Exception while merging the kubeconfig file: {e}"
+            ) from e
 
     current_context = addition.get("current-context", "UNKNOWN")
     msg = f'Merged "{current_context}" as current context in {existing_file}'

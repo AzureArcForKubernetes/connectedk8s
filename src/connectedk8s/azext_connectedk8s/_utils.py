@@ -501,7 +501,8 @@ def check_cluster_outbound_connectivity(
                     )
                     with open(
                         cluster_connect_outbound_connectivity_check_path,
-                        "w+", encoding="utf-8"
+                        "w+",
+                        encoding="utf-8",
                     ) as outbound:
                         outbound.write(
                             "Response code "
@@ -531,7 +532,8 @@ def check_cluster_outbound_connectivity(
                     )
                     with open(
                         cluster_connect_outbound_connectivity_check_path,
-                        "w+", encoding="utf-8"
+                        "w+",
+                        encoding="utf-8",
                     ) as outbound:
                         outbound.write(
                             "Response code "
@@ -555,7 +557,9 @@ def check_cluster_outbound_connectivity(
                         filepath_with_timestamp,
                         consts.Outbound_Network_Connectivity_Check_for_onboarding,
                     )
-                    with open(outbound_connectivity_check_path, "w+", encoding="utf-8") as outbound:
+                    with open(
+                        outbound_connectivity_check_path, "w+", encoding="utf-8"
+                    ) as outbound:
                         outbound.write(
                             "Response code "
                             + Onboarding_Precheck_Endpoint_outbound_connectivity_response
@@ -582,7 +586,9 @@ def check_cluster_outbound_connectivity(
                     filepath_with_timestamp,
                     consts.Outbound_Network_Connectivity_Check_for_onboarding,
                 )
-                with open(outbound_connectivity_check_path, "w+", encoding="utf-8") as outbound:
+                with open(
+                    outbound_connectivity_check_path, "w+", encoding="utf-8"
+                ) as outbound:
                     outbound.write(
                         "Response code "
                         + Onboarding_Precheck_Endpoint_outbound_connectivity_response
@@ -611,7 +617,9 @@ def check_cluster_outbound_connectivity(
                         filepath_with_timestamp,
                         consts.Outbound_Network_Connectivity_Check,
                     )
-                    with open(outbound_connectivity_check_path, "w+", encoding="utf-8") as outbound:
+                    with open(
+                        outbound_connectivity_check_path, "w+", encoding="utf-8"
+                    ) as outbound:
                         outbound.write(
                             "Response code "
                             + outbound_connectivity_response
@@ -634,7 +642,9 @@ def check_cluster_outbound_connectivity(
                 outbound_connectivity_check_path = os.path.join(
                     filepath_with_timestamp, consts.Outbound_Network_Connectivity_Check
                 )
-                with open(outbound_connectivity_check_path, "w+", encoding="utf-8") as outbound:
+                with open(
+                    outbound_connectivity_check_path, "w+", encoding="utf-8"
+                ) as outbound:
                     outbound.write(
                         "Response code "
                         + outbound_connectivity_response
@@ -1742,7 +1752,9 @@ def is_cli_using_msal_auth() -> bool:
     try:
         cli_version = response_cli_version["azure-cli"]
     except (KeyError, TypeError) as ex:
-        raise CLIInternalError(f"Unable to decode the az cli version installed: {ex}") from ex
+        raise CLIInternalError(
+            f"Unable to decode the az cli version installed: {ex}"
+        ) from ex
     v1 = cli_version
     v2 = consts.AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION
     for i, j in zip(map(int, v1.split(".")), map(int, v2.split("."))):
