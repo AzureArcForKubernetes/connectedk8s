@@ -70,7 +70,7 @@ def ensure_correlation_id(cmd: CLICommand, log_prefix: str = "connectedk8s") -> 
         correlation_id = str(uuid.uuid4())
         headers[consts.Correlation_Request_Id_Header] = correlation_id
     telemetry.set_debug_info(f"{log_prefix} correlation id is ", correlation_id)
-    logger.warning(
+    logger.info(
         "%s session correlationId: %s", log_prefix, correlation_id
     )
     return correlation_id
