@@ -107,8 +107,10 @@ def send_prediagnostic_check_failure_telemetry(
         "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
     }
 
-    print(
-        f"[Telemetry] onboardingErrorType={consts.Install_Prediagnostics_Fault_Type} onboardingErrorMessage={error_message}"
+    logger.debug(
+        "[Telemetry] onboardingErrorType=%s onboardingErrorMessage=%s",
+        consts.Install_Prediagnostics_Fault_Type,
+        error_message,
     )
     telemetry.add_extension_event("connectedk8s", prediagnostic_error_detail)
 
@@ -124,8 +126,10 @@ def send_post_diagnostic_precheck_failure_telemetry(
         "Context.Default.AzureCLI.onboardingErrorType": consts.Post_Diagnostic_Precheck_Fault_Type,
         "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
     }
-    print(
-        f"[Telemetry] onboardingErrorType={consts.Post_Diagnostic_Precheck_Fault_Type} onboardingErrorMessage={error_message}"
+    logger.debug(
+        "[Telemetry] onboardingErrorType=%s onboardingErrorMessage=%s",
+        consts.Post_Diagnostic_Precheck_Fault_Type,
+        error_message,
     )
     telemetry.add_extension_event("connectedk8s", error_detail)
 
