@@ -31,15 +31,14 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
-import azext_connectedk8s._constants as consts  # noqa: E402
-from azext_connectedk8s._utils import ensure_correlation_id  # noqa: E402
-from azext_connectedk8s.clientproxyhelper._proxylogic import (  # noqa: E402
+import azext_connectedk8s._constants as consts
+from azext_connectedk8s._utils import ensure_correlation_id
+from azext_connectedk8s.clientproxyhelper._proxylogic import (
     get_cluster_user_credentials,
 )
-from azext_connectedk8s.clientproxyhelper._utils import (  # noqa: E402
+from azext_connectedk8s.clientproxyhelper._utils import (
     make_api_call_with_retries,
 )
-
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
