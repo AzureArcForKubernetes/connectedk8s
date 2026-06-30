@@ -3923,6 +3923,10 @@ def client_side_proxy_wrapper(
             "authentication"
         ]["loginEndpoint"]
 
+    # Add overrides for AGC Scenario
+    if cloud.lower() == "ussec" or cloud.lower() == "usnat":
+        dict_file["cloudConfig"] = utils.get_agc_proxy_cloud_config(cloud, arm_metadata)
+
     telemetry.set_debug_info("User type is ", user_type)
 
     try:
