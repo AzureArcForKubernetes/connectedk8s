@@ -40,7 +40,11 @@ def handle_post_at_to_csp(
         api_server_port, clientproxy_process, correlation_id=correlation_id
     )
     post_at_response, expiry = clientproxyutils.fetch_and_post_at_to_csp(
-        cmd, api_server_port, tenant_id, kid, clientproxy_process,
+        cmd,
+        api_server_port,
+        tenant_id,
+        kid,
+        clientproxy_process,
         correlation_id=correlation_id,
     )
 
@@ -60,7 +64,11 @@ def handle_post_at_to_csp(
             )  # Fetch rotated public key
             # Retry posting AT with the new public key
             post_at_response, expiry = clientproxyutils.fetch_and_post_at_to_csp(
-                cmd, api_server_port, tenant_id, kid, clientproxy_process,
+                cmd,
+                api_server_port,
+                tenant_id,
+                kid,
+                clientproxy_process,
                 correlation_id=correlation_id,
             )
         # If after second try we still dont get a 200, raise error

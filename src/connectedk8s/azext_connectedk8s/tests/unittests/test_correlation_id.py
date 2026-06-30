@@ -20,6 +20,7 @@ Covers:
 
 These are pure unit tests: no Azure, no live cluster, no recordings.
 """
+
 import os
 import re
 import sys
@@ -28,9 +29,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-sys.path.insert(
-    0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
 import azext_connectedk8s._constants as consts  # noqa: E402
 from azext_connectedk8s._utils import ensure_correlation_id  # noqa: E402
@@ -42,9 +41,7 @@ from azext_connectedk8s.clientproxyhelper._utils import (  # noqa: E402
 )
 
 
-UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 def _make_cmd():
@@ -71,9 +68,7 @@ def test_ensure_correlation_id_mints_uuid4_when_header_absent():
     cid = ensure_correlation_id(cmd, log_prefix="test")
 
     assert UUID_RE.match(cid), f"expected RFC 4122 uuid, got {cid!r}"
-    assert (
-        cmd.cli_ctx.data["headers"][consts.Correlation_Request_Id_Header] == cid
-    )
+    assert cmd.cli_ctx.data["headers"][consts.Correlation_Request_Id_Header] == cid
 
 
 def test_ensure_correlation_id_is_idempotent_within_session():
@@ -83,10 +78,7 @@ def test_ensure_correlation_id_is_idempotent_within_session():
     second = ensure_correlation_id(cmd, log_prefix="test")
 
     assert first == second
-    assert (
-        cmd.cli_ctx.data["headers"][consts.Correlation_Request_Id_Header]
-        == first
-    )
+    assert cmd.cli_ctx.data["headers"][consts.Correlation_Request_Id_Header] == first
 
 
 def test_ensure_correlation_id_reuses_existing_header_value():
@@ -100,10 +92,7 @@ def test_ensure_correlation_id_reuses_existing_header_value():
     cid = ensure_correlation_id(cmd, log_prefix="test")
 
     assert cid == preset
-    assert (
-        cmd.cli_ctx.data["headers"][consts.Correlation_Request_Id_Header]
-        == preset
-    )
+    assert cmd.cli_ctx.data["headers"][consts.Correlation_Request_Id_Header] == preset
 
 
 def test_ensure_correlation_id_creates_headers_dict_when_missing():
@@ -113,9 +102,7 @@ def test_ensure_correlation_id_creates_headers_dict_when_missing():
     cid = ensure_correlation_id(cmd, log_prefix="test")
 
     assert "headers" in cmd.cli_ctx.data
-    assert (
-        cmd.cli_ctx.data["headers"][consts.Correlation_Request_Id_Header] == cid
-    )
+    assert cmd.cli_ctx.data["headers"][consts.Correlation_Request_Id_Header] == cid
 
 
 def test_ensure_correlation_id_distinct_across_sessions():

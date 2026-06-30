@@ -4097,7 +4097,10 @@ def client_side_proxy(
     if token is None and ProxyStatus.should_access_token_refresh(flag):
         # jwt token approach if cli is using MSAL. This is for cli >= 2.30.0
         at_expiry = proxylogic.handle_post_at_to_csp(
-            cmd, api_server_port, tenant_id, clientproxy_process,
+            cmd,
+            api_server_port,
+            tenant_id,
+            clientproxy_process,
             correlation_id=correlation_id,
         )
 

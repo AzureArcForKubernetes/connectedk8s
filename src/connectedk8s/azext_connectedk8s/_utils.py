@@ -60,8 +60,7 @@ logger = get_logger(__name__)
 
 
 def ensure_correlation_id(cmd: CLICommand, log_prefix: str = "connectedk8s") -> str:
-    """Ensure ``x-ms-correlation-request-id`` is present for this command session.
-    """
+    """Ensure ``x-ms-correlation-request-id`` is present for this command session."""
     headers = cmd.cli_ctx.data.setdefault("headers", {})
     existing = headers.get(consts.Correlation_Request_Id_Header)
     if existing:
@@ -70,9 +69,7 @@ def ensure_correlation_id(cmd: CLICommand, log_prefix: str = "connectedk8s") -> 
         correlation_id = str(uuid.uuid4())
         headers[consts.Correlation_Request_Id_Header] = correlation_id
     telemetry.set_debug_info(f"{log_prefix} correlation id is ", correlation_id)
-    logger.info(
-        "%s session correlationId: %s", log_prefix, correlation_id
-    )
+    logger.info("%s session correlationId: %s", log_prefix, correlation_id)
     return correlation_id
 
 
