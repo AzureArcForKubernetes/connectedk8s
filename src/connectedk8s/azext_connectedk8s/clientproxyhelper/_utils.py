@@ -2,6 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
+# pylint: disable=too-many-positional-arguments
 from __future__ import annotations
 
 import base64
@@ -47,7 +48,16 @@ def check_if_port_is_open(port: int) -> bool:
         for tup in connections:
             if int(tup[3][1]) == port:  # type: ignore[misc]
                 return True
-    except Exception as e:
+    except (
+        AccessDenied,
+        NoSuchProcess,
+        ZombieProcess,
+        OSError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ) as e:
+        # Port inspection can fail when the process table is transient or inaccessible.
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Port_Check_Fault_Type,
@@ -84,17 +94,15 @@ def make_api_call_with_retries(
         try:
             response = requests.request(method, uri, json=data, verify=tls_verify)
             return response
-        except Exception as e:
+        except requests.RequestException as e:
+            # Retry transient request failures while clientproxy is still coming up.
             time.sleep(5)
             if i != consts.API_CALL_RETRIES - 1:
-                pass
-            else:
-                telemetry.set_exception(
-                    exception=e, fault_type=fault_type, summary=summary
-                )
-                close_subprocess_and_raise_cli_error(
-                    clientproxy_process, cli_error + str(e)
-                )
+                continue
+            telemetry.set_exception(exception=e, fault_type=fault_type, summary=summary)
+            close_subprocess_and_raise_cli_error(
+                clientproxy_process, cli_error + str(e)
+            )
 
     assert False
 
@@ -105,7 +113,7 @@ def fetch_pop_publickey_kid(
     poppublickey_uri = f"https://localhost:{api_server_port}/identity/poppublickey"
     # Needed to prevent skip tls warning from printing to the console
     original_stderr = sys.stderr
-    with open(os.devnull, "w") as f:
+    with open(os.devnull, "w", encoding="utf-8") as f:
         sys.stderr = f
 
         get_publickey_response = make_api_call_with_retries(
@@ -152,7 +160,9 @@ def fetch_and_post_at_to_csp(
             consts.KAP_1P_Server_App_Scope, data=token_data
         )
         jwtToken = accessToken.token
-    except Exception as e:
+    # Token acquisition may raise multiple provider-specific exceptions.
+    # Keep one boundary for consistent CLI error mapping.
+    except Exception as e:  # pylint: disable=broad-exception-caught
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Post_AT_To_ClientProxy_Failed_Fault_Type,
@@ -171,7 +181,7 @@ def fetch_and_post_at_to_csp(
     post_at_uri = f"https://localhost:{api_server_port}/identity/at"
     # Needed to prevent skip tls warning from printing to the console
     original_stderr = sys.stderr
-    with open(os.devnull, "w") as f:
+    with open(os.devnull, "w", encoding="utf-8") as f:
         sys.stderr = f
         post_at_response = make_api_call_with_retries(
             post_at_uri,
@@ -241,5 +251,6 @@ def check_process(processName: str) -> bool:
             if proc.name().startswith(processName):
                 return True
         except (NoSuchProcess, AccessDenied, ZombieProcess):
+            # Process handle may become stale or inaccessible during iteration; continue scanning.
             pass
     return False
