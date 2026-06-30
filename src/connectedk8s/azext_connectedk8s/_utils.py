@@ -1916,5 +1916,7 @@ def add_agc_endpoint_overrides(
             f"systemDefaultValues.clusteridentityoperator.his_endpoint_override=https://gbl.his.arc.azure.{endpoint_suffix}/discovery?location={location}&api-version=1.1-preview",
             "--set",
             f"systemDefaultValues.image.repository=mcr.microsoft.{cloud_suffix}",
+            "--set",
+            f"systemDefaultValues.MsiAdapterArtifactImageRegistry=mcr.microsoft.{cloud_suffix}"
         ]
     )
