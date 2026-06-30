@@ -1613,8 +1613,6 @@ def user_confirmation(message: str, yes: bool = False) -> None:
 
 
 def is_guid(guid: str) -> bool:
-    import uuid
-
     try:
         uuid.UUID(guid)
         return True
