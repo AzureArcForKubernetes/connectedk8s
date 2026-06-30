@@ -112,7 +112,7 @@ def validate_connect_rp_location(cmd: CLICommand, location: str) -> None:
             ]
             if location.lower() not in rp_locations:
                 telemetry.set_exception(
-                    exception="Location not supported",
+                    exception=Exception("Location not supported"),
                     fault_type=consts.Invalid_Location_Fault_Type,
                     summary="Provided location is not supported for creating connected clusters",
                 )
@@ -131,7 +131,7 @@ def validate_custom_token(
     if os.getenv("AZURE_ACCESS_TOKEN"):
         if os.getenv("AZURE_SUBSCRIPTION_ID") is None:
             telemetry.set_exception(
-                exception="Required environment variable SubscriptionId not set, for custom Azure access token",
+                exception=Exception("Required environment variable SubscriptionId not set, for custom Azure access token"),
                 fault_type=consts.Custom_Access_Token_Env_Var_Sub_Id_Missing_Fault_Type,
                 summary="Required environment variable SubscriptionId not set, for custom Azure access token",
             )
@@ -140,7 +140,7 @@ def validate_custom_token(
             )
         if os.getenv("AZURE_TENANT_ID") is None:
             telemetry.set_exception(
-                exception="Required environment variable TenantId not set, for custom Azure access token",
+                exception=Exception("Required environment variable TenantId not set, for custom Azure access token"),
                 fault_type=consts.Custom_Access_Token_Env_Var_Tenant_Id_Missing_Fault_Type,
                 summary="Required environment variable TenantId not set, for custom Azure access token",
             )
@@ -233,7 +233,7 @@ def pull_helm_chart(
         ):
             error_summary = "This CLI version does not support upgrading to Agents versions older than v1.14"
             telemetry.set_exception(
-                exception="Operation not supported on older Agents",
+                exception=Exception("Operation not supported on older Agents"),
                 fault_type=consts.Operation_Not_Supported_Fault_Type,
                 summary=error_summary,
             )
@@ -274,7 +274,7 @@ def pull_helm_chart(
             error = error_helm_chart_pull.decode("ascii")
             if i == retry_count - 1:
                 telemetry.set_exception(
-                    exception=error,
+                    exception=Exception(error),
                     fault_type=consts.Pull_HelmChart_Fault_Type,
                     summary=f"Unable to pull {chart_name} helm charts from the registry",
                 )
@@ -332,7 +332,7 @@ def save_cluster_diagnostic_checks_pod_description(
                             f.write(pod_description)
                 else:
                     telemetry.set_exception(
-                        exception=error_describe_job_pod.decode("ascii"),
+                        exception=Exception(error_describe_job_pod.decode("ascii")),
                         fault_type=consts.Cluster_Diagnostic_Checks_Pod_Description_Save_Failed,
                         summary="Failed to save cluster diagnostic checks pod description in the local machine",
                     )
@@ -400,7 +400,7 @@ def check_cluster_DNS(
                         + "\nWe found an issue with the DNS resolution on your cluster."
                     )
             telemetry.set_exception(
-                exception="DNS resolution check failed in the cluster",
+                exception=Exception("DNS resolution check failed in the cluster"),
                 fault_type=consts.DNS_Check_Failed,
                 summary="DNS check failed in the cluster",
             )
@@ -511,7 +511,7 @@ def check_cluster_outbound_connectivity(
                 )
                 telemetry.set_user_fault()
                 telemetry.set_exception(
-                    exception="Outbound network connectivity check failed for the Cluster Connect endpoint",
+                    exception=Exception("Outbound network connectivity check failed for the Cluster Connect endpoint"),
                     fault_type=consts.Outbound_Connectivity_Check_Failed_For_Cluster_Connect,
                     summary="Outbound network connectivity check failed for the Cluster Connect precheck endpoint",
                 )
@@ -580,7 +580,7 @@ def check_cluster_outbound_connectivity(
                         "required for onboarding."
                     )
             telemetry.set_exception(
-                exception="Outbound network connectivity check failed for onboarding",
+                exception=Exception("Outbound network connectivity check failed for onboarding"),
                 fault_type=consts.Outbound_Connectivity_Check_Failed_For_Onboarding,
                 summary="Outbound network connectivity check for onboarding failed in the cluster",
             )
@@ -631,7 +631,7 @@ def check_cluster_outbound_connectivity(
                         + "\nWe found an issue with Outbound network connectivity from the cluster."
                     )
             telemetry.set_exception(
-                exception="Outbound network connectivity check failed",
+                exception=Exception("Outbound network connectivity check failed"),
                 fault_type=consts.Outbound_Connectivity_Check_Failed,
                 summary="Outbound network connectivity check failed in the cluster",
             )
@@ -754,7 +754,7 @@ def add_helm_repo(
     if response_helm_repo.returncode != 0:
         error = error_helm_repo.decode("ascii")
         telemetry.set_exception(
-            exception=error,
+            exception=Exception(error),
             fault_type=consts.Add_HelmRepo_Fault_Type,
             summary="Failed to add helm repository",
         )
@@ -805,7 +805,7 @@ def get_helm_registry(
             )
     else:
         telemetry.set_exception(
-            exception="No content in response",
+            exception=Exception("No content in response"),
             fault_type=consts.Get_HelmRegistery_Path_Fault_Type,
             summary="No content in acr path response",
         )
@@ -866,7 +866,7 @@ def get_helm_values(
             )
     else:
         telemetry.set_exception(
-            exception="No content in response",
+            exception=Exception("No content in response"),
             fault_type=consts.Get_HelmRegistery_Path_Fault_Type,
             summary="No content in acr path response",
         )
@@ -900,7 +900,7 @@ def health_check_dp(cmd: CLICommand, config_dp_endpoint: str) -> bool:
         return True
 
     telemetry.set_exception(
-        exception="Error while performing DP health check",
+        exception=Exception("Error while performing DP health check"),
         fault_type=consts.DP_Health_Check_Fault_Type,
         summary="Error while performing DP health check",
     )
@@ -962,7 +962,7 @@ def update_gateway_cluster_link(
         return True
 
     telemetry.set_exception(
-        exception=f"Gateway {operation_type} failed",
+        exception=Exception(f"Gateway {operation_type} failed"),
         fault_type=consts.GATEWAY_LINK_FAULT_TYPE,
         summary=f"Gateway {operation_type} failed",
     )
@@ -1215,7 +1215,7 @@ def delete_arc_agents(
         ):
             telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=error_helm_delete.decode("ascii"),
+            exception=Exception(error_helm_delete.decode("ascii")),
             fault_type=consts.Delete_HelmRelease_Fault_Type,
             summary="Unable to delete helm release",
         )
@@ -1419,7 +1419,7 @@ def helm_install_release(
         ):
             telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=helm_install_error_message,
+            exception=Exception(helm_install_error_message),
             fault_type=consts.Install_HelmRelease_Fault_Type,
             summary="Unable to install helm release",
         )
@@ -1533,7 +1533,7 @@ def get_release_namespace(
             telemetry.set_user_fault()
 
         telemetry.set_exception(
-            exception=error,
+            exception=Exception(error),
             fault_type=consts.List_HelmRelease_Fault_Type,
             summary="Unable to list helm release",
         )
@@ -1621,7 +1621,7 @@ def check_provider_registrations(
         ).registration_state
         if cc_registration_state not in consts.allowed_rp_registration_states:
             telemetry.set_exception(
-                exception=f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered",
+                exception=Exception(f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered"),
                 fault_type=consts.CC_Provider_Namespace_Not_Registered_Fault_Type,
                 summary=f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered",
             )
@@ -1636,7 +1636,7 @@ def check_provider_registrations(
         if kc_registration_state not in consts.allowed_rp_registration_states:
             if is_workload_identity_enabled:
                 telemetry.set_exception(
-                    exception=f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered",
+                    exception=Exception(f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered"),
                     fault_type=consts.Kubernetes_Configuration_Provider_Namespace_Not_Registered_Fault_Type,
                     summary=f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered",
                 )
@@ -1657,7 +1657,7 @@ def check_provider_registrations(
             ).registration_state
             if hc_registration_state not in consts.allowed_rp_registration_states:
                 telemetry.set_exception(
-                    exception=f"{consts.Hybrid_Compute_Provider_Namespace} provider is not registered",
+                    exception=Exception(f"{consts.Hybrid_Compute_Provider_Namespace} provider is not registered"),
                     fault_type=consts.HC_Provider_Namespace_Not_Registered_Fault_Type,
                     summary=f"{consts.Hybrid_Compute_Provider_Namespace} provider is not registered",
                 )
@@ -1816,7 +1816,7 @@ def helm_update_agent(
         if "forbidden" in error or "timed out waiting for the condition" in error:
             telemetry.set_user_fault()
             telemetry.set_exception(
-                exception=error,
+                exception=Exception(error),
                 fault_type=consts.Get_Helm_Values_Failed,
                 summary="Error while doing helm get values azure-arc",
             )
@@ -1853,7 +1853,7 @@ def helm_update_agent(
         ):
             telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=helm_upgrade_error_message,
+            exception=Exception(helm_upgrade_error_message),
             fault_type=consts.Install_HelmRelease_Fault_Type,
             summary="Unable to install helm release",
         )

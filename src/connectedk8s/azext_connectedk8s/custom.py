@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import functools
 import hashlib
 import json
 import logging
@@ -27,6 +28,7 @@ from azure.cli.command_modules.role import graph_client_factory
 from azure.cli.core import get_default_cli, telemetry
 from azure.cli.core._profile import Profile
 from azure.cli.core.azclierror import (
+    AzCLIError,
     ArgumentUsageError,
     ClientRequestError,
     CLIInternalError,
@@ -101,6 +103,30 @@ logger = get_logger(__name__)
 # pylint: disable=line-too-long
 
 
+def _telemetry_catch_all(func):
+    """Catch-all that ensures unhandled exceptions are logged to telemetry
+    with proper ExceptionName before reaching the CLI framework."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except AzCLIError:
+            raise  # Already properly classified
+        except Exception as ex:
+            telemetry.set_exception(
+                exception=ex,
+                fault_type=f"unhandled-exception-in-{func.__name__}",
+                summary=f"Unhandled {type(ex).__name__} in {func.__name__}",
+            )
+            raise CLIInternalError(
+                f"An unexpected error occurred: {ex}"
+            ) from ex
+
+    return wrapper
+
+
+@_telemetry_catch_all
 def create_connectedk8s(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -215,7 +241,7 @@ def create_connectedk8s(
     # check whether proxy cert path exists
     if proxy_cert != "" and (not os.path.exists(proxy_cert)):
         telemetry.set_exception(
-            exception="Proxy cert path does not exist",
+            exception=Exception("Proxy cert path does not exist"),
             fault_type=consts.Proxy_Cert_Path_Does_Not_Exist_Fault_Type,
             summary="Proxy cert path does not exist",
         )
@@ -380,7 +406,7 @@ def create_connectedk8s(
         ex_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         summ_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         telemetry.set_exception(
-            exception=ex_msg,
+            exception=e,
             fault_type=consts.Pre_Onboarding_Diagnostic_Checks_Execution_Failed,
             summary=summ_msg,
         )
@@ -412,7 +438,7 @@ def create_connectedk8s(
             )
         if diagnostic_checks == consts.Diagnostic_Check_Incomplete:
             telemetry.set_exception(
-                exception="Cluster Diagnostic Prechecks Incomplete",
+                exception=Exception("Cluster Diagnostic Prechecks Incomplete"),
                 fault_type=consts.Cluster_Diagnostic_Prechecks_Incomplete,
                 summary="Cluster Diagnostic Prechecks didnt complete in the cluster",
             )
@@ -426,7 +452,7 @@ def create_connectedk8s(
 
         # if diagnostic_checks != consts.Diagnostic_Check_Incomplete
         telemetry.set_exception(
-            exception="Cluster Diagnostic Prechecks Failed",
+            exception=Exception("Cluster Diagnostic Prechecks Failed"),
             fault_type=consts.Cluster_Diagnostic_Prechecks_Failed,
             summary="Cluster Diagnostic Prechecks Failed in the cluster",
         )
@@ -449,7 +475,7 @@ def create_connectedk8s(
     if not required_node_exists:
         telemetry.set_user_fault()
         telemetry.set_exception(
-            exception="Couldn't find any node on the kubernetes cluster with the OS 'linux'",
+            exception=Exception("Couldn't find any node on the kubernetes cluster with the OS 'linux'"),
             fault_type=consts.Linux_Node_Not_Exists,
             summary="Couldn't find any node on the kubernetes cluster with the OS 'linux'",
         )
@@ -467,7 +493,7 @@ def create_connectedk8s(
         ex_msg = "Your credentials doesn't have permission to create clusterrolebindings on this kubernetes cluster."
         summ_msg = "Your credentials doesn't have permission to create clusterrolebindings on this kubernetes cluster."
         telemetry.set_exception(
-            exception=ex_msg,
+            exception=Exception(ex_msg),
             fault_type=consts.Cannot_Create_ClusterRoleBindings_Fault_Type,
             summary=summ_msg,
         )
@@ -533,7 +559,7 @@ def create_connectedk8s(
             if pls_location != location.lower():
                 ex_msg = "Connected cluster resource and Private link scope resource are present in different locations"
                 telemetry.set_exception(
-                    exception=ex_msg,
+                    exception=Exception(ex_msg),
                     fault_type=consts.Pls_Location_Mismatch_Fault_Type,
                     summary="Pls resource location mismatch",
                 )
@@ -552,7 +578,7 @@ def create_connectedk8s(
                 and ex.response.status_code == 404
             ):
                 telemetry.set_exception(
-                    exception="Private link scope resource does not exist",
+                    exception=ex,
                     fault_type=consts.Pls_Resource_Not_Found,
                     summary="Pls resource does not exist",
                 )
@@ -618,7 +644,7 @@ def create_connectedk8s(
                 or configmap_cluster_name.lower() != cluster_name.lower()
             ):
                 telemetry.set_exception(
-                    exception="The kubernetes cluster is already onboarded",
+                    exception=Exception("The kubernetes cluster is already onboarded"),
                     fault_type=consts.Cluster_Already_Onboarded_Fault_Type,
                     summary="Kubernetes cluster already onboarded",
                 )
@@ -782,7 +808,7 @@ def create_connectedk8s(
     else:
         if connected_cluster_exists(client, resource_group_name, cluster_name):
             telemetry.set_exception(
-                exception="The connected cluster resource already exists",
+                exception=Exception("The connected cluster resource already exists"),
                 fault_type=consts.Resource_Already_Exists_Fault_Type,
                 summary="Connected cluster resource already exists",
             )
@@ -1177,7 +1203,7 @@ def send_cloud_telemetry(cmd: CLICommand) -> str:
 def validate_env_file_dogfood(values_file: str | None) -> tuple[str | None, str | None]:
     if not values_file:
         telemetry.set_exception(
-            exception="Helm environment file not provided",
+            exception=Exception("Helm environment file not provided"),
             fault_type=consts.Helm_Environment_File_Fault_Type,
             summary="Helm environment file missing",
         )
@@ -1434,7 +1460,7 @@ def install_helm_client(cmd: CLICommand) -> str:
         )
     else:
         telemetry.set_exception(
-            exception="Unsupported OS for installing helm client",
+            exception=Exception("Unsupported OS for installing helm client"),
             fault_type=consts.Helm_Unsupported_OS_Fault_Type,
             summary=f"{operating_system} is not supported for installing helm client",
         )
@@ -2026,6 +2052,7 @@ def list_connectedk8s(
     return client.list_by_resource_group(resource_group_name)
 
 
+@_telemetry_catch_all
 def delete_connectedk8s(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -2165,7 +2192,7 @@ def delete_connectedk8s(
 
         if check_proxy_kubeconfig(kube_config, kube_context, arm_hash):
             telemetry.set_exception(
-                exception="Encountered proxy kubeconfig during deletion.",
+                exception=Exception("Encountered proxy kubeconfig during deletion."),
                 fault_type=consts.Proxy_Kubeconfig_During_Deletion_Fault_Type,
                 summary="The resource cannot be deleted as user is using proxy kubeconfig.",
             )
@@ -2183,7 +2210,7 @@ def delete_connectedk8s(
         ).result()
     else:
         telemetry.set_exception(
-            exception="Unable to delete connected cluster",
+            exception=Exception("Unable to delete connected cluster"),
             fault_type=consts.Bad_DeleteRequest_Fault_Type,
             summary="The resource cannot be deleted as kubernetes cluster is onboarded with some other resource id",
         )
@@ -2314,6 +2341,7 @@ def update_connected_cluster_internal(
 # pylint: disable=line-too-long
 
 
+@_telemetry_catch_all
 def update_connected_cluster(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -2369,7 +2397,7 @@ def update_connected_cluster(
     # check whether proxy cert path exists
     if proxy_cert != "" and (not os.path.exists(proxy_cert)):
         telemetry.set_exception(
-            exception="Proxy cert path does not exist",
+            exception=Exception("Proxy cert path does not exist"),
             fault_type=consts.Proxy_Cert_Path_Does_Not_Exist_Fault_Type,
             summary="Proxy cert path does not exist",
         )
@@ -2722,6 +2750,7 @@ def update_connected_cluster(
     return connected_cluster
 
 
+@_telemetry_catch_all
 def upgrade_agents(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -2811,7 +2840,7 @@ def upgrade_agents(
                     "cluster being upgraded."
                 )
                 telemetry.set_exception(
-                    exception="The provided cluster name and rg correspond to different cluster",
+                    exception=Exception("The provided cluster name and rg correspond to different cluster"),
                     fault_type=consts.Upgrade_RG_Cluster_Name_Conflict,
                     summary=err_msg,
                 )
@@ -2822,7 +2851,7 @@ def upgrade_agents(
                 raise ArgumentUsageError(err_msg, recommendation=reco_msg)
         else:
             telemetry.set_exception(
-                exception="The corresponding CC resource does not exist",
+                exception=Exception("The corresponding CC resource does not exist"),
                 fault_type=consts.Corresponding_CC_Resource_Deleted_Fault,
                 summary="CC resource corresponding to this cluster has been deleted by the customer",
             )
@@ -2841,7 +2870,7 @@ def upgrade_agents(
                 "auto-upgrade is set to false."
             )
             telemetry.set_exception(
-                exception="connectedk8s upgrade called when auto-update is set to true",
+                exception=Exception("connectedk8s upgrade called when auto-update is set to true"),
                 fault_type=consts.Manual_Upgrade_Called_In_Auto_Update_Enabled,
                 summary=summary_msg,
             )
@@ -2861,7 +2890,7 @@ def upgrade_agents(
             "cluster has not been onboarded to azure-arc."
         )
         telemetry.set_exception(
-            exception="The azure-arc release namespace couldn't be retrieved",
+            exception=Exception("The azure-arc release namespace couldn't be retrieved"),
             fault_type=consts.Release_Namespace_Not_Found,
             summary=summary_msg,
         )
@@ -2949,7 +2978,7 @@ def upgrade_agents(
         if "forbidden" in error or "timed out waiting for the condition" in error:
             telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=error,
+            exception=Exception(error),
             fault_type=consts.Get_Helm_Values_Failed,
             summary="Error while doing helm get values azure-arc",
         )
@@ -3032,7 +3061,7 @@ def upgrade_agents(
         ):
             telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=error_helm_upgrade.decode("ascii"),
+            exception=Exception(error_helm_upgrade.decode("ascii")),
             fault_type=consts.Install_HelmRelease_Fault_Type,
             summary="Unable to install helm release",
         )
@@ -3088,14 +3117,14 @@ def validate_release_namespace(
                 )
                 reco_msg = "Please use the cluster, with correct resource group and cluster name."
                 telemetry.set_exception(
-                    exception="The provided cluster name and rg correspond to different cluster",
+                    exception=Exception("The provided cluster name and rg correspond to different cluster"),
                     fault_type=consts.Operate_RG_Cluster_Name_Conflict,
                     summary=err_msg,
                 )
                 raise ArgumentUsageError(err_msg, recommendation=reco_msg)
         else:
             telemetry.set_exception(
-                exception="The corresponding CC resource does not exist",
+                exception=Exception("The corresponding CC resource does not exist"),
                 fault_type=consts.Corresponding_CC_Resource_Deleted_Fault,
                 summary="CC resource corresponding to this cluster has been deleted by the customer",
             )
@@ -3112,7 +3141,7 @@ def validate_release_namespace(
             "cluster has not been onboarded to azure-arc."
         )
         telemetry.set_exception(
-            exception="The azure-arc release namespace couldn't be retrieved",
+            exception=Exception("The azure-arc release namespace couldn't be retrieved"),
             fault_type=consts.Release_Namespace_Not_Found,
             summary=err_msg,
         )
@@ -3151,7 +3180,7 @@ def get_all_helm_values(
         if "forbidden" in error:
             telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=error,
+            exception=Exception(error),
             fault_type=consts.Get_Helm_Values_Failed,
             summary="Error while doing helm get values azure-arc",
         )
@@ -3224,7 +3253,7 @@ def enable_features(
         enable_cluster_connect or enable_cl
     ):
         telemetry.set_exception(
-            exception="Invalid arguments provided",
+            exception=Exception("Invalid arguments provided"),
             fault_type=consts.Invalid_Argument_Fault_Type,
             summary="Invalid arguments provided",
         )
@@ -3405,7 +3434,7 @@ def enable_features(
         ):
             telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=error_helm_upgrade.decode("ascii"),
+            exception=Exception(error_helm_upgrade.decode("ascii")),
             fault_type=consts.Install_HelmRelease_Fault_Type,
             summary="Unable to install helm release",
         )
@@ -3645,7 +3674,7 @@ def get_chart_and_disable_features(
         ):
             telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=error_helm_upgrade.decode("ascii"),
+            exception=Exception(error_helm_upgrade.decode("ascii")),
             fault_type=consts.Install_HelmRelease_Fault_Type,
             summary="Unable to install helm release",
         )
@@ -3849,7 +3878,7 @@ def handle_merge(
                 else:
                     msg = "A different object named {} already exists in {} in your kubeconfig file."
                     telemetry.set_exception(
-                        exception="A different object with same name exists in the kubeconfig file",
+                        exception=Exception("A different object with same name exists in the kubeconfig file"),
                         fault_type=consts.Different_Object_With_Same_Name_Fault_Type,
                         summary=msg.format(i["name"], key),
                     )
@@ -3915,7 +3944,7 @@ def client_side_proxy_wrapper(
         )
     if clientproxyutils.check_if_port_is_open(client_proxy_port):
         telemetry.set_exception(
-            exception="Client proxy port was in use.",
+            exception=Exception("Client proxy port was in use."),
             fault_type=consts.Client_Proxy_Port_Fault_Type,
             summary="Client proxy port was in use.",
         )
@@ -4096,7 +4125,7 @@ def client_side_proxy_main(
 
         else:
             telemetry.set_exception(
-                exception="Process closed externally.",
+                exception=Exception("Process closed externally."),
                 fault_type=consts.Proxy_Closed_Externally_Fault_Type,
                 summary="Process closed externally.",
             )
@@ -4307,7 +4336,7 @@ def get_custom_locations_oid(cmd: CLICommand, cl_oid: str | None) -> str:
                 "--custom-locations-oid parameter directly. Learn more at https://aka.ms/CustomLocationsObjectID"
             )
             telemetry.set_exception(
-                exception="Unable to fetch oid of custom locations app.",
+                exception=Exception("Unable to fetch oid of custom locations app."),
                 fault_type=consts.Custom_Locations_OID_Fetch_Fault_Type_CLOid_None,
                 summary="Unable to fetch oid for custom locations app.",
             )
@@ -4877,7 +4906,7 @@ def check_operation_support(operation_name: str, agent_version: str) -> None:
         version.parse(agent_version) < version.parse("1.14.0")
     ):
         telemetry.set_exception(
-            exception="Operation not supported on older Agents",
+            exception=Exception("Operation not supported on older Agents"),
             fault_type=consts.Operation_Not_Supported_Fault_Type,
             summary=error_summary,
         )
