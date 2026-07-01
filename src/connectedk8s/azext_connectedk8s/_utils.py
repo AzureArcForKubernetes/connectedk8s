@@ -1952,8 +1952,8 @@ def helm_install_release(
             or consts.Install_HelmRelease_Fault_Type
         )
         helm_error_detail = {
-            "Context.Default.AzureCLI.onboardingErrorType": onboarding_error_type,
-            "Context.Default.AzureCLI.onboardingErrorMessage": helm_install_error_message,
+            consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_HelmRelease_Fault_Type,
+            consts.Telemetry_Onboarding_Error_Message_Key: helm_install_error_message,
         }
         # Replace the existing calls with the new function
 
