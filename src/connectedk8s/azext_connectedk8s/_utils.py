@@ -380,6 +380,7 @@ def check_cluster_DNS(
             return consts.Diagnostic_Check_Incomplete, storage_space_available
         formatted_dns_log = dns_check_log.replace("\t", "")
         # Validating if DNS is working or not and displaying proper result
+        # These are standard error strings from DNS tools (nslookup/dig) indicating resolution failures
         if (
             "NXDOMAIN" in formatted_dns_log
             or "connection timed out" in formatted_dns_log

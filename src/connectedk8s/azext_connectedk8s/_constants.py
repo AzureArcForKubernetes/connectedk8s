@@ -375,6 +375,18 @@ Failed_To_Change_Telemetry_Push_Interval = (
 Diagnostic_Check_Passed = "Passed"
 Diagnostic_Check_Failed = "Failed"
 Diagnostic_Check_Incomplete = "Incomplete"
+Diagnostic_Check_Starting = "Starting"
+Diagnostic_Check_Not_Applicable = "NotApplicable"
+
+# Prediagnostic job execution status values
+Job_Status_Not_Started = "NotStarted"
+Job_Status_Running = "Running"
+Job_Status_Completed = "Completed"
+Job_Status_Not_Completed = "NotCompleted"
+Job_Status_Not_Scheduled = "NotScheduled"
+Job_Status_Cleanup_Failed = "CleanupFailed"
+Job_Status_Execution_Failed = "ExecutionFailed"
+
 # Name of the checks and operations
 Retrieve_Arc_Agents_Event_Logs = "retrieved_arc_agents_event_logs"
 Retrieve_Arc_Agents_Logs = "retrieved_arc_agents_logs"
@@ -425,7 +437,7 @@ SigningKey_CR_Snapshot = "signingkey_cr_snapshot.txt"
 
 # Connect Precheck Diagnoser constants
 Cluster_Diagnostic_Checks_Job_Registry_Path = (
-    "azurearck8s/helmchart/stable/clusterdiagnosticchecks:1.33.0"
+    "azurearck8s/helmchart/stable/clusterdiagnosticchecks:1.31.2"
 )
 Cluster_Diagnostic_Checks_Helm_Install_Failed_Fault_Type = (
     "Error while installing cluster diagnostic checks helm release"

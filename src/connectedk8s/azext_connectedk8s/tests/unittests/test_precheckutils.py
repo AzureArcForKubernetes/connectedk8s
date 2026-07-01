@@ -12,8 +12,10 @@ import sys
 from unittest.mock import MagicMock, patch
 
 # Stub out heavy dependencies before importing the module under test.
-# Use setdefault so real modules are preferred when available (e.g. in azdev CI),
-# but stubs are used in lightweight environments without full CLI installed.
+# The _precheckutils module imports kubernetes, azure.cli.core, knack, etc. at module level.
+# In lightweight test environments (no full CLI installed), we inject MagicMock stubs into
+# sys.modules so the import succeeds. In full azdev CI, the real modules are already loaded
+# and setdefault() leaves them untouched.
 _STUBS = {
     "kubernetes": MagicMock(),
     "kubernetes.config": MagicMock(),
@@ -79,9 +81,9 @@ for mod, original_module in _ORIGINAL_MODULES.items():
 def _reset_globals():
     """Reset module-level globals to a clean state before each test."""
     precheckutils.diagnoser_output = []
-    precheckutils.prediagnostic_job_execution_status = "NotStarted"
-    precheckutils.prediagnostic_entra_check = "Starting"
-    precheckutils.prediagnostic_crd_check = "Starting"
+    precheckutils.prediagnostic_job_execution_status = consts.Job_Status_Not_Started
+    precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Starting
+    precheckutils.prediagnostic_crd_check = consts.Diagnostic_Check_Starting
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +97,7 @@ class TestSendJobExecutionErrorTelemetry:
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_sends_event_with_correct_error_type(self, mock_telemetry):
-        precheckutils.prediagnostic_job_execution_status = "ExecutionFailed"
+        precheckutils.prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
         precheckutils.send_prediagnostic_job_execution_error_telemetry()
 
         mock_telemetry.add_extension_event.assert_called_once()
@@ -103,28 +105,28 @@ class TestSendJobExecutionErrorTelemetry:
         assert args[0][0] == "connectedk8s"
         props = args[0][1]
         assert (
-            props["Context.Default.AzureCLI.onboardingErrorType"]
+            props[consts.Telemetry_Onboarding_Error_Type_Key]
             == consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type
         )
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_includes_job_execution_status(self, mock_telemetry):
-        precheckutils.prediagnostic_job_execution_status = "ExecutionFailed"
+        precheckutils.prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
         precheckutils.send_prediagnostic_job_execution_error_telemetry()
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
-        assert msg["jobExecutionStatus"] == "ExecutionFailed"
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        assert msg["jobExecutionStatus"] == consts.Job_Status_Execution_Failed
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_includes_reason_when_provided(self, mock_telemetry):
-        precheckutils.prediagnostic_job_execution_status = "NotCompleted"
+        precheckutils.prediagnostic_job_execution_status = consts.Job_Status_Not_Completed
         precheckutils.send_prediagnostic_job_execution_error_telemetry(
             reason="ImagePullBackOff"
         )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert msg["reason"] == "ImagePullBackOff"
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
@@ -132,7 +134,7 @@ class TestSendJobExecutionErrorTelemetry:
         precheckutils.send_prediagnostic_job_execution_error_telemetry()
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert "reason" not in msg
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
@@ -142,7 +144,7 @@ class TestSendJobExecutionErrorTelemetry:
         )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert isinstance(msg, dict)
 
 
@@ -157,115 +159,140 @@ class TestSendCheckFailureTelemetry:
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_sends_event_with_correct_error_type(self, mock_telemetry):
-        precheckutils.send_prediagnostic_check_failure_telemetry("Passed", "Passed")
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
+        )
 
         mock_telemetry.add_extension_event.assert_called_once()
         props = mock_telemetry.add_extension_event.call_args[0][1]
         assert (
-            props["Context.Default.AzureCLI.onboardingErrorType"]
+            props[consts.Telemetry_Onboarding_Error_Type_Key]
             == consts.Install_Prediagnostics_Fault_Type
         )
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_check_results_in_message(self, mock_telemetry):
-        precheckutils.prediagnostic_entra_check = "Failed"
-        precheckutils.prediagnostic_crd_check = "Passed"
-        precheckutils.send_prediagnostic_check_failure_telemetry("Passed", "Failed")
+        precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Failed
+        precheckutils.prediagnostic_crd_check = consts.Diagnostic_Check_Passed
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Failed
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
-        assert msg["dnsCheck"] == "Passed"
-        assert msg["outboundConnectivityCheck"] == "Failed"
-        assert msg["entraCheck"] == "Failed"
-        assert msg["crdCheck"] == "Passed"
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        # msg is a list of component entries
+        components = {entry["componentName"]: entry for entry in msg}
+        assert components["dns"]["checkResult"] == consts.Diagnostic_Check_Passed
+        assert components["outboundConnectivity"]["checkResult"] == consts.Diagnostic_Check_Failed
+        assert components["entra"]["checkResult"] == consts.Diagnostic_Check_Failed
+        assert components["crd"]["checkResult"] == consts.Diagnostic_Check_Passed
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_entra_error_extracted_from_diagnoser_output(self, mock_telemetry):
-        precheckutils.prediagnostic_entra_check = "Failed"
+        precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
             "Some log line",
             "Error: Entra endpoint not reachable. Response code: 000",
         ]
-        precheckutils.send_prediagnostic_check_failure_telemetry("Passed", "Passed")
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
-        assert "entraError" in msg
-        assert "000" in msg["entraError"]
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        components = {entry["componentName"]: entry for entry in msg}
+        assert "error" in components["entra"]
+        assert "000" in components["entra"]["error"]
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_dns_error_extracted_from_diagnoser_output(self, mock_telemetry):
         precheckutils.diagnoser_output = [
             "DNS error: resolution failed for test.example.com",
         ]
-        precheckutils.send_prediagnostic_check_failure_telemetry("Failed", "Passed")
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Failed, consts.Diagnostic_Check_Passed
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
-        assert "dnsError" in msg
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        components = {entry["componentName"]: entry for entry in msg}
+        assert "error" in components["dns"]
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_outbound_error_extracted_from_diagnoser_output(self, mock_telemetry):
         precheckutils.diagnoser_output = [
             "Outbound connectivity error: MCR not reachable",
         ]
-        precheckutils.send_prediagnostic_check_failure_telemetry("Passed", "Failed")
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Failed
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
-        assert "outboundError" in msg
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        components = {entry["componentName"]: entry for entry in msg}
+        assert "error" in components["outboundConnectivity"]
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_multiline_error_trimmed_to_first_line(self, mock_telemetry):
-        precheckutils.prediagnostic_entra_check = "Failed"
+        precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
             "Error: Entra endpoint error line1\nline2\nline3",
         ]
-        precheckutils.send_prediagnostic_check_failure_telemetry("Passed", "Passed")
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
-        assert "\n" not in msg.get("entraError", "")
-        assert "line1" in msg.get("entraError", "")
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        components = {entry["componentName"]: entry for entry in msg}
+        assert "\n" not in components["entra"].get("error", "")
+        assert "line1" in components["entra"].get("error", "")
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_no_error_detail_when_checks_pass(self, mock_telemetry):
-        precheckutils.prediagnostic_entra_check = "Passed"
-        precheckutils.prediagnostic_crd_check = "Passed"
-        precheckutils.send_prediagnostic_check_failure_telemetry("Passed", "Passed")
+        precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Passed
+        precheckutils.prediagnostic_crd_check = consts.Diagnostic_Check_Passed
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
-        assert "dnsError" not in msg
-        assert "entraError" not in msg
-        assert "outboundError" not in msg
-        assert "crdError" not in msg
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        components = {entry["componentName"]: entry for entry in msg}
+        for entry in components.values():
+            assert "error" not in entry
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_non_error_lines_not_captured(self, mock_telemetry):
         """Lines mentioning entra but not 'error' should not be captured."""
-        precheckutils.prediagnostic_entra_check = "Failed"
+        precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
             "Entra check: starting",
             "Entra Authentication Endpoint Connectivity Check Result : https://login.microsoftonline.com : 000",
         ]
-        precheckutils.send_prediagnostic_check_failure_telemetry("Passed", "Passed")
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
-        assert "entraError" not in msg
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        components = {entry["componentName"]: entry for entry in msg}
+        assert "error" not in components["entra"]
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_crd_error_extracted_from_diagnoser_output(self, mock_telemetry):
-        precheckutils.prediagnostic_crd_check = "Failed"
+        precheckutils.prediagnostic_crd_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
             "CRD ownership error: extensionconfigs.clusterconfig.azure.com owned by another release",
         ]
-        precheckutils.send_prediagnostic_check_failure_telemetry("Passed", "Passed")
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
+        )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
-        assert "crdError" in msg
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        components = {entry["componentName"]: entry for entry in msg}
+        assert "error" in components["crd"]
 
 
 # ---------------------------------------------------------------------------
@@ -286,7 +313,7 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
         mock_telemetry.add_extension_event.assert_called_once()
         props = mock_telemetry.add_extension_event.call_args[0][1]
         assert (
-            props["Context.Default.AzureCLI.onboardingErrorType"]
+            props[consts.Telemetry_Onboarding_Error_Type_Key]
             == consts.Post_Diagnostic_Precheck_Fault_Type
         )
 
@@ -297,7 +324,7 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
         )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert msg["checkName"] == "ClusterRoleBindings"
         assert msg["reason"] == "Insufficient permissions"
 
@@ -308,7 +335,7 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
         )
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
-        msg = json.loads(props["Context.Default.AzureCLI.onboardingErrorMessage"])
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert isinstance(msg, dict)
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
@@ -323,10 +350,10 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
         assert mock_telemetry.add_extension_event.call_count == 2
         calls = mock_telemetry.add_extension_event.call_args_list
         msg1 = json.loads(
-            calls[0][0][1]["Context.Default.AzureCLI.onboardingErrorMessage"]
+            calls[0][0][1][consts.Telemetry_Onboarding_Error_Message_Key]
         )
         msg2 = json.loads(
-            calls[1][0][1]["Context.Default.AzureCLI.onboardingErrorMessage"]
+            calls[1][0][1][consts.Telemetry_Onboarding_Error_Message_Key]
         )
         assert msg1["checkName"] == "LinuxNodeExists"
         assert msg2["checkName"] == "ClusterRoleBindings"

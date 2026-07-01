@@ -371,10 +371,10 @@ def create_connectedk8s(
             )
 
             if precheckutils.diagnoser_output:
-                print("\n--- Pre-onboarding Diagnostic Check Results ---")
+                logger.warning("--- Pre-onboarding Diagnostic Check Results ---")
                 for line in precheckutils.diagnoser_output:
-                    print(line.rstrip())
-                print("--- End of Diagnostic Check Results ---\n")
+                    logger.warning(line.rstrip())
+                logger.warning("--- End of Diagnostic Check Results ---")
 
             if storage_space_available is False:
                 logger.warning(
