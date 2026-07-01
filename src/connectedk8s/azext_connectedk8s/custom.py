@@ -20,7 +20,7 @@ import time
 from base64 import b64decode, b64encode
 from concurrent.futures import ThreadPoolExecutor
 from subprocess import DEVNULL, PIPE, Popen
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Iterable
 
 import oras.client  # type: ignore[import-untyped]
 import yaml
@@ -28,8 +28,8 @@ from azure.cli.command_modules.role import graph_client_factory
 from azure.cli.core import get_default_cli, telemetry
 from azure.cli.core._profile import Profile
 from azure.cli.core.azclierror import (
-    AzCLIError,
     ArgumentUsageError,
+    AzCLIError,
     ClientRequestError,
     CLIInternalError,
     FileOperationError,
@@ -103,12 +103,12 @@ logger = get_logger(__name__)
 # pylint: disable=line-too-long
 
 
-def _telemetry_catch_all(func):
+def _telemetry_catch_all(func: Callable[..., Any]) -> Callable[..., Any]:
     """Catch-all that ensures unhandled exceptions are logged to telemetry
     with proper ExceptionName before reaching the CLI framework."""
 
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
         try:
             return func(*args, **kwargs)
         except AzCLIError:
