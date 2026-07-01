@@ -309,7 +309,9 @@ def executing_cluster_diagnostic_checks_job(
         # If job is not scheduled then we will delete the helm release
         if is_job_scheduled is False:
             telemetry.set_exception(
-                exception=Exception("Couldn't schedule Cluster Diagnostic Checks Job in the cluster"),
+                exception=Exception(
+                    "Couldn't schedule Cluster Diagnostic Checks Job in the cluster"
+                ),
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Scheduled,
                 summary="Couldn't schedule Cluster Diagnostic Checks Job in the cluster",
             )
@@ -390,7 +392,9 @@ def executing_cluster_diagnostic_checks_job(
                     )
 
             telemetry.set_exception(
-                exception=Exception("Couldn't complete Cluster Diagnostic Checks Job after scheduling in the cluster"),
+                exception=Exception(
+                    "Couldn't complete Cluster Diagnostic Checks Job after scheduling in the cluster"
+                ),
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Complete,
                 summary="Couldn't complete Cluster Diagnostic Checks Job after scheduling in the cluster",
             )

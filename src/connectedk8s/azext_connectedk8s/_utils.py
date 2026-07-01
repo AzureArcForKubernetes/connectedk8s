@@ -131,7 +131,9 @@ def validate_custom_token(
     if os.getenv("AZURE_ACCESS_TOKEN"):
         if os.getenv("AZURE_SUBSCRIPTION_ID") is None:
             telemetry.set_exception(
-                exception=Exception("Required environment variable SubscriptionId not set, for custom Azure access token"),
+                exception=Exception(
+                    "Required environment variable SubscriptionId not set, for custom Azure access token"
+                ),
                 fault_type=consts.Custom_Access_Token_Env_Var_Sub_Id_Missing_Fault_Type,
                 summary="Required environment variable SubscriptionId not set, for custom Azure access token",
             )
@@ -140,7 +142,9 @@ def validate_custom_token(
             )
         if os.getenv("AZURE_TENANT_ID") is None:
             telemetry.set_exception(
-                exception=Exception("Required environment variable TenantId not set, for custom Azure access token"),
+                exception=Exception(
+                    "Required environment variable TenantId not set, for custom Azure access token"
+                ),
                 fault_type=consts.Custom_Access_Token_Env_Var_Tenant_Id_Missing_Fault_Type,
                 summary="Required environment variable TenantId not set, for custom Azure access token",
             )
@@ -511,7 +515,9 @@ def check_cluster_outbound_connectivity(
                 )
                 telemetry.set_user_fault()
                 telemetry.set_exception(
-                    exception=Exception("Outbound network connectivity check failed for the Cluster Connect endpoint"),
+                    exception=Exception(
+                        "Outbound network connectivity check failed for the Cluster Connect endpoint"
+                    ),
                     fault_type=consts.Outbound_Connectivity_Check_Failed_For_Cluster_Connect,
                     summary="Outbound network connectivity check failed for the Cluster Connect precheck endpoint",
                 )
@@ -580,7 +586,9 @@ def check_cluster_outbound_connectivity(
                         "required for onboarding."
                     )
             telemetry.set_exception(
-                exception=Exception("Outbound network connectivity check failed for onboarding"),
+                exception=Exception(
+                    "Outbound network connectivity check failed for onboarding"
+                ),
                 fault_type=consts.Outbound_Connectivity_Check_Failed_For_Onboarding,
                 summary="Outbound network connectivity check for onboarding failed in the cluster",
             )
@@ -1621,7 +1629,9 @@ def check_provider_registrations(
         ).registration_state
         if cc_registration_state not in consts.allowed_rp_registration_states:
             telemetry.set_exception(
-                exception=Exception(f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered"),
+                exception=Exception(
+                    f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered"
+                ),
                 fault_type=consts.CC_Provider_Namespace_Not_Registered_Fault_Type,
                 summary=f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered",
             )
@@ -1636,7 +1646,9 @@ def check_provider_registrations(
         if kc_registration_state not in consts.allowed_rp_registration_states:
             if is_workload_identity_enabled:
                 telemetry.set_exception(
-                    exception=Exception(f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered"),
+                    exception=Exception(
+                        f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered"
+                    ),
                     fault_type=consts.Kubernetes_Configuration_Provider_Namespace_Not_Registered_Fault_Type,
                     summary=f"{consts.Kubernetes_Configuration_Provider_Namespace} provider is not registered",
                 )
@@ -1657,7 +1669,9 @@ def check_provider_registrations(
             ).registration_state
             if hc_registration_state not in consts.allowed_rp_registration_states:
                 telemetry.set_exception(
-                    exception=Exception(f"{consts.Hybrid_Compute_Provider_Namespace} provider is not registered"),
+                    exception=Exception(
+                        f"{consts.Hybrid_Compute_Provider_Namespace} provider is not registered"
+                    ),
                     fault_type=consts.HC_Provider_Namespace_Not_Registered_Fault_Type,
                     summary=f"{consts.Hybrid_Compute_Provider_Namespace} provider is not registered",
                 )

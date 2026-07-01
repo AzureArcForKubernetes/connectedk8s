@@ -119,9 +119,7 @@ def _telemetry_catch_all(func: Callable[..., Any]) -> Callable[..., Any]:
                 fault_type=f"unhandled-exception-in-{func.__name__}",
                 summary=f"Unhandled {type(ex).__name__} in {func.__name__}",
             )
-            raise CLIInternalError(
-                f"An unexpected error occurred: {ex}"
-            ) from ex
+            raise CLIInternalError(f"An unexpected error occurred: {ex}") from ex
 
     return wrapper
 
@@ -475,7 +473,9 @@ def create_connectedk8s(
     if not required_node_exists:
         telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=Exception("Couldn't find any node on the kubernetes cluster with the OS 'linux'"),
+            exception=Exception(
+                "Couldn't find any node on the kubernetes cluster with the OS 'linux'"
+            ),
             fault_type=consts.Linux_Node_Not_Exists,
             summary="Couldn't find any node on the kubernetes cluster with the OS 'linux'",
         )
@@ -2840,7 +2840,9 @@ def upgrade_agents(
                     "cluster being upgraded."
                 )
                 telemetry.set_exception(
-                    exception=Exception("The provided cluster name and rg correspond to different cluster"),
+                    exception=Exception(
+                        "The provided cluster name and rg correspond to different cluster"
+                    ),
                     fault_type=consts.Upgrade_RG_Cluster_Name_Conflict,
                     summary=err_msg,
                 )
@@ -2870,7 +2872,9 @@ def upgrade_agents(
                 "auto-upgrade is set to false."
             )
             telemetry.set_exception(
-                exception=Exception("connectedk8s upgrade called when auto-update is set to true"),
+                exception=Exception(
+                    "connectedk8s upgrade called when auto-update is set to true"
+                ),
                 fault_type=consts.Manual_Upgrade_Called_In_Auto_Update_Enabled,
                 summary=summary_msg,
             )
@@ -2890,7 +2894,9 @@ def upgrade_agents(
             "cluster has not been onboarded to azure-arc."
         )
         telemetry.set_exception(
-            exception=Exception("The azure-arc release namespace couldn't be retrieved"),
+            exception=Exception(
+                "The azure-arc release namespace couldn't be retrieved"
+            ),
             fault_type=consts.Release_Namespace_Not_Found,
             summary=summary_msg,
         )
@@ -3117,7 +3123,9 @@ def validate_release_namespace(
                 )
                 reco_msg = "Please use the cluster, with correct resource group and cluster name."
                 telemetry.set_exception(
-                    exception=Exception("The provided cluster name and rg correspond to different cluster"),
+                    exception=Exception(
+                        "The provided cluster name and rg correspond to different cluster"
+                    ),
                     fault_type=consts.Operate_RG_Cluster_Name_Conflict,
                     summary=err_msg,
                 )
@@ -3141,7 +3149,9 @@ def validate_release_namespace(
             "cluster has not been onboarded to azure-arc."
         )
         telemetry.set_exception(
-            exception=Exception("The azure-arc release namespace couldn't be retrieved"),
+            exception=Exception(
+                "The azure-arc release namespace couldn't be retrieved"
+            ),
             fault_type=consts.Release_Namespace_Not_Found,
             summary=err_msg,
         )
@@ -3878,7 +3888,9 @@ def handle_merge(
                 else:
                     msg = "A different object named {} already exists in {} in your kubeconfig file."
                     telemetry.set_exception(
-                        exception=Exception("A different object with same name exists in the kubeconfig file"),
+                        exception=Exception(
+                            "A different object with same name exists in the kubeconfig file"
+                        ),
                         fault_type=consts.Different_Object_With_Same_Name_Fault_Type,
                         summary=msg.format(i["name"], key),
                     )

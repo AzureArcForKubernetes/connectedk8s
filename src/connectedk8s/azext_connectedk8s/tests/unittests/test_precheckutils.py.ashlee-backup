@@ -1,0 +1,167 @@
+# --------------------------------------------------------------------------------------------
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License. See License.txt in the project root for license information.
+# --------------------------------------------------------------------------------------------
+import json
+import os
+import sys
+from unittest.mock import patch
+
+import pytest
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+import azext_connectedk8s._constants as consts
+import azext_connectedk8s._precheckutils as precheckutils
+
+
+@pytest.fixture(autouse=True)
+def reset_module_state():
+    """Reset module-level state before each test."""
+    precheckutils.diagnoser_output.clear()
+    precheckutils.prediagnostic_job_execution_status = "NotStarted"
+    precheckutils.prediagnostic_dns_check = "Starting"
+    precheckutils.prediagnostic_outbound_check = "Starting"
+    precheckutils.prediagnostic_entra_check = "Starting"
+    precheckutils.prediagnostic_crd_check = "Starting"
+
+
+class TestSendPrediagnosticJobExecutionErrorTelemetry:
+    @patch("azext_connectedk8s._precheckutils.telemetry")
+    @patch("azext_connectedk8s._precheckutils.azext_utils.process_helm_error_detail")
+    def test_sends_telemetry_without_reason(self, mock_process, mock_telemetry):
+        mock_process.side_effect = lambda x: x
+        precheckutils.prediagnostic_job_execution_status = "NotScheduled"
+
+        precheckutils.send_prediagnostic_job_execution_error_telemetry()
+
+        call_args = mock_process.call_args[0][0]
+        parsed = json.loads(call_args)
+        assert parsed["jobExecutionStatus"] == "NotScheduled"
+        assert "reason" not in parsed
+        mock_telemetry.add_extension_event.assert_called_once()
+
+    @patch("azext_connectedk8s._precheckutils.telemetry")
+    @patch("azext_connectedk8s._precheckutils.azext_utils.process_helm_error_detail")
+    def test_sends_telemetry_with_reason(self, mock_process, mock_telemetry):
+        mock_process.side_effect = lambda x: x
+        precheckutils.prediagnostic_job_execution_status = "ExecutionFailed"
+
+        precheckutils.send_prediagnostic_job_execution_error_telemetry(
+            reason="timeout waiting for pod"
+        )
+
+        call_args = mock_process.call_args[0][0]
+        parsed = json.loads(call_args)
+        assert parsed["jobExecutionStatus"] == "ExecutionFailed"
+        assert parsed["reason"] == "timeout waiting for pod"
+        mock_telemetry.add_extension_event.assert_called_once()
+        event_data = mock_telemetry.add_extension_event.call_args[0][1]
+        assert (
+            event_data["Context.Default.AzureCLI.onboardingErrorType"]
+            == consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type
+        )
+
+
+class TestSendPrediagnosticCheckFailureTelemetry:
+    @patch("azext_connectedk8s._precheckutils.telemetry")
+    @patch("azext_connectedk8s._precheckutils.azext_utils.process_helm_error_detail")
+    def test_sends_check_results(self, mock_process, mock_telemetry):
+        mock_process.side_effect = lambda x: x
+        precheckutils.prediagnostic_entra_check = "Passed"
+        precheckutils.prediagnostic_crd_check = "Passed"
+
+        precheckutils.send_prediagnostic_check_failure_telemetry("Failed", "Passed")
+
+        call_args = mock_process.call_args[0][0]
+        parsed = json.loads(call_args)
+        assert parsed["dnsCheck"] == "Failed"
+        assert parsed["outboundConnectivityCheck"] == "Passed"
+        assert parsed["entraCheck"] == "Passed"
+        assert parsed["crdCheck"] == "Passed"
+        mock_telemetry.add_extension_event.assert_called_once()
+
+    @patch("azext_connectedk8s._precheckutils.telemetry")
+    @patch("azext_connectedk8s._precheckutils.azext_utils.process_helm_error_detail")
+    def test_includes_error_messages_from_diagnoser_output(
+        self, mock_process, mock_telemetry
+    ):
+        mock_process.side_effect = lambda x: x
+        precheckutils.diagnoser_output.extend(
+            [
+                "Error: DNS resolution failed for mcr.microsoft.com",
+                "Error: Outbound connectivity failed for https://example.com",
+            ]
+        )
+        precheckutils.prediagnostic_entra_check = "Passed"
+        precheckutils.prediagnostic_crd_check = "Passed"
+
+        precheckutils.send_prediagnostic_check_failure_telemetry("Failed", "Failed")
+
+        call_args = mock_process.call_args[0][0]
+        parsed = json.loads(call_args)
+        assert "dnsError" in parsed
+        assert "outboundError" in parsed
+        mock_telemetry.add_extension_event.assert_called_once()
+
+    @patch("azext_connectedk8s._precheckutils.telemetry")
+    @patch("azext_connectedk8s._precheckutils.azext_utils.process_helm_error_detail")
+    def test_no_error_details_when_checks_pass(self, mock_process, mock_telemetry):
+        mock_process.side_effect = lambda x: x
+        precheckutils.prediagnostic_entra_check = "Passed"
+        precheckutils.prediagnostic_crd_check = "Passed"
+
+        precheckutils.send_prediagnostic_check_failure_telemetry("Passed", "Passed")
+
+        call_args = mock_process.call_args[0][0]
+        parsed = json.loads(call_args)
+        assert "dnsError" not in parsed
+        assert "outboundError" not in parsed
+
+
+class TestSendPostDiagnosticPrecheckFailureTelemetry:
+    @patch("azext_connectedk8s._precheckutils.telemetry")
+    @patch("azext_connectedk8s._precheckutils.azext_utils.process_helm_error_detail")
+    def test_sends_check_name_and_reason(self, mock_process, mock_telemetry):
+        mock_process.side_effect = lambda x: x
+
+        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+            check_name="LinuxNodeExists",
+            reason="No linux nodes found",
+        )
+
+        call_args = mock_process.call_args[0][0]
+        parsed = json.loads(call_args)
+        assert parsed["checkName"] == "LinuxNodeExists"
+        assert parsed["reason"] == "No linux nodes found"
+        event_data = mock_telemetry.add_extension_event.call_args[0][1]
+        assert (
+            event_data["Context.Default.AzureCLI.onboardingErrorType"]
+            == consts.Post_Diagnostic_Precheck_Fault_Type
+        )
+
+
+class TestGetPrecheckFailureSummary:
+    def test_returns_summary_when_present(self):
+        precheckutils.diagnoser_output.extend(
+            [
+                "Some other output",
+                "Precheck summary: jobExecutionStatus=Completed; dnsCheck=Failed",
+            ]
+        )
+        result = precheckutils.get_precheck_failure_summary()
+        assert result.startswith("Precheck summary:")
+
+    def test_returns_empty_when_no_summary(self):
+        precheckutils.diagnoser_output.append("Some other output")
+        result = precheckutils.get_precheck_failure_summary()
+        assert result == ""
+
+    def test_returns_last_summary_if_multiple(self):
+        precheckutils.diagnoser_output.extend(
+            [
+                "Precheck summary: first",
+                "Precheck summary: second",
+            ]
+        )
+        result = precheckutils.get_precheck_failure_summary()
+        assert result == "Precheck summary: second"
