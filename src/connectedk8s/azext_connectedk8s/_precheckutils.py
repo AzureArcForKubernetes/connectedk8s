@@ -515,9 +515,9 @@ def executing_cluster_diagnostic_checks_job(
         if is_job_scheduled is False:
             prediagnostic_job_execution_status = "NotScheduled"
             telemetry.set_exception(
-                exception="Couldn't schedule Cluster Diagnostic Checks Job in the cluster",
+                exception="Could not schedule Cluster Diagnostic Checks Job in the cluster",
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Scheduled,
-                summary="Couldn't schedule Cluster Diagnostic Checks Job in the cluster",
+                summary="Could not schedule Cluster Diagnostic Checks Job in the cluster",
             )
             logger.warning(
                 "Unable to schedule the Cluster Diagnostic Checks Job in the kubernetes cluster. The "
@@ -597,9 +597,9 @@ def executing_cluster_diagnostic_checks_job(
                     )
 
             telemetry.set_exception(
-                exception="Couldn't complete Cluster Diagnostic Checks Job after scheduling in the cluster",
+                exception="Could not complete Cluster Diagnostic Checks Job after scheduling in the cluster",
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Complete,
-                summary="Couldn't complete Cluster Diagnostic Checks Job after scheduling in the cluster",
+                summary="Could not complete Cluster Diagnostic Checks Job after scheduling in the cluster",
             )
             logger.warning(
                 "Cluster diagnostics job didn't reach completed state in the kubernetes cluster. The "

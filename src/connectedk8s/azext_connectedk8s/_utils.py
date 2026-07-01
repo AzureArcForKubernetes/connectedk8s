@@ -1443,6 +1443,10 @@ def process_helm_error_detail(helm_error_detail: str) -> str:
     helm_error_detail = scrub_proxy_url(helm_error_detail)
     helm_error_detail = redact_base64_strings(helm_error_detail)
     helm_error_detail = redact_sensitive_fields_from_string(helm_error_detail)
+    # Remove apostrophes/single quotes to prevent CLI telemetry client parse failures.
+    # The telemetry client's _parse_in_json does data.replace("'", '"') which corrupts
+    # JSON payloads containing apostrophes (e.g. "Couldn't" becomes invalid JSON).
+    helm_error_detail = helm_error_detail.replace("'", "")
 
     return helm_error_detail
 
