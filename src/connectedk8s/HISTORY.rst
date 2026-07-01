@@ -2,6 +2,10 @@
 
 Release History
 ===============
+1.10.13
++++++
+* Added telemetry for pre-onboarding diagnostic results, including diagnostics execution failures.
+
 1.10.12
 +++++
 * Removed deprecated '--app-id' and '--app-secret' RBAC parameters from the extension.

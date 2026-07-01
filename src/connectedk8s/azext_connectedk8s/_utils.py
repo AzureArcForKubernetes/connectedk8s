@@ -380,9 +380,13 @@ def check_cluster_DNS(
             return consts.Diagnostic_Check_Incomplete, storage_space_available
         formatted_dns_log = dns_check_log.replace("\t", "")
         # Validating if DNS is working or not and displaying proper result
+        # These are standard error strings from DNS tools (nslookup/dig) indicating resolution failures
         if (
             "NXDOMAIN" in formatted_dns_log
             or "connection timed out" in formatted_dns_log
+            or "no servers could be reached" in formatted_dns_log
+            or "communications error" in formatted_dns_log
+            or "timed out" in formatted_dns_log
         ):
             logger.warning(
                 "Error: We found an issue with the DNS resolution on your cluster. For details about debugging DNS "
@@ -1407,8 +1411,8 @@ def helm_install_release(
             helm_install_error_message
         )
         helm_error_detail = {
-            "Context.Default.AzureCLI.onboardingErrorType": consts.Install_HelmRelease_Fault_Type,
-            "Context.Default.AzureCLI.onboardingErrorMessage": helm_install_error_message,
+            consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_HelmRelease_Fault_Type,
+            consts.Telemetry_Onboarding_Error_Message_Key: helm_install_error_message,
         }
         # Replace the existing calls with the new function
 
@@ -1440,6 +1444,10 @@ def process_helm_error_detail(helm_error_detail: str) -> str:
     helm_error_detail = scrub_proxy_url(helm_error_detail)
     helm_error_detail = redact_base64_strings(helm_error_detail)
     helm_error_detail = redact_sensitive_fields_from_string(helm_error_detail)
+    # Remove apostrophes/single quotes to prevent CLI telemetry client parse failures.
+    # The telemetry client's _parse_in_json does data.replace("'", '"') which corrupts
+    # JSON payloads containing apostrophes (e.g. "Couldn't" becomes invalid JSON).
+    helm_error_detail = helm_error_detail.replace("'", "")
 
     return helm_error_detail
 
