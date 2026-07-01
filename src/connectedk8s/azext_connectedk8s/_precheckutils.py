@@ -44,8 +44,8 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
     error_message = azext_utils.process_helm_error_detail(json.dumps(error_detail_msg))
 
     prediagnostic_error_detail = {
-        "Context.Default.AzureCLI.onboardingErrorType": consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
-        "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
+        consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
+        consts.Telemetry_Onboarding_Error_Message_Key: error_message,
     }
     telemetry.add_extension_event("connectedk8s", prediagnostic_error_detail)
 
@@ -103,8 +103,8 @@ def send_prediagnostic_check_failure_telemetry(
     error_message = azext_utils.process_helm_error_detail(json.dumps(check_results))
 
     prediagnostic_error_detail = {
-        "Context.Default.AzureCLI.onboardingErrorType": consts.Install_Prediagnostics_Fault_Type,
-        "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
+        consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_Prediagnostics_Fault_Type,
+        consts.Telemetry_Onboarding_Error_Message_Key: error_message,
     }
 
     logger.debug(
@@ -123,8 +123,8 @@ def send_post_diagnostic_precheck_failure_telemetry(
         json.dumps({"checkName": check_name, "reason": reason})
     )
     error_detail = {
-        "Context.Default.AzureCLI.onboardingErrorType": consts.Post_Diagnostic_Precheck_Fault_Type,
-        "Context.Default.AzureCLI.onboardingErrorMessage": error_message,
+        consts.Telemetry_Onboarding_Error_Type_Key: consts.Post_Diagnostic_Precheck_Fault_Type,
+        consts.Telemetry_Onboarding_Error_Message_Key: error_message,
     }
     logger.debug(
         "[Telemetry] onboardingErrorType=%s onboardingErrorMessage=%s",
