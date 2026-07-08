@@ -280,15 +280,6 @@ def _collect_clusteridentityoperator_evidence(
 
 
 def _resolve_helm_timeout_classification(classifications: set[str]) -> str:
-    if any(
-        classification in classifications
-        for classification in (
-            "KeyPairOrIdentityCertificateSync",
-            "MissingIdentityCertificateSecret",
-            "MissingKubeAadProxyCertificateSecret",
-        )
-    ):
-        return "ClusterIdentityFailure"
     if "ImagePullFailure" in classifications:
         return "ImagePullFailure"
     if any(
@@ -299,6 +290,15 @@ def _resolve_helm_timeout_classification(classifications: set[str]) -> str:
         )
     ):
         return "PendingOrUnschedulable"
+    if any(
+        classification in classifications
+        for classification in (
+            "KeyPairOrIdentityCertificateSync",
+            "MissingIdentityCertificateSecret",
+            "MissingKubeAadProxyCertificateSecret",
+        )
+    ):
+        return "ClusterIdentityFailure"
     return "GenericHelmTimeout"
 
 
@@ -1893,16 +1893,17 @@ def helm_install_release(
         # Replace the existing calls with the new function
 
         telemetry.add_extension_event("connectedk8s", helm_error_detail)
-        if not is_advanced_helm_timeout_diagnostics(helm_install_error_message) and any(
-            message in helm_install_error_message
-            for message in consts.Helm_Install_Release_Userfault_Messages
-        ):
-            telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(helm_install_error_message),
-            fault_type=consts.Install_HelmRelease_Fault_Type,
-            summary="Unable to install helm release",
-        )
+        if not is_advanced_helm_timeout_diagnostics(helm_install_error_message):
+            if any(
+                message in helm_install_error_message
+                for message in consts.Helm_Install_Release_Userfault_Messages
+            ):
+                telemetry.set_user_fault()
+            telemetry.set_exception(
+                exception=Exception(helm_install_error_message),
+                fault_type=consts.Install_HelmRelease_Fault_Type,
+                summary="Unable to install helm release",
+            )
         warn_msg = (
             "Please check if the azure-arc namespace was deployed and run 'kubectl get pods -n azure-arc' "
             "to check if all the pods are in running state. A possible cause for pods stuck in pending "
@@ -2336,16 +2337,17 @@ def helm_update_agent(
             process_helm_error_detail(error_helm_upgrade.decode("ascii")),
             helm_operation="update",
         )
-        if not is_advanced_helm_timeout_diagnostics(helm_upgrade_error_message) and any(
-            message in helm_upgrade_error_message
-            for message in consts.Helm_Install_Release_Userfault_Messages
-        ):
-            telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(helm_upgrade_error_message),
-            fault_type=consts.Install_HelmRelease_Fault_Type,
-            summary="Unable to install helm release",
-        )
+        if not is_advanced_helm_timeout_diagnostics(helm_upgrade_error_message):
+            if any(
+                message in helm_upgrade_error_message
+                for message in consts.Helm_Install_Release_Userfault_Messages
+            ):
+                telemetry.set_user_fault()
+            telemetry.set_exception(
+                exception=Exception(helm_upgrade_error_message),
+                fault_type=consts.Install_HelmRelease_Fault_Type,
+                summary="Unable to install helm release",
+            )
         with contextlib.suppress(OSError):
             os.remove(user_values_location)
         raise CLIInternalError(

@@ -237,7 +237,7 @@ def test_resolve_helm_timeout_classification_priority():
         _resolve_helm_timeout_classification(
             {"ImagePullFailure", "KeyPairOrIdentityCertificateSync"}
         )
-        == "ClusterIdentityFailure"
+        == "ImagePullFailure"
     )
     assert (
         _resolve_helm_timeout_classification(
@@ -247,7 +247,7 @@ def test_resolve_helm_timeout_classification_priority():
     )
     assert (
         _resolve_helm_timeout_classification(
-            {"ClusterResourceOrSchedulingConstraint"}
+            {"ClusterResourceOrSchedulingConstraint", "KeyPairOrIdentityCertificateSync"}
         )
         == "PendingOrUnschedulable"
     )
