@@ -25,7 +25,6 @@ Flow:
 """
 from __future__ import annotations
 
-import json
 import os
 import shutil
 from subprocess import PIPE, Popen
@@ -112,25 +111,33 @@ def _parse_crd_check_result(crd_check_log: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Telemetry helpers
-# These build and send structured telemetry events to ADX via the Azure CLI
-# telemetry pipeline. The payload is JSON-serialized and sanitized (apostrophes
-# removed) to avoid corruption in the telemetry ingestion pipeline.
+# These emit fault events to ADX via the Azure CLI telemetry pipeline.
+# Key data is encoded in the fault_type string (whitelisted field) rather than
+# in custom properties or long descriptions, which are dropped/rejected.
 # ---------------------------------------------------------------------------
 
 
-def _send_onboarding_telemetry_event(fault_type: str, payload) -> None:
-    """Sanitize payload, build error detail struct, and send a telemetry event."""
-    error_message = azext_utils.process_helm_error_detail(json.dumps(payload))
-    error_detail = {
-        consts.Telemetry_Onboarding_Error_Type_Key: fault_type,
-        consts.Telemetry_Onboarding_Error_Message_Key: error_message,
-    }
+def _send_onboarding_telemetry_event(fault_type: str, summary: str) -> None:
+    """Send a fault telemetry event with a short summary.
+
+    The fault_type should encode any structured data (check results, component
+    names) since it maps to the whitelisted context.default.azurecli.faulttype
+    field in ADX. The summary must be short and free of raw JSON to avoid
+    pipeline content-validation rejections.
+    """
     logger.debug(
-        "[Telemetry] onboardingErrorType=%s onboardingErrorMessage=%s",
+        "[Telemetry] faultType=%s summary=%s",
         fault_type,
-        error_message,
+        summary,
     )
-    telemetry.add_extension_event("connectedk8s", error_detail)
+    try:
+        raise RuntimeError(summary)
+    except RuntimeError as e:
+        telemetry.set_exception(
+            exception=e,
+            fault_type=fault_type,
+            summary=summary,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -140,11 +147,10 @@ def _send_onboarding_telemetry_event(fault_type: str, payload) -> None:
 
 def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
     """Send telemetry when prediagnostic job execution fails."""
-    payload = {"jobExecutionStatus": prediagnostic_job_execution_status}
-    if reason:
-        payload["reason"] = reason
+    short_reason = reason[:80] if reason else "unknown"
     _send_onboarding_telemetry_event(
-        consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type, payload
+        consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
+        f"Prediagnostic job execution failed: {short_reason}",
     )
 
 
@@ -152,36 +158,25 @@ def send_prediagnostic_check_failure_telemetry(
     dns_check: str, outbound_connectivity_check: str
 ) -> None:
     """Send telemetry when prediagnostic checks fail (job completed but checks did not pass)."""
-    # Build a generic list of check results with component name, result, and error
-    components = [
-        ("dns", dns_check),
-        ("outboundConnectivity", outbound_connectivity_check),
-        ("entra", prediagnostic_entra_check),
-        ("crd", prediagnostic_crd_check),
-    ]
+    # Encode check results into the fault_type for ADX visibility.
+    # Maps: Passed→pass, Failed→fail, NotApplicable→na, else→incomplete
+    def _short(result: str) -> str:
+        return {"Passed": "pass", "Failed": "fail", "NotApplicable": "na"}.get(
+            result, "incomplete"
+        )
 
-    # Map component names to keywords for extracting errors from diagnoser output
-    error_keywords = {
-        "dns": "dns",
-        "outboundConnectivity": "outbound",
-        "entra": "entra",
-        "crd": "crd",
-    }
-
-    check_results = []
-    for component_name, check_result in components:
-        entry = {"componentName": component_name, "checkResult": check_result}
-        if check_result == "Failed":
-            keyword = error_keywords[component_name]
-            for msg in diagnoser_output:
-                msg_lower = msg.lower()
-                if keyword in msg_lower and "error" in msg_lower:
-                    entry["error"] = msg.strip().splitlines()[0]
-                    break
-        check_results.append(entry)
+    # Build fault type: "prediagnostics-dns-pass-outbound-fail-entra-na-crd-pass"
+    fault_type = (
+        f"prediagnostics"
+        f"-dns-{_short(dns_check)}"
+        f"-outbound-{_short(outbound_connectivity_check)}"
+        f"-entra-{_short(prediagnostic_entra_check)}"
+        f"-crd-{_short(prediagnostic_crd_check)}"
+    )
 
     _send_onboarding_telemetry_event(
-        consts.Install_Prediagnostics_Fault_Type, check_results
+        fault_type,
+        "Prediagnostic checks detected failures during onboarding",
     )
 
 
@@ -189,9 +184,12 @@ def send_post_diagnostic_precheck_failure_telemetry(
     check_name: str, reason: str
 ) -> None:
     """Send telemetry for individual precheck failures that occur after the diagnostic job."""
+    # Encode check name in fault_type: "post-diagnostic-precheck-{checkName}"
+    fault_type = f"{consts.Post_Diagnostic_Precheck_Fault_Type}-{check_name}"
+    short_reason = reason[:80] if reason else "unknown"
     _send_onboarding_telemetry_event(
-        consts.Post_Diagnostic_Precheck_Fault_Type,
-        {"checkName": check_name, "reason": reason},
+        fault_type,
+        f"Post-diagnostic precheck failed: {short_reason}",
     )
 
 
@@ -486,11 +484,14 @@ def executing_cluster_diagnostic_checks_job(
             False,
         )
 
-        print(
-            f"Step: {azext_utils.get_utctimestring()}: Chart path for Cluster Diagnostic Checks Job: {chart_path}"
+        logger.debug(
+            "Step: %s: Chart path for Cluster Diagnostic Checks Job: %s",
+            azext_utils.get_utctimestring(),
+            chart_path,
         )
-        print(
-            f"Step: {azext_utils.get_utctimestring()}: Creating Cluster Diagnostic Checks job"
+        logger.debug(
+            "Step: %s: Creating Cluster Diagnostic Checks job",
+            azext_utils.get_utctimestring(),
         )
         helm_install_release_cluster_diagnostic_checks(
             chart_path,
