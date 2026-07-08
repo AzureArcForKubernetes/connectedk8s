@@ -25,6 +25,7 @@ Flow:
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from subprocess import PIPE, Popen
@@ -145,8 +146,46 @@ def _send_onboarding_telemetry_event(fault_type: str, summary: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _attach_error_details(components: list[dict]) -> None:
+    """Extract error details from diagnoser_output and attach to failed components.
+
+    For each failed component, searches diagnoser_output for lines containing both
+    the component keyword and the word 'error' (case-insensitive). Only the first
+    matching line is used, trimmed to a single line.
+    """
+    keyword_map = {
+        "dns": "dns",
+        "outboundConnectivity": "outbound",
+        "entra": "entra",
+        "crd": "crd",
+    }
+
+    for component in components:
+        if component["checkResult"] != consts.Diagnostic_Check_Failed:
+            continue
+        keyword = keyword_map.get(component["componentName"], "")
+        for line in diagnoser_output:
+            if keyword.lower() in line.lower() and "error" in line.lower():
+                # Take only first line if entry contains newlines
+                first_line = line.split("\n")[0].strip()
+                component["error"] = first_line
+                break
+
+
 def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
     """Send telemetry when prediagnostic job execution fails."""
+    # Build structured message for add_extension_event
+    msg: dict = {"jobExecutionStatus": prediagnostic_job_execution_status}
+    if reason:
+        msg["reason"] = reason
+
+    props = {
+        consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
+        consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg),
+    }
+    telemetry.add_extension_event("connectedk8s", props)
+
+    # Also send via set_exception for ADX fault_type encoding
     short_reason = reason[:80] if reason else "unknown"
     _send_onboarding_telemetry_event(
         consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
@@ -157,15 +196,35 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
 def send_prediagnostic_check_failure_telemetry(
     dns_check: str, outbound_connectivity_check: str
 ) -> None:
-    """Send telemetry when prediagnostic checks fail (job completed but checks did not pass)."""
-    # Encode check results into the fault_type for ADX visibility.
-    # Maps: Passed→pass, Failed→fail, NotApplicable→na, else→incomplete
+    """Send telemetry when prediagnostic checks fail (job completed but checks did not pass).
+
+    Emits a generic component list [{componentName, checkResult, error?}, ...] via
+    add_extension_event so ADX dashboard queries don't need custom name parsing.
+    """
+    # Build generic component list (addresses reviewer comment #3)
+    components: list[dict] = [
+        {"componentName": "dns", "checkResult": dns_check},
+        {"componentName": "outboundConnectivity", "checkResult": outbound_connectivity_check},
+        {"componentName": "entra", "checkResult": prediagnostic_entra_check},
+        {"componentName": "crd", "checkResult": prediagnostic_crd_check},
+    ]
+
+    # Attach structured error details from diagnoser_output (addresses reviewer comment #2)
+    _attach_error_details(components)
+
+    # Send structured telemetry via add_extension_event
+    props = {
+        consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_Prediagnostics_Fault_Type,
+        consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(components),
+    }
+    telemetry.add_extension_event("connectedk8s", props)
+
+    # Also send via set_exception for ADX fault_type encoding
     def _short(result: str) -> str:
         return {"Passed": "pass", "Failed": "fail", "NotApplicable": "na"}.get(
             result, "incomplete"
         )
 
-    # Build fault type: "prediagnostics-dns-pass-outbound-fail-entra-na-crd-pass"
     fault_type = (
         f"prediagnostics"
         f"-dns-{_short(dns_check)}"
@@ -173,7 +232,6 @@ def send_prediagnostic_check_failure_telemetry(
         f"-entra-{_short(prediagnostic_entra_check)}"
         f"-crd-{_short(prediagnostic_crd_check)}"
     )
-
     _send_onboarding_telemetry_event(
         fault_type,
         "Prediagnostic checks detected failures during onboarding",
@@ -184,7 +242,16 @@ def send_post_diagnostic_precheck_failure_telemetry(
     check_name: str, reason: str
 ) -> None:
     """Send telemetry for individual precheck failures that occur after the diagnostic job."""
-    # Encode check name in fault_type: "post-diagnostic-precheck-{checkName}"
+    # Build structured message for add_extension_event
+    msg = {"checkName": check_name, "reason": reason}
+
+    props = {
+        consts.Telemetry_Onboarding_Error_Type_Key: consts.Post_Diagnostic_Precheck_Fault_Type,
+        consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg),
+    }
+    telemetry.add_extension_event("connectedk8s", props)
+
+    # Also send via set_exception for ADX fault_type encoding
     fault_type = f"{consts.Post_Diagnostic_Precheck_Fault_Type}-{check_name}"
     short_reason = reason[:80] if reason else "unknown"
     _send_onboarding_telemetry_event(
@@ -362,6 +429,7 @@ def fetch_diagnostic_checks_results(
             or prediagnostic_entra_check == consts.Diagnostic_Check_Failed
             or prediagnostic_crd_check == consts.Diagnostic_Check_Failed
         ):
+            send_prediagnostic_check_failure_telemetry(dns_check, outbound_connectivity_check)
             return consts.Diagnostic_Check_Failed, storage_space_available
 
         # All checks passed or not applicable
