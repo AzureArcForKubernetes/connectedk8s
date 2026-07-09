@@ -356,6 +356,17 @@ def is_advanced_helm_timeout_diagnostics(error_message: str) -> bool:
     return "Read-only cluster checks after Helm timeout:" in error_message
 
 
+def get_advanced_helm_timeout_fault_type(error_message: str) -> str | None:
+    if not is_advanced_helm_timeout_diagnostics(error_message):
+        return None
+
+    for classification, fault_type in HELM_TIMEOUT_CLASSIFICATION_FAULT_TYPES.items():
+        if f"Likely failure classification: {classification}" in error_message:
+            return fault_type
+
+    return consts.Helm_Timeout_Generic_Fault_Type
+
+
 def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
     try:
         corev1_api_instance = kube_client.CoreV1Api()
@@ -1886,8 +1897,12 @@ def helm_install_release(
         helm_install_error_message = append_timeout_diagnostics(
             helm_install_error_message, helm_operation="install"
         )
+        onboarding_error_type = (
+            get_advanced_helm_timeout_fault_type(helm_install_error_message)
+            or consts.Install_HelmRelease_Fault_Type
+        )
         helm_error_detail = {
-            "Context.Default.AzureCLI.onboardingErrorType": consts.Install_HelmRelease_Fault_Type,
+            "Context.Default.AzureCLI.onboardingErrorType": onboarding_error_type,
             "Context.Default.AzureCLI.onboardingErrorMessage": helm_install_error_message,
         }
         # Replace the existing calls with the new function

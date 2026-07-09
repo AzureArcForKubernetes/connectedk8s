@@ -15,6 +15,7 @@ from azext_connectedk8s._utils import (
     _collect_timeout_diagnostics_from_pods,
     _resolve_helm_timeout_classification,
     get_mcr_path,
+    get_advanced_helm_timeout_fault_type,
     is_helm_timeout_error,
     process_helm_error_detail,
     redact_sensitive_fields_from_string,
@@ -252,6 +253,20 @@ def test_resolve_helm_timeout_classification_priority():
         == "PendingOrUnschedulable"
     )
     assert _resolve_helm_timeout_classification({"CrashLoopBackOff"}) == "GenericHelmTimeout"
+
+
+def test_get_advanced_helm_timeout_fault_type_from_error_message():
+    error_message = (
+        "context deadline exceeded\n\n"
+        "Read-only cluster checks after Helm timeout:\n"
+        "Likely failure classification: ClusterIdentityFailure\n"
+        "Evidence:\n- Secret azure-identity-certificate is not present"
+    )
+
+    assert (
+        get_advanced_helm_timeout_fault_type(error_message)
+        == "helm-timeout-cluster-identity-error"
+    )
 
 
 if __name__ == "__main__":
