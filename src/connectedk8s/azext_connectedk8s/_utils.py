@@ -207,8 +207,7 @@ def _collect_timeout_diagnostics_from_events(events: list[Any]) -> tuple[list[st
 
 
 def _collect_clusteridentityoperator_evidence(
-    corev1_api_instance: CoreV1Api, pods: list[Any], secret_names: set[str] | None
-) -> tuple[list[str], set[str]]:
+        pods: list[Any], secret_names: set[str] | None) -> tuple[list[str], set[str]]:
     evidence: list[str] = []
     classifications: set[str] = set()
     cluster_identity_pods = [
@@ -229,7 +228,7 @@ def _collect_clusteridentityoperator_evidence(
             f"Secret {consts.MSI_Certificate_Secret_Name} is not present in namespace {consts.Arc_Namespace}."
         )
         if not cluster_identity_pods:
-            evidence.append("No clusteridentityoperator pod was found in namespace azure-arc.")
+            evidence.append(f"No clusteridentityoperator pod was found in namespace {consts.Arc_Namespace}.")
 
     for pod in cluster_identity_pods:
         pod_name = _get_object_value(pod, "metadata", "name")
@@ -350,7 +349,7 @@ def _build_helm_timeout_user_message(classification: str) -> str:
         ),
         "GenericHelmTimeout": (
             "Azure Arc agent installation did not complete before the Helm timeout. Retry "
-            "onboarding or inspect the azure-arc namespace for pods that are not ready."
+            f"onboarding or inspect the {consts.Arc_Namespace} namespace for pods that are not ready."
         ),
     }
     message = messages.get(classification, messages["GenericHelmTimeout"])
@@ -392,7 +391,7 @@ def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
             ).items
         except Exception as e:  # pylint: disable=broad-except
             logger.debug(
-                "Unable to list azure-arc pods after Helm timeout.", exc_info=True
+                f"Unable to list {consts.Arc_Namespace} pods after Helm timeout.", exc_info=True
             )
             diagnostics_status = "Failed"
             return (
@@ -408,7 +407,7 @@ def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
             ).items
         except Exception as e:  # pylint: disable=broad-except
             logger.debug(
-                "Unable to list azure-arc events after Helm timeout.", exc_info=True
+                f"Unable to list {consts.Arc_Namespace} events after Helm timeout.", exc_info=True
             )
             diagnostics_status = "Partial"
             evidence.append(
@@ -428,7 +427,7 @@ def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
             }
         except Exception as e:  # pylint: disable=broad-except
             logger.debug(
-                "Unable to list azure-arc secrets after Helm timeout.", exc_info=True
+                f"Unable to list {consts.Arc_Namespace} secrets after Helm timeout.", exc_info=True
             )
             diagnostics_status = "Partial"
             evidence.append(
@@ -444,9 +443,7 @@ def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
         (
             identity_evidence,
             identity_classifications,
-        ) = _collect_clusteridentityoperator_evidence(
-            corev1_api_instance, pods, secret_names
-        )
+        ) = _collect_clusteridentityoperator_evidence(pods, secret_names)
 
         evidence.extend(pod_evidence)
         evidence.extend(event_evidence)
@@ -472,7 +469,7 @@ def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
             logger.debug(
                 "Read-only cluster checks after Helm timeout classified as %s. "
                 "No pod wait reasons, warning events, or missing identity certificate "
-                "signals were found in namespace azure-arc.",
+                f"signals were found in namespace {consts.Arc_Namespace}.",
                 resolved_classification,
             )
 
@@ -511,7 +508,7 @@ def append_timeout_diagnostics(
         in HELM_TIMEOUT_USER_FAULT_CLASSIFICATIONS
     ):
         telemetry.set_user_fault()
-    _set_helm_timeout_classification_exception(diagnostics, telemetry_properties)
+    _set_helm_timeout_classification_exception(f"{error_message}\n\n{diagnostics}", telemetry_properties)
 
     return (
         f"{error_message}\n\n"
