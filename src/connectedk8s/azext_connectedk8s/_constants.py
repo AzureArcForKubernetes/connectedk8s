@@ -470,6 +470,7 @@ Outbound_Connectivity_Check_Failed = "Outbound network connectivity check failed
 Outbound_Connectivity_Check_Failed_For_Onboarding = (
     "Outbound network connectivity check failed for onboarding"
 )
+Outbound_Connectivity_Non2xx_Response_Type = "prediagnostics-outbound-non2xx-response"
 DNS_Check_Failed = "DNS Resolution failed"
 Cluster_Diagnostic_Prechecks_Failed = "Cluster diagnostic prechecks failed"
 Cluster_Diagnostic_Prechecks_Incomplete = (

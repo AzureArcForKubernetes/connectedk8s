@@ -402,18 +402,32 @@ def check_cluster_DNS(
         # These are standard error strings from DNS tools (nslookup/dig) indicating resolution failures
         if (
             "NXDOMAIN" in formatted_dns_log
+            or "SERVFAIL" in formatted_dns_log
             or "connection timed out" in formatted_dns_log
             or "no servers could be reached" in formatted_dns_log
             or "communications error" in formatted_dns_log
             or "timed out" in formatted_dns_log
         ):
+            # Determine specific DNS failure type for telemetry
+            dns_error_type = "unknown"
+            if "NXDOMAIN" in formatted_dns_log:
+                dns_error_type = "NXDOMAIN"
+            elif "SERVFAIL" in formatted_dns_log:
+                dns_error_type = "SERVFAIL"
+            elif "no servers could be reached" in formatted_dns_log:
+                dns_error_type = "no-servers-reachable"
+            elif "connection timed out" in formatted_dns_log or "timed out" in formatted_dns_log:
+                dns_error_type = "timeout"
+            elif "communications error" in formatted_dns_log:
+                dns_error_type = "communications-error"
+
             logger.warning(
                 "Error: We found an issue with the DNS resolution on your cluster. For details about debugging DNS "
                 "issues visit 'https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/'.\n"
             )
             diagnoser_output.append(
-                "Error: We found an issue with the DNS resolution on your cluster. For details about debugging DNS "
-                "issues visit 'https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/'.\n"
+                f"Error: DNS resolution failed (type={dns_error_type}). "
+                "For details visit 'https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/'.\n"
             )
             if storage_space_available:
                 dns_check_path = os.path.join(filepath_with_timestamp, consts.DNS_Check)
@@ -509,6 +523,22 @@ def check_cluster_outbound_connectivity(
             )
 
             if Cluster_Connect_Precheck_Endpoint_response_code != "000":
+                # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
+                if (
+                    Cluster_Connect_Precheck_Endpoint_response_code.startswith("4")
+                    or Cluster_Connect_Precheck_Endpoint_response_code.startswith("5")
+                ):
+                    telemetry.add_extension_event(
+                        "connectedk8s",
+                        {
+                            consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
+                            consts.Telemetry_Onboarding_Error_Message_Key: (
+                                f"endpoint={Cluster_Connect_Precheck_Endpoint_Url}; "
+                                f"code={Cluster_Connect_Precheck_Endpoint_response_code}; "
+                                f"target=cluster-connect"
+                            ),
+                        },
+                    )
                 if storage_space_available:
                     cluster_connect_outbound_connectivity_check_path = os.path.join(
                         filepath_with_timestamp,
@@ -565,6 +595,21 @@ def check_cluster_outbound_connectivity(
 
             # Validating if outbound connectiivty is working or not and displaying proper result
             if Onboarding_Precheck_Endpoint_outbound_connectivity_response != "000":
+                # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
+                if (
+                    Onboarding_Precheck_Endpoint_outbound_connectivity_response.startswith("4")
+                    or Onboarding_Precheck_Endpoint_outbound_connectivity_response.startswith("5")
+                ):
+                    telemetry.add_extension_event(
+                        "connectedk8s",
+                        {
+                            consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
+                            consts.Telemetry_Onboarding_Error_Message_Key: (
+                                f"code={Onboarding_Precheck_Endpoint_outbound_connectivity_response}; "
+                                f"target=onboarding"
+                            ),
+                        },
+                    )
                 if storage_space_available:
                     outbound_connectivity_check_path = os.path.join(
                         filepath_with_timestamp,
@@ -591,7 +636,40 @@ def check_cluster_outbound_connectivity(
             )
             logger.warning(outbound_connectivity_failed_warning_message)
             telemetry.set_user_fault()
-            diagnoser_output.append(outbound_connectivity_failed_warning_message)
+
+            # Extract failed endpoint URLs for telemetry diagnostics
+            failed_endpoints: list[str] = []
+            failed_endpoint_details: list[str] = []
+            try:
+                log_parts = outbound_connectivity_check_log.split("  ")
+                for part in log_parts:
+                    if consts.Outbound_Connectivity_Check_Result_String in part:
+                        segments = part.split(" : ")
+                        if len(segments) >= 3:
+                            endpoint = segments[1].strip()
+                            code = segments[2].strip()
+                            if code == "000":
+                                failed_endpoints.append(endpoint)
+                                failed_endpoint_details.append(
+                                    f"{endpoint} (code=000, no HTTP response - "
+                                    "likely firewall drop, proxy block, or network timeout)"
+                                )
+                            elif code.startswith("4") or code.startswith("5"):
+                                failed_endpoints.append(endpoint)
+                                failed_endpoint_details.append(
+                                    f"{endpoint} (code={code})"
+                                )
+            except (IndexError, ValueError):
+                pass
+
+            # Include endpoint details in diagnoser_output for telemetry capture
+            if failed_endpoint_details:
+                details_str = "; ".join(failed_endpoint_details)
+                diagnoser_output.append(
+                    f"Error: Outbound connectivity failed for: {details_str}"
+                )
+            else:
+                diagnoser_output.append(outbound_connectivity_failed_warning_message)
             if storage_space_available:
                 outbound_connectivity_check_path = os.path.join(
                     filepath_with_timestamp,
@@ -623,6 +701,21 @@ def check_cluster_outbound_connectivity(
                 return consts.Diagnostic_Check_Incomplete, storage_space_available
 
             if outbound_connectivity_response != "000":
+                # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
+                if (
+                    outbound_connectivity_response.startswith("4")
+                    or outbound_connectivity_response.startswith("5")
+                ):
+                    telemetry.add_extension_event(
+                        "connectedk8s",
+                        {
+                            consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
+                            consts.Telemetry_Onboarding_Error_Message_Key: (
+                                f"code={outbound_connectivity_response}; "
+                                f"target=troubleshoot"
+                            ),
+                        },
+                    )
                 if storage_space_available:
                     outbound_connectivity_check_path = os.path.join(
                         filepath_with_timestamp,

@@ -263,8 +263,8 @@ class TestSendCheckFailureTelemetry:
             assert "error" not in entry
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_non_error_lines_not_captured(self, mock_telemetry):
-        """Lines mentioning entra but not 'error' should not be captured."""
+    def test_non_error_lines_captured_as_fallback(self, mock_telemetry):
+        """Lines mentioning entra without 'error'/'failed' are captured as fallback context."""
         precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
             "Entra check: starting",
@@ -277,7 +277,9 @@ class TestSendCheckFailureTelemetry:
         props = mock_telemetry.add_extension_event.call_args[0][1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
-        assert "error" not in components["entra"]
+        # Fallback captures any matching line when no 'error'/'failed' line exists
+        assert "error" in components["entra"]
+        assert "Entra check: starting" in components["entra"]["error"]
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_crd_error_extracted_from_diagnoser_output(self, mock_telemetry):
@@ -293,6 +295,27 @@ class TestSendCheckFailureTelemetry:
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
         assert "error" in components["crd"]
+
+    @patch("azext_connectedk8s._precheckutils.telemetry")
+    def test_precheck_summary_line_excluded_from_error_details(self, mock_telemetry):
+        """The 'Precheck summary:' metadata line should not be captured as an error detail."""
+        precheckutils.prediagnostic_outbound_check = consts.Diagnostic_Check_Failed
+        precheckutils.diagnoser_output = [
+            "Error: Outbound connectivity failed for: https://example.com (code=000, no HTTP response - likely firewall drop, proxy block, or network timeout)",
+            "Precheck summary: jobExecutionStatus=NotCompleted; dnsCheck=Passed; outboundConnectivityCheck=Failed; entraCheck=NotApplicable; crdCheck=Passed",
+        ]
+        precheckutils.send_prediagnostic_check_failure_telemetry(
+            consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Failed
+        )
+
+        props = mock_telemetry.add_extension_event.call_args[0][1]
+        msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
+        components = {entry["componentName"]: entry for entry in msg}
+        # Should only contain the actual error, not the Precheck summary line
+        assert "error" in components["outboundConnectivity"]
+        assert "Precheck summary" not in components["outboundConnectivity"]["error"]
+        assert "code=000" in components["outboundConnectivity"]["error"]
+        assert "firewall drop" in components["outboundConnectivity"]["error"]
 
 
 # ---------------------------------------------------------------------------

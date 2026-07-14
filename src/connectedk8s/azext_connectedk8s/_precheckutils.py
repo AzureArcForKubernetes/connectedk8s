@@ -149,9 +149,10 @@ def _send_onboarding_telemetry_event(fault_type: str, summary: str) -> None:
 def _attach_error_details(components: list[dict]) -> None:
     """Extract error details from diagnoser_output and attach to failed components.
 
-    For each failed component, searches diagnoser_output for lines containing both
-    the component keyword and the word 'error' (case-insensitive). Only the first
-    matching line is used, trimmed to a single line.
+    For each failed component, searches diagnoser_output for lines containing the
+    component keyword. Prefers lines also containing 'error' or 'failed', but falls
+    back to any matching line. Skips the "Precheck summary:" line (it's metadata,
+    not an actionable error detail).
     """
     keyword_map = {
         "dns": "dns",
@@ -164,17 +165,34 @@ def _attach_error_details(components: list[dict]) -> None:
         if component["checkResult"] != consts.Diagnostic_Check_Failed:
             continue
         keyword = keyword_map.get(component["componentName"], "")
+        error_lines: list[str] = []
+        fallback_lines: list[str] = []
         for line in diagnoser_output:
-            if keyword.lower() in line.lower() and "error" in line.lower():
-                # Take only first line if entry contains newlines
-                first_line = line.split("\n")[0].strip()
-                component["error"] = first_line
-                break
+            # Skip the summary line — it's metadata already encoded in fault_type
+            if line.startswith("Precheck summary:"):
+                continue
+            if keyword.lower() not in line.lower():
+                continue
+            first_line = line.split("\n")[0].strip()
+            if "error" in line.lower() or "failed" in line.lower():
+                error_lines.append(first_line)
+            else:
+                fallback_lines.append(first_line)
+
+        # Use error lines preferentially, fall back to any matching lines
+        chosen = (error_lines or fallback_lines)[:3]
+        if chosen:
+            component["error"] = " ; ".join(chosen)
 
 
 def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
-    """Send telemetry when prediagnostic job execution fails."""
-    # Build structured message for add_extension_event
+    """Send telemetry when prediagnostic job execution fails.
+
+    Encodes the job status into the fault_type so ADX queries can distinguish
+    between not-scheduled, not-completed, cleanup-failed, etc. without relying
+    on add_extension_event properties (which get stripped by GDPR pipeline).
+    """
+    # Build structured message for add_extension_event (best-effort, may be stripped)
     msg: dict = {"jobExecutionStatus": prediagnostic_job_execution_status}
     if reason:
         msg["reason"] = reason
@@ -185,12 +203,17 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
     }
     telemetry.add_extension_event("connectedk8s", props)
 
-    # Also send via set_exception for ADX fault_type encoding
-    short_reason = reason[:80] if reason else "unknown"
-    _send_onboarding_telemetry_event(
-        consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
-        f"Prediagnostic job execution failed: {short_reason}",
+    # Encode job status into fault_type for ADX visibility
+    status_slug = prediagnostic_job_execution_status.replace(" ", "-").lower()
+    fault_type = f"prediagnostics-job-{status_slug}"
+
+    # Build a descriptive summary that survives into reserved.datamodel.fault.description
+    short_reason = reason[:200] if reason else "no additional details"
+    summary = (
+        f"Prediagnostic job failed | status={prediagnostic_job_execution_status} | "
+        f"reason={short_reason}"
     )
+    _send_onboarding_telemetry_event(fault_type, summary)
 
 
 def send_prediagnostic_check_failure_telemetry(
@@ -198,10 +221,11 @@ def send_prediagnostic_check_failure_telemetry(
 ) -> None:
     """Send telemetry when prediagnostic checks fail (job completed but checks did not pass).
 
-    Emits a generic component list [{componentName, checkResult, error?}, ...] via
-    add_extension_event so ADX dashboard queries don't need custom name parsing.
+    Emits detailed, per-check error information in the summary field (which survives
+    to reserved.datamodel.fault.description in ADX). The fault_type encodes a
+    structured pass/fail/na per check for easy KQL filtering.
     """
-    # Build generic component list (addresses reviewer comment #3)
+    # Build generic component list
     components: list[dict] = [
         {"componentName": "dns", "checkResult": dns_check},
         {"componentName": "outboundConnectivity", "checkResult": outbound_connectivity_check},
@@ -209,17 +233,17 @@ def send_prediagnostic_check_failure_telemetry(
         {"componentName": "crd", "checkResult": prediagnostic_crd_check},
     ]
 
-    # Attach structured error details from diagnoser_output (addresses reviewer comment #2)
+    # Attach structured error details from diagnoser_output
     _attach_error_details(components)
 
-    # Send structured telemetry via add_extension_event
+    # Send structured telemetry via add_extension_event (best-effort, may be stripped)
     props = {
         consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_Prediagnostics_Fault_Type,
         consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(components),
     }
     telemetry.add_extension_event("connectedk8s", props)
 
-    # Also send via set_exception for ADX fault_type encoding
+    # Build the encoded fault_type (survives to context.default.azurecli.faulttype)
     def _short(result: str) -> str:
         return {"Passed": "pass", "Failed": "fail", "NotApplicable": "na"}.get(
             result, "incomplete"
@@ -232,10 +256,35 @@ def send_prediagnostic_check_failure_telemetry(
         f"-entra-{_short(prediagnostic_entra_check)}"
         f"-crd-{_short(prediagnostic_crd_check)}"
     )
-    _send_onboarding_telemetry_event(
-        fault_type,
-        "Prediagnostic checks detected failures during onboarding",
-    )
+
+    # Build a rich summary with per-check errors (survives to reserved.datamodel.fault.description)
+    failed_details: list[str] = []
+    for comp in components:
+        if comp["checkResult"] == consts.Diagnostic_Check_Failed:
+            error_msg = comp.get("error", "no error details captured")
+            failed_details.append(f"{comp['componentName']}={error_msg}")
+
+    if failed_details:
+        # Truncate to 500 chars to stay under any pipeline limits
+        details_str = " | ".join(failed_details)[:500]
+        summary = f"Prediagnostic check failures: {details_str}"
+    else:
+        summary = (
+            f"Prediagnostic checks failed | "
+            f"dns={dns_check} outbound={outbound_connectivity_check} "
+            f"entra={prediagnostic_entra_check} crd={prediagnostic_crd_check}"
+        )
+
+    _send_onboarding_telemetry_event(fault_type, summary)
+
+    # Emit individual set_exception per failed check for granular ADX filtering
+    for comp in components:
+        if comp["checkResult"] == consts.Diagnostic_Check_Failed:
+            check_name = comp["componentName"]
+            error_msg = comp.get("error", "check failed without captured error line")
+            check_fault_type = f"prediagnostics-{check_name}-fail"
+            check_summary = f"{check_name} check failed: {error_msg[:500]}"
+            _send_onboarding_telemetry_event(check_fault_type, check_summary)
 
 
 def send_post_diagnostic_precheck_failure_telemetry(
