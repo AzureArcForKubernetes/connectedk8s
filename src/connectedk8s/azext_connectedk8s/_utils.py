@@ -416,7 +416,10 @@ def check_cluster_DNS(
                 dns_error_type = "SERVFAIL"
             elif "no servers could be reached" in formatted_dns_log:
                 dns_error_type = "no-servers-reachable"
-            elif "connection timed out" in formatted_dns_log or "timed out" in formatted_dns_log:
+            elif (
+                "connection timed out" in formatted_dns_log
+                or "timed out" in formatted_dns_log
+            ):
                 dns_error_type = "timeout"
             elif "communications error" in formatted_dns_log:
                 dns_error_type = "communications-error"
@@ -524,9 +527,8 @@ def check_cluster_outbound_connectivity(
 
             if Cluster_Connect_Precheck_Endpoint_response_code != "000":
                 # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
-                if (
-                    Cluster_Connect_Precheck_Endpoint_response_code.startswith("4")
-                    or Cluster_Connect_Precheck_Endpoint_response_code.startswith("5")
+                if Cluster_Connect_Precheck_Endpoint_response_code.startswith(
+                    ("4", "5")
                 ):
                     telemetry.add_extension_event(
                         "connectedk8s",
@@ -596,9 +598,8 @@ def check_cluster_outbound_connectivity(
             # Validating if outbound connectiivty is working or not and displaying proper result
             if Onboarding_Precheck_Endpoint_outbound_connectivity_response != "000":
                 # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
-                if (
-                    Onboarding_Precheck_Endpoint_outbound_connectivity_response.startswith("4")
-                    or Onboarding_Precheck_Endpoint_outbound_connectivity_response.startswith("5")
+                if Onboarding_Precheck_Endpoint_outbound_connectivity_response.startswith(
+                    ("4", "5")
                 ):
                     telemetry.add_extension_event(
                         "connectedk8s",
@@ -654,7 +655,7 @@ def check_cluster_outbound_connectivity(
                                     f"{endpoint} (code=000, no HTTP response - "
                                     "likely firewall drop, proxy block, or network timeout)"
                                 )
-                            elif code.startswith("4") or code.startswith("5"):
+                            elif code.startswith(("4", "5")):
                                 failed_endpoints.append(endpoint)
                                 failed_endpoint_details.append(
                                     f"{endpoint} (code={code})"
@@ -702,10 +703,7 @@ def check_cluster_outbound_connectivity(
 
             if outbound_connectivity_response != "000":
                 # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
-                if (
-                    outbound_connectivity_response.startswith("4")
-                    or outbound_connectivity_response.startswith("5")
-                ):
+                if outbound_connectivity_response.startswith(("4", "5")):
                     telemetry.add_extension_event(
                         "connectedk8s",
                         {

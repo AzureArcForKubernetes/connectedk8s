@@ -499,7 +499,9 @@ def create_connectedk8s(
     if not required_node_exists:
         telemetry.set_user_fault()
         telemetry.set_exception(
-            exception=Exception("Could not find any node on the kubernetes cluster with the OS linux"),
+            exception=Exception(
+                "Could not find any node on the kubernetes cluster with the OS linux"
+            ),
             fault_type=consts.Linux_Node_Not_Exists,
             summary="Could not find any node on the kubernetes cluster with the OS linux",
         )
@@ -2926,7 +2928,9 @@ def upgrade_agents(
             "cluster has not been onboarded to azure-arc."
         )
         telemetry.set_exception(
-            exception=Exception("The azure-arc release namespace could not be retrieved"),
+            exception=Exception(
+                "The azure-arc release namespace could not be retrieved"
+            ),
             fault_type=consts.Release_Namespace_Not_Found,
             summary=summary_msg,
         )
@@ -3179,7 +3183,9 @@ def validate_release_namespace(
             "cluster has not been onboarded to azure-arc."
         )
         telemetry.set_exception(
-            exception=Exception("The azure-arc release namespace could not be retrieved"),
+            exception=Exception(
+                "The azure-arc release namespace could not be retrieved"
+            ),
             fault_type=consts.Release_Namespace_Not_Found,
             summary=err_msg,
         )

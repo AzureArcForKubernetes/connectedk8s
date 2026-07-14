@@ -131,7 +131,9 @@ Install_Prediagnostics_Job_Execution_Error_Fault_Type = (
 )
 Post_Diagnostic_Precheck_Fault_Type = "post-diagnostic-precheck-failure"
 Telemetry_Onboarding_Error_Type_Key = "Context.Default.AzureCLI.onboardingErrorType"
-Telemetry_Onboarding_Error_Message_Key = "Context.Default.AzureCLI.onboardingErrorMessage"
+Telemetry_Onboarding_Error_Message_Key = (
+    "Context.Default.AzureCLI.onboardingErrorMessage"
+)
 Delete_HelmRelease_Fault_Type = "helm-release-delete-error"
 Check_PodStatus_Fault_Type = "check-pod-status-error"
 Kubernetes_Connectivity_FaultType = "kubernetes-cluster-connection-error"

@@ -23,13 +23,14 @@ Flow:
   4. Telemetry is sent summarizing results (success or failure details)
   5. custom.py decides whether to proceed with agent installation based on the result
 """
+
 from __future__ import annotations
 
 import json
 import os
 import shutil
 from subprocess import PIPE, Popen
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from azure.cli.core import telemetry
 from azure.cli.core.azclierror import (
@@ -54,7 +55,9 @@ logger = get_logger(__name__)
 # These globals track the diagnostic job lifecycle and individual check results.
 # They are reset at the start of each fetch_diagnostic_checks_results() call.
 # ---------------------------------------------------------------------------
-diagnoser_output: list[str] = []  # Collects human-readable log lines for display to the user
+diagnoser_output: list[
+    str
+] = []  # Collects human-readable log lines for display to the user
 prediagnostic_job_execution_status = consts.Job_Status_Not_Started
 prediagnostic_dns_check = consts.Diagnostic_Check_Starting
 prediagnostic_outbound_check = consts.Diagnostic_Check_Starting
@@ -146,7 +149,7 @@ def _send_onboarding_telemetry_event(fault_type: str, summary: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _attach_error_details(components: list[dict]) -> None:
+def _attach_error_details(components: list[dict[str, Any]]) -> None:
     """Extract error details from diagnoser_output and attach to failed components.
 
     For each failed component, searches diagnoser_output for lines containing the
@@ -193,7 +196,7 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
     on add_extension_event properties (which get stripped by GDPR pipeline).
     """
     # Build structured message for add_extension_event (best-effort, may be stripped)
-    msg: dict = {"jobExecutionStatus": prediagnostic_job_execution_status}
+    msg: dict[str, Any] = {"jobExecutionStatus": prediagnostic_job_execution_status}
     if reason:
         msg["reason"] = reason
 
@@ -226,9 +229,12 @@ def send_prediagnostic_check_failure_telemetry(
     structured pass/fail/na per check for easy KQL filtering.
     """
     # Build generic component list
-    components: list[dict] = [
+    components: list[dict[str, Any]] = [
         {"componentName": "dns", "checkResult": dns_check},
-        {"componentName": "outboundConnectivity", "checkResult": outbound_connectivity_check},
+        {
+            "componentName": "outboundConnectivity",
+            "checkResult": outbound_connectivity_check,
+        },
         {"componentName": "entra", "checkResult": prediagnostic_entra_check},
         {"componentName": "crd", "checkResult": prediagnostic_crd_check},
     ]
@@ -478,7 +484,9 @@ def fetch_diagnostic_checks_results(
             or prediagnostic_entra_check == consts.Diagnostic_Check_Failed
             or prediagnostic_crd_check == consts.Diagnostic_Check_Failed
         ):
-            send_prediagnostic_check_failure_telemetry(dns_check, outbound_connectivity_check)
+            send_prediagnostic_check_failure_telemetry(
+                dns_check, outbound_connectivity_check
+            )
             return consts.Diagnostic_Check_Failed, storage_space_available
 
         # All checks passed or not applicable
@@ -576,7 +584,9 @@ def executing_cluster_diagnostic_checks_job(
                         exception_occured_counter = 1
                 # If any exception occured we will print the exception and return
                 if exception_occured_counter == 1:
-                    prediagnostic_job_execution_status = consts.Job_Status_Cleanup_Failed
+                    prediagnostic_job_execution_status = (
+                        consts.Job_Status_Cleanup_Failed
+                    )
                     logger.warning(
                         "Cleanup of previous diagnostic checks helm release failed and hence couldn't "
                         'install the new helm release. Please cleanup older release using "helm delete '
