@@ -142,7 +142,12 @@ if __name__ == "__main__":
 class TestCheckClusterDNS:
     def _run(self, dns_log):
         diagnoser_output = []
-        result, _ = check_cluster_DNS(dns_log, os.path.join(os.path.dirname(__file__), "tmp_dns"), False, diagnoser_output)
+        result, _ = check_cluster_DNS(
+            dns_log,
+            os.path.join(os.path.dirname(__file__), "tmp_dns"),
+            False,
+            diagnoser_output,
+        )
         return result, diagnoser_output
 
     def test_nxdomain_detected(self):
@@ -164,7 +169,9 @@ class TestCheckClusterDNS:
         assert "type=no-servers-reachable" in diag[0]
 
     def test_passed(self):
-        log = "DNS Result: Name: kubernetes.default.svc.cluster.local\nAddress: 10.96.0.1"
+        log = (
+            "DNS Result: Name: kubernetes.default.svc.cluster.local\nAddress: 10.96.0.1"
+        )
         result, diag = self._run(log)
         assert result == "Passed"
         assert diag == []
