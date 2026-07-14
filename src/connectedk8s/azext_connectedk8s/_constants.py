@@ -511,7 +511,7 @@ Entra_Connectivity_Check_Result_String = (
 )
 CRD_Ownership_Check_Failed_String = "Check Failed: CRD"
 AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION = "2.30.0"
-CLIENT_PROXY_VERSION = "1.3.034371"
+CLIENT_PROXY_VERSION = "1.3.034631"
 CLIENT_PROXY_FOLDER = ".clientproxy"
 API_SERVER_PORT = 47011
 CLIENT_PROXY_PORT = 47010
