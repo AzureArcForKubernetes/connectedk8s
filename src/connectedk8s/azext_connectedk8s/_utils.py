@@ -254,6 +254,24 @@ def _collect_clusteridentityoperator_evidence(
     return evidence, classifications
 
 
+def _list_secret_names_metadata_only(corev1_api_instance: CoreV1Api) -> set[str]:
+    secrets_metadata = corev1_api_instance.api_client.call_api(
+        f"/api/v1/namespaces/{consts.Arc_Namespace}/secrets",
+        "GET",
+        auth_settings=["BearerToken"],
+        header_params={
+            "Accept": "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
+        },
+        response_type="object",
+        _return_http_data_only=True,
+    )
+    return {
+        item["metadata"]["name"]
+        for item in secrets_metadata.get("items", [])
+        if item.get("metadata", {}).get("name")
+    }
+
+
 def _resolve_helm_timeout_classification(classifications: set[str]) -> str:
     if "ImagePullFailure" in classifications:
         return "ImagePullFailure"
@@ -417,14 +435,9 @@ def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
             events = []
 
         try:
-            secrets = corev1_api_instance.list_namespaced_secret(
-                consts.Arc_Namespace
-            ).items
-            secret_names: set[str] | None = {
-                secret.metadata.name
-                for secret in secrets
-                if secret.metadata is not None and secret.metadata.name is not None
-            }
+            secret_names: set[str] | None = _list_secret_names_metadata_only(
+                corev1_api_instance
+            )
         except Exception as e:  # pylint: disable=broad-except
             logger.debug(
                 f"Unable to list {consts.Arc_Namespace} secrets after Helm timeout.", exc_info=True
@@ -503,6 +516,7 @@ def append_timeout_diagnostics(
     if helm_operation:
         telemetry_properties["Context.Default.AzureCLI.helmOperation"] = helm_operation
     telemetry.add_extension_event("connectedk8s", telemetry_properties)
+    telemetry.set_error_type(CLIInternalError.__name__)
     if (
         _get_helm_timeout_classification_from_properties(telemetry_properties)
         in HELM_TIMEOUT_USER_FAULT_CLASSIFICATIONS
