@@ -15,9 +15,15 @@ Describe 'Onboarding with Gateway Scenario' {
         do
         {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $gatewayStatus = $jsonOutput.RootElement.GetProperty("gateway").GetProperty("enabled").GetBoolean()
+            if (-not $output) {
+                Write-Host "az connectedk8s show returned no output, retrying..."
+                Start-Sleep -Seconds 30
+                $n += 1
+                continue
+            }
+            $jsonObj = $output | ConvertFrom-Json
+            $provisioningState = $jsonObj.provisioningState
+            $gatewayStatus = if ($jsonObj.gateway) { $jsonObj.gateway.enabled } else { $null }
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Gateway Status: $gatewayStatus"
             if ($provisioningState -eq $SUCCEEDED -and $gatewayStatus -eq $true) {
@@ -39,9 +45,15 @@ Describe 'Onboarding with Gateway Scenario' {
         do
         {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $gatewayStatus = $jsonOutput.RootElement.GetProperty("gateway").GetProperty("enabled").GetBoolean()
+            if (-not $output) {
+                Write-Host "az connectedk8s show returned no output, retrying..."
+                Start-Sleep -Seconds 10
+                $n += 1
+                continue
+            }
+            $jsonObj = $output | ConvertFrom-Json
+            $provisioningState = $jsonObj.provisioningState
+            $gatewayStatus = if ($jsonObj.gateway) { $jsonObj.gateway.enabled } else { $null }
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Gateway Status: $gatewayStatus"
             if ($provisioningState -eq $SUCCEEDED -and $gatewayStatus -eq $false) {
@@ -63,9 +75,15 @@ Describe 'Onboarding with Gateway Scenario' {
         do
         {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $gatewayStatus = $jsonOutput.RootElement.GetProperty("gateway").GetProperty("enabled").GetBoolean()
+            if (-not $output) {
+                Write-Host "az connectedk8s show returned no output, retrying..."
+                Start-Sleep -Seconds 10
+                $n += 1
+                continue
+            }
+            $jsonObj = $output | ConvertFrom-Json
+            $provisioningState = $jsonObj.provisioningState
+            $gatewayStatus = if ($jsonObj.gateway) { $jsonObj.gateway.enabled } else { $null }
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Gateway Status: $gatewayStatus"
             if ($provisioningState -eq $SUCCEEDED -and $gatewayStatus -eq $true) {
@@ -87,9 +105,15 @@ Describe 'Onboarding with Gateway Scenario' {
         do
         {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $gatewayStatus = $jsonOutput.RootElement.GetProperty("gateway").GetProperty("enabled").GetBoolean()
+            if (-not $output) {
+                Write-Host "az connectedk8s show returned no output, retrying..."
+                Start-Sleep -Seconds 10
+                $n += 1
+                continue
+            }
+            $jsonObj = $output | ConvertFrom-Json
+            $provisioningState = $jsonObj.provisioningState
+            $gatewayStatus = if ($jsonObj.gateway) { $jsonObj.gateway.enabled } else { $null }
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Gateway Status: $gatewayStatus"
             if ($provisioningState -eq $SUCCEEDED -and $gatewayStatus -eq $false) {
