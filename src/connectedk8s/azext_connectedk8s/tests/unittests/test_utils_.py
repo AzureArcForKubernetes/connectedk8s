@@ -259,8 +259,9 @@ def test_get_advanced_helm_timeout_fault_type_from_error_message():
     error_message = (
         "context deadline exceeded\n\n"
         "Read-only cluster checks after Helm timeout:\n"
-        "Likely failure classification: ClusterIdentityFailure\n"
-        "Evidence:\n- Secret azure-identity-certificate is not present"
+        "Error code: helm-timeout-cluster-identity-error\n"
+        "Message: Azure Arc agent identity or certificate synchronization did not complete.\n"
+        "Classification: ClusterIdentityFailure"
     )
 
     assert (

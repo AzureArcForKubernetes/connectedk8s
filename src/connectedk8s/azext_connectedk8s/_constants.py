@@ -76,6 +76,30 @@ Helm_Install_Release_Userfault_Messages = [
     "timed out waiting for the condition",
     "connection refused",
 ]
+Helm_Timeout_Messages = (
+    "timed out waiting for the condition",
+    "context deadline exceeded",
+    "deadline exceeded",
+)
+Helm_Timeout_Signal_Classifications = (
+    "ImagePullFailure",
+    "CrashLoopBackOff",
+    "ContainerCreateFailure",
+    "PendingOrUnschedulable",
+    "ClusterResourceOrSchedulingConstraint",
+    "MissingIdentityCertificateSecret",
+    "MissingKubeAadProxyCertificateSecret",
+    "KeyPairOrIdentityCertificateSync",
+)
+Helm_Timeout_Resolved_Classifications = (
+    "GenericHelmTimeout",
+    "ImagePullFailure",
+    "PendingOrUnschedulable",
+    "ClusterIdentityFailure",
+)
+Max_Helm_Timeout_Diagnostic_Evidence = 8
+Max_Helm_Timeout_Event_Evidence = 5
+Cluster_Identity_Operator_Prefix = "clusteridentityoperator"
 Custom_Locations_Provider_Namespace = "Microsoft.ExtendedLocation"
 Connected_Cluster_Provider_Namespace = "Microsoft.Kubernetes"
 Kubernetes_Configuration_Provider_Namespace = "Microsoft.KubernetesConfiguration"

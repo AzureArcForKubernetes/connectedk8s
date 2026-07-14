@@ -64,32 +64,6 @@ logger = get_logger(__name__)
 # Long diagnostic and command strings are kept readable in one place for operator troubleshooting.
 # Some broad exception boundaries are retained to keep best-effort cleanup and telemetry collection.
 
-HELM_TIMEOUT_MESSAGES = (
-    "timed out waiting for the condition",
-    "context deadline exceeded",
-    "deadline exceeded",
-)
-ARC_NAMESPACE = "azure-arc"
-CLUSTER_IDENTITY_OPERATOR_PREFIX = "clusteridentityoperator"
-MAX_TIMEOUT_DIAGNOSTIC_EVIDENCE = 8
-MAX_TIMEOUT_EVENT_EVIDENCE = 5
-MAX_TIMEOUT_LOG_LINES = 20
-HELM_TIMEOUT_SIGNAL_CLASSIFICATIONS = (
-    "ImagePullFailure",
-    "CrashLoopBackOff",
-    "ContainerCreateFailure",
-    "PendingOrUnschedulable",
-    "ClusterResourceOrSchedulingConstraint",
-    "MissingIdentityCertificateSecret",
-    "MissingKubeAadProxyCertificateSecret",
-    "KeyPairOrIdentityCertificateSync",
-)
-HELM_TIMEOUT_RESOLVED_CLASSIFICATIONS = (
-    "GenericHelmTimeout",
-    "ImagePullFailure",
-    "PendingOrUnschedulable",
-    "ClusterIdentityFailure",
-)
 HELM_TIMEOUT_CLASSIFICATION_FAULT_TYPES = {
     "ImagePullFailure": consts.Helm_Timeout_ImagePull_Fault_Type,
     "PendingOrUnschedulable": consts.Helm_Timeout_PendingOrUnschedulable_Fault_Type,
@@ -104,7 +78,9 @@ HELM_TIMEOUT_USER_FAULT_CLASSIFICATIONS = {
 
 def is_helm_timeout_error(error_message: str) -> bool:
     error_message_lower = error_message.lower()
-    return any(message in error_message_lower for message in HELM_TIMEOUT_MESSAGES)
+    return any(
+        message in error_message_lower for message in consts.Helm_Timeout_Messages
+    )
 
 
 def _truncate_timeout_diagnostic_message(message: str, limit: int = 240) -> str:
@@ -188,7 +164,7 @@ def _collect_timeout_diagnostics_from_events(events: list[Any]) -> tuple[list[st
     ]
     warning_events.sort(key=_get_event_timestamp, reverse=True)
 
-    for event in warning_events[:MAX_TIMEOUT_EVENT_EVIDENCE]:
+    for event in warning_events[: consts.Max_Helm_Timeout_Event_Evidence]:
         reason = _get_object_value(event, "reason") or "<unknown>"
         message = _get_object_value(event, "message") or ""
         involved_name = _get_object_value(event, "involved_object", "name") or "<unknown>"
@@ -239,7 +215,7 @@ def _collect_clusteridentityoperator_evidence(
         pod
         for pod in pods
         if str(_get_object_value(pod, "metadata", "name") or "").startswith(
-            CLUSTER_IDENTITY_OPERATOR_PREFIX
+            consts.Cluster_Identity_Operator_Prefix
         )
     ]
 
@@ -250,7 +226,7 @@ def _collect_clusteridentityoperator_evidence(
         classifications.add("MissingIdentityCertificateSecret")
         classifications.add("KeyPairOrIdentityCertificateSync")
         evidence.append(
-            f"Secret {consts.MSI_Certificate_Secret_Name} is not present in namespace {ARC_NAMESPACE}."
+            f"Secret {consts.MSI_Certificate_Secret_Name} is not present in namespace {consts.Arc_Namespace}."
         )
         if not cluster_identity_pods:
             evidence.append("No clusteridentityoperator pod was found in namespace azure-arc.")
@@ -320,7 +296,7 @@ def _build_helm_timeout_telemetry_properties(
     if helm_operation:
         properties["Context.Default.AzureCLI.helmOperation"] = helm_operation
 
-    for classification in HELM_TIMEOUT_RESOLVED_CLASSIFICATIONS:
+    for classification in consts.Helm_Timeout_Resolved_Classifications:
         properties[f"Context.Default.AzureCLI.helmTimeout{classification}"] = str(
             classification == resolved_classification
         ).lower()
@@ -352,6 +328,39 @@ def _set_helm_timeout_classification_exception(
     )
 
 
+def _build_helm_timeout_user_message(classification: str) -> str:
+    fault_type = HELM_TIMEOUT_CLASSIFICATION_FAULT_TYPES.get(
+        classification, consts.Helm_Timeout_Generic_Fault_Type
+    )
+    messages = {
+        "ImagePullFailure": (
+            "Azure Arc agents could not pull one or more required container images. "
+            "Check network connectivity from the cluster nodes, access to MCR "
+            "(mcr.microsoft.com), registry/proxy configuration, and available node disk space."
+        ),
+        "PendingOrUnschedulable": (
+            "Azure Arc agent pods are pending or unschedulable. Check the cluster nodes "
+            "for resource consumption, taints, node selectors, affinity rules, and other "
+            "scheduling constraints."
+        ),
+        "ClusterIdentityFailure": (
+            "Azure Arc agent identity or certificate synchronization did not complete before "
+            "the Helm timeout. This may resolve over time. If it does not, delete the connected "
+            "cluster resource and re-onboard the cluster."
+        ),
+        "GenericHelmTimeout": (
+            "Azure Arc agent installation did not complete before the Helm timeout. Retry "
+            "onboarding or inspect the azure-arc namespace for pods that are not ready."
+        ),
+    }
+    message = messages.get(classification, messages["GenericHelmTimeout"])
+    return (
+        f"Error code: {fault_type}\n"
+        f"Message: {message}\n"
+        f"Classification: {classification}"
+    )
+
+
 def is_advanced_helm_timeout_diagnostics(error_message: str) -> bool:
     return "Read-only cluster checks after Helm timeout:" in error_message
 
@@ -361,7 +370,10 @@ def get_advanced_helm_timeout_fault_type(error_message: str) -> str | None:
         return None
 
     for classification, fault_type in HELM_TIMEOUT_CLASSIFICATION_FAULT_TYPES.items():
-        if f"Likely failure classification: {classification}" in error_message:
+        if (
+            f"Likely failure classification: {classification}" in error_message
+            or f"Classification: {classification}" in error_message
+        ):
             return fault_type
 
     return consts.Helm_Timeout_Generic_Fault_Type
@@ -375,34 +387,40 @@ def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
         diagnostics_status = "Collected"
 
         try:
-            pods = corev1_api_instance.list_namespaced_pod(ARC_NAMESPACE).items
+            pods = corev1_api_instance.list_namespaced_pod(
+                consts.Arc_Namespace
+            ).items
         except Exception as e:  # pylint: disable=broad-except
             logger.debug(
                 "Unable to list azure-arc pods after Helm timeout.", exc_info=True
             )
             diagnostics_status = "Failed"
             return (
-                f"Unable to list pods in namespace {ARC_NAMESPACE}: {e}",
+                f"Unable to list pods in namespace {consts.Arc_Namespace}: {e}",
                 _build_helm_timeout_telemetry_properties(
                     classifications, 0, diagnostics_status, None
                 ),
             )
 
         try:
-            events = corev1_api_instance.list_namespaced_event(ARC_NAMESPACE).items
+            events = corev1_api_instance.list_namespaced_event(
+                consts.Arc_Namespace
+            ).items
         except Exception as e:  # pylint: disable=broad-except
             logger.debug(
                 "Unable to list azure-arc events after Helm timeout.", exc_info=True
             )
             diagnostics_status = "Partial"
             evidence.append(
-                f"Unable to list events in namespace {ARC_NAMESPACE}: "
+                f"Unable to list events in namespace {consts.Arc_Namespace}: "
                 + _truncate_timeout_diagnostic_message(str(e))
             )
             events = []
 
         try:
-            secrets = corev1_api_instance.list_namespaced_secret(ARC_NAMESPACE).items
+            secrets = corev1_api_instance.list_namespaced_secret(
+                consts.Arc_Namespace
+            ).items
             secret_names: set[str] | None = {
                 secret.metadata.name
                 for secret in secrets
@@ -414,7 +432,7 @@ def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
             )
             diagnostics_status = "Partial"
             evidence.append(
-                f"Unable to list secret metadata in namespace {ARC_NAMESPACE}: "
+                f"Unable to list secret metadata in namespace {consts.Arc_Namespace}: "
                 + _truncate_timeout_diagnostic_message(str(e))
             )
             secret_names = None
@@ -437,29 +455,28 @@ def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
         classifications.update(event_classifications)
         classifications.update(identity_classifications)
 
-        if not evidence:
-            result = (
-                "No pod wait reasons, warning events, or missing identity certificate "
-                "signals were found in namespace azure-arc."
+        resolved_classification = _resolve_helm_timeout_classification(classifications)
+        if evidence:
+            evidence_summary = "\n".join(
+                evidence[: consts.Max_Helm_Timeout_Diagnostic_Evidence]
             )
-            return (
-                result,
-                _build_helm_timeout_telemetry_properties(
-                    classifications, 0, diagnostics_status, None
-                ),
+            omitted_count = len(evidence) - consts.Max_Helm_Timeout_Diagnostic_Evidence
+            if omitted_count > 0:
+                evidence_summary += f"\n... {omitted_count} additional signal(s) omitted."
+            logger.debug(
+                "Read-only cluster checks after Helm timeout classified as %s. Evidence:\n%s",
+                resolved_classification,
+                evidence_summary,
+            )
+        else:
+            logger.debug(
+                "Read-only cluster checks after Helm timeout classified as %s. "
+                "No pod wait reasons, warning events, or missing identity certificate "
+                "signals were found in namespace azure-arc.",
+                resolved_classification,
             )
 
-        result = "Likely failure classification: " + _resolve_helm_timeout_classification(
-            classifications
-        )
-        result += "\nEvidence:"
-        for item in evidence[:MAX_TIMEOUT_DIAGNOSTIC_EVIDENCE]:
-            result += f"\n- {item}"
-        if len(evidence) > MAX_TIMEOUT_DIAGNOSTIC_EVIDENCE:
-            result += (
-                f"\n- ... {len(evidence) - MAX_TIMEOUT_DIAGNOSTIC_EVIDENCE} "
-                "additional signal(s) omitted."
-            )
+        result = _build_helm_timeout_user_message(resolved_classification)
         return (
             result,
             _build_helm_timeout_telemetry_properties(
