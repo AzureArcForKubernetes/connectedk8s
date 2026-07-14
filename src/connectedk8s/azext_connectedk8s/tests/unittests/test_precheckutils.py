@@ -97,7 +97,9 @@ class TestSendJobExecutionErrorTelemetry:
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_sends_event_with_correct_error_type(self, mock_telemetry):
-        precheckutils.prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
+        precheckutils.prediagnostic_job_execution_status = (
+            consts.Job_Status_Execution_Failed
+        )
         precheckutils.send_prediagnostic_job_execution_error_telemetry()
 
         mock_telemetry.add_extension_event.assert_called_once()
@@ -111,7 +113,9 @@ class TestSendJobExecutionErrorTelemetry:
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_includes_job_execution_status(self, mock_telemetry):
-        precheckutils.prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
+        precheckutils.prediagnostic_job_execution_status = (
+            consts.Job_Status_Execution_Failed
+        )
         precheckutils.send_prediagnostic_job_execution_error_telemetry()
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
@@ -120,7 +124,9 @@ class TestSendJobExecutionErrorTelemetry:
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_includes_reason_when_provided(self, mock_telemetry):
-        precheckutils.prediagnostic_job_execution_status = consts.Job_Status_Not_Completed
+        precheckutils.prediagnostic_job_execution_status = (
+            consts.Job_Status_Not_Completed
+        )
         precheckutils.send_prediagnostic_job_execution_error_telemetry(
             reason="ImagePullBackOff"
         )
@@ -183,7 +189,10 @@ class TestSendCheckFailureTelemetry:
         # msg is a list of component entries
         components = {entry["componentName"]: entry for entry in msg}
         assert components["dns"]["checkResult"] == consts.Diagnostic_Check_Passed
-        assert components["outboundConnectivity"]["checkResult"] == consts.Diagnostic_Check_Failed
+        assert (
+            components["outboundConnectivity"]["checkResult"]
+            == consts.Diagnostic_Check_Failed
+        )
         assert components["entra"]["checkResult"] == consts.Diagnostic_Check_Failed
         assert components["crd"]["checkResult"] == consts.Diagnostic_Check_Passed
 
@@ -372,11 +381,7 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
 
         assert mock_telemetry.add_extension_event.call_count == 2
         calls = mock_telemetry.add_extension_event.call_args_list
-        msg1 = json.loads(
-            calls[0][0][1][consts.Telemetry_Onboarding_Error_Message_Key]
-        )
-        msg2 = json.loads(
-            calls[1][0][1][consts.Telemetry_Onboarding_Error_Message_Key]
-        )
+        msg1 = json.loads(calls[0][0][1][consts.Telemetry_Onboarding_Error_Message_Key])
+        msg2 = json.loads(calls[1][0][1][consts.Telemetry_Onboarding_Error_Message_Key])
         assert msg1["checkName"] == "LinuxNodeExists"
         assert msg2["checkName"] == "ClusterRoleBindings"
