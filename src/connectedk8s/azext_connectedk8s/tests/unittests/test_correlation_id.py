@@ -28,7 +28,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # sys.path is managed by conftest.py
-
 import azext_connectedk8s._constants as consts
 from azext_connectedk8s._utils import ensure_correlation_id
 from azext_connectedk8s.clientproxyhelper._proxylogic import (

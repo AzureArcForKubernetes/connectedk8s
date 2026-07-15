@@ -7,10 +7,11 @@
 Module stubs are installed centrally by conftest.py so that test-file
 discovery order no longer causes flaky import failures.
 """
+
 import sys
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock
 
 # Ensure _utils is imported as the *real* module, not a leftover MagicMock
 # from another test file's stub list.  conftest.py stubs azext_connectedk8s._utils
@@ -20,7 +21,6 @@ if isinstance(_utils_mod, MagicMock):
     sys.modules.pop("azext_connectedk8s._utils", None)
 
 from azext_connectedk8s._utils import (  # noqa: E402
-    check_cluster_DNS,
     get_mcr_path,
     process_helm_error_detail,
     redact_sensitive_fields_from_string,

@@ -6,6 +6,7 @@
 
 Module stubs are installed centrally by conftest.py.
 """
+
 from typing import Dict, Optional
 
 import pytest
