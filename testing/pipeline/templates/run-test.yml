@@ -135,6 +135,21 @@ jobs:
       env:
         HELM_CLIENT_PATH: $(HELM_CLIENT_PATH)
 
+  - task: AzureCLI@2
+    displayName: Cleanup test cluster
+    condition: always()
+    inputs:
+      azureSubscription: AzureResourceConnection
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        $settings = Get-Content $(TEST_PATH)/settings.json -ErrorAction SilentlyContinue | ConvertFrom-Json
+        if ($settings.arcClusterName) {
+          Write-Host "Deleting cluster $($settings.arcClusterName)..."
+          az connectedk8s delete -n $settings.arcClusterName -g $settings.resourceGroup --force -y
+        }
+      workingDirectory: $(TEST_PATH)
+
   - task: PublishTestResults@2
     inputs:
       testResultsFormat: 'JUnit'
