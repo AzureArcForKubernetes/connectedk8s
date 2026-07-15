@@ -21,16 +21,13 @@ Covers:
 These are pure unit tests: no Azure, no live cluster, no recordings.
 """
 
-import os
 import re
-import sys
 import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-
+# sys.path is managed by conftest.py
 import azext_connectedk8s._constants as consts
 from azext_connectedk8s._utils import ensure_correlation_id
 from azext_connectedk8s.clientproxyhelper._proxylogic import (

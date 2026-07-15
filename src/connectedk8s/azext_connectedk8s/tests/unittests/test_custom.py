@@ -2,14 +2,16 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
-import os
-import sys
+"""Unit tests for custom.py helper functions.
+
+Module stubs are installed centrally by conftest.py.
+"""
+
 from typing import Dict, Optional
 
 import pytest
 from kubernetes.client.models import V1Node, V1NodeList, V1NodeSpec, V1ObjectMeta
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from azext_connectedk8s.custom import get_kubernetes_distro, get_kubernetes_infra
 
 

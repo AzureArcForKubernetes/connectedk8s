@@ -19,9 +19,19 @@ Describe 'ConnectedK8s Enable Disable Features Scenario' {
             $n = 0
             do {
                 $output = Invoke-AzCommand "az connectedk8s show -n $($ENVCONFIG.arcClusterName) -g $($ENVCONFIG.resourceGroup)"
-                $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-                $provisioningState = ($output | ConvertFrom-Json).provisioningState
-                $autoUpdate = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentAutoUpgrade").GetString()
+                if (-not $output) {
+                    Write-Host "az connectedk8s show returned no output, retrying..."
+                    Start-Sleep -Seconds 10
+                    $n += 1
+                    continue
+                }
+                $jsonObj = $output | ConvertFrom-Json
+                $provisioningState = $jsonObj.provisioningState
+                $autoUpdate = if ($jsonObj.arcAgentProfile -and $jsonObj.arcAgentProfile.agentAutoUpgrade) {
+                    $jsonObj.arcAgentProfile.agentAutoUpgrade
+                } else {
+                    $null
+                }
                 Write-Host "Provisioning State: $provisioningState"
                 Write-Host "Auto Update: $autoUpdate"
                 if ($provisioningState -eq $expectedProvisioningState -and $autoUpdate -eq $expectedAutoUpdate) {

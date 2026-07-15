@@ -13,13 +13,19 @@ Describe 'Onboarding with Workload Identity Scenario' {
         do 
         {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $securityProfile = $jsonOutput.RootElement.GetProperty("securityProfile").GetProperty("workloadIdentity").GetProperty("enabled").GetBoolean()
-            $oidcIssuerProfile = $jsonOutput.RootElement.GetProperty("oidcIssuerProfile").GetProperty("enabled").GetBoolean()
-            $issuerUrl = $jsonOutput.RootElement.GetProperty("oidcIssuerProfile").GetProperty("issuerUrl").GetString()
-            $selfHostedIssuerUrl = $jsonOutput.RootElement.GetProperty("oidcIssuerProfile").GetProperty("selfHostedIssuerUrl").GetString() 
-            $agentState = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentState").GetString()
+            if (-not $output) {
+                Write-Host "az connectedk8s show returned no output, retrying..."
+                Start-Sleep -Seconds 10
+                $n += 1
+                continue
+            }
+            $jsonObj = $output | ConvertFrom-Json
+            $provisioningState = $jsonObj.provisioningState
+            $securityProfile = if ($jsonObj.securityProfile -and $jsonObj.securityProfile.workloadIdentity) { $jsonObj.securityProfile.workloadIdentity.enabled } else { $null }
+            $oidcIssuerProfile = if ($jsonObj.oidcIssuerProfile) { $jsonObj.oidcIssuerProfile.enabled } else { $null }
+            $issuerUrl = if ($jsonObj.oidcIssuerProfile) { $jsonObj.oidcIssuerProfile.issuerUrl } else { $null }
+            $selfHostedIssuerUrl = if ($jsonObj.oidcIssuerProfile) { $jsonObj.oidcIssuerProfile.selfHostedIssuerUrl } else { $null }
+            $agentState = if ($jsonObj.arcAgentProfile) { $jsonObj.arcAgentProfile.agentState } else { $null }
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Security Profile Status: $securityProfile"
             Write-Host "OIDC Issuer Profile Status: $oidcIssuerProfile"
@@ -53,10 +59,16 @@ Describe 'Onboarding with Workload Identity Scenario' {
         do 
         {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $securityProfile = $jsonOutput.RootElement.GetProperty("securityProfile").GetProperty("workloadIdentity").GetProperty("enabled").GetBoolean()
-            $agentState = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentState").GetString()
+            if (-not $output) {
+                Write-Host "az connectedk8s show returned no output, retrying..."
+                Start-Sleep -Seconds 10
+                $n += 1
+                continue
+            }
+            $jsonObj = $output | ConvertFrom-Json
+            $provisioningState = $jsonObj.provisioningState
+            $securityProfile = if ($jsonObj.securityProfile -and $jsonObj.securityProfile.workloadIdentity) { $jsonObj.securityProfile.workloadIdentity.enabled } else { $null }
+            $agentState = if ($jsonObj.arcAgentProfile) { $jsonObj.arcAgentProfile.agentState } else { $null }
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Security Profile Status: $securityProfile"
             Write-Host "Agent State: $agentState"
@@ -79,10 +91,16 @@ Describe 'Onboarding with Workload Identity Scenario' {
         do 
         {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $securityProfile = $jsonOutput.RootElement.GetProperty("securityProfile").GetProperty("workloadIdentity").GetProperty("enabled").GetBoolean()
-            $agentState = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentState").GetString()
+            if (-not $output) {
+                Write-Host "az connectedk8s show returned no output, retrying..."
+                Start-Sleep -Seconds 10
+                $n += 1
+                continue
+            }
+            $jsonObj = $output | ConvertFrom-Json
+            $provisioningState = $jsonObj.provisioningState
+            $securityProfile = if ($jsonObj.securityProfile -and $jsonObj.securityProfile.workloadIdentity) { $jsonObj.securityProfile.workloadIdentity.enabled } else { $null }
+            $agentState = if ($jsonObj.arcAgentProfile) { $jsonObj.arcAgentProfile.agentState } else { $null }
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Security Profile Status: $securityProfile"
             Write-Host "Agent State: $agentState"
@@ -146,13 +164,19 @@ Describe 'Updating with Workload Identity Scenario' {
         do 
         {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $securityProfile = $jsonOutput.RootElement.GetProperty("securityProfile").GetProperty("workloadIdentity").GetProperty("enabled").GetBoolean()
-            $oidcIssuerProfile = $jsonOutput.RootElement.GetProperty("oidcIssuerProfile").GetProperty("enabled").GetBoolean()
-            $issuerUrl = $jsonOutput.RootElement.GetProperty("oidcIssuerProfile").GetProperty("issuerUrl").GetString()
-            $selfHostedIssuerUrl = $jsonOutput.RootElement.GetProperty("oidcIssuerProfile").GetProperty("selfHostedIssuerUrl").GetString() 
-            $agentState = $jsonOutput.RootElement.GetProperty("arcAgentProfile").GetProperty("agentState").GetString()
+            if (-not $output) {
+                Write-Host "az connectedk8s show returned no output, retrying..."
+                Start-Sleep -Seconds 10
+                $n += 1
+                continue
+            }
+            $jsonObj = $output | ConvertFrom-Json
+            $provisioningState = $jsonObj.provisioningState
+            $securityProfile = if ($jsonObj.securityProfile -and $jsonObj.securityProfile.workloadIdentity) { $jsonObj.securityProfile.workloadIdentity.enabled } else { $null }
+            $oidcIssuerProfile = if ($jsonObj.oidcIssuerProfile) { $jsonObj.oidcIssuerProfile.enabled } else { $null }
+            $issuerUrl = if ($jsonObj.oidcIssuerProfile) { $jsonObj.oidcIssuerProfile.issuerUrl } else { $null }
+            $selfHostedIssuerUrl = if ($jsonObj.oidcIssuerProfile) { $jsonObj.oidcIssuerProfile.selfHostedIssuerUrl } else { $null }
+            $agentState = if ($jsonObj.arcAgentProfile) { $jsonObj.arcAgentProfile.agentState } else { $null }
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "Security Profile Status: $securityProfile"
             Write-Host "OIDC Issuer Profile Status: $oidcIssuerProfile"
@@ -204,11 +228,17 @@ Describe 'Creating with Workload Identity Scenario and Self Hosted Issuer' {
         do 
         {
             $output = az connectedk8s show -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup
-            $jsonOutput = [System.Text.Json.JsonDocument]::Parse($output)
-            $provisioningState = ($output | ConvertFrom-Json).provisioningState
-            $oidcIssuerProfile = $jsonOutput.RootElement.GetProperty("oidcIssuerProfile").GetProperty("enabled").GetBoolean()
-            $issuerUrl = $jsonOutput.RootElement.GetProperty("oidcIssuerProfile").GetProperty("issuerUrl").GetString() 
-            $selfHostedIssuerUrl = $jsonOutput.RootElement.GetProperty("oidcIssuerProfile").GetProperty("selfHostedIssuerUrl").GetString() 
+            if (-not $output) {
+                Write-Host "az connectedk8s show returned no output, retrying..."
+                Start-Sleep -Seconds 10
+                $n += 1
+                continue
+            }
+            $jsonObj = $output | ConvertFrom-Json
+            $provisioningState = $jsonObj.provisioningState
+            $oidcIssuerProfile = if ($jsonObj.oidcIssuerProfile) { $jsonObj.oidcIssuerProfile.enabled } else { $null }
+            $issuerUrl = if ($jsonObj.oidcIssuerProfile) { $jsonObj.oidcIssuerProfile.issuerUrl } else { $null }
+            $selfHostedIssuerUrl = if ($jsonObj.oidcIssuerProfile) { $jsonObj.oidcIssuerProfile.selfHostedIssuerUrl } else { $null } 
             Write-Host "Provisioning State: $provisioningState"
             Write-Host "OIDC Issuer Profile Status: $oidcIssuerProfile"
             Write-Host "Issuer Url: $issuerUrl"

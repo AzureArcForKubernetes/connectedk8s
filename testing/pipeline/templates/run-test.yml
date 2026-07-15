@@ -109,6 +109,18 @@ jobs:
     ${{ if eq(parameters.useHelm4, true) }}:
       env:
         HELM_CLIENT_PATH: $(HELM_CLIENT_PATH)
+
+  - task: AzureCLI@2
+    displayName: Cleanup stale test clusters
+    inputs:
+      azureSubscription: AzureResourceConnection
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        .\Cleanup.ps1 -MaxAgeHours 2
+      workingDirectory: $(TEST_PATH)
+    continueOnError: true
+
   - task: AzureCLI@2
     displayName: Run the Test Suite for ${{ parameters.path }}
     inputs:
@@ -122,6 +134,21 @@ jobs:
     ${{ if eq(parameters.useHelm4, true) }}:
       env:
         HELM_CLIENT_PATH: $(HELM_CLIENT_PATH)
+
+  - task: AzureCLI@2
+    displayName: Cleanup test cluster
+    condition: always()
+    inputs:
+      azureSubscription: AzureResourceConnection
+      scriptType: pscore
+      scriptLocation: inlineScript
+      inlineScript: |
+        $settings = Get-Content $(TEST_PATH)/settings.json -ErrorAction SilentlyContinue | ConvertFrom-Json
+        if ($settings.arcClusterName) {
+          Write-Host "Deleting cluster $($settings.arcClusterName)..."
+          az connectedk8s delete -n $settings.arcClusterName -g $settings.resourceGroup --force -y
+        }
+      workingDirectory: $(TEST_PATH)
 
   - task: PublishTestResults@2
     inputs:
