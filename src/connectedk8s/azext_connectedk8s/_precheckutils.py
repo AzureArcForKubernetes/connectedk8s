@@ -283,15 +283,6 @@ def send_prediagnostic_check_failure_telemetry(
 
     _send_onboarding_telemetry_event(fault_type, summary)
 
-    # Emit individual set_exception per failed check for granular ADX filtering
-    for comp in components:
-        if comp["checkResult"] == consts.Diagnostic_Check_Failed:
-            check_name = comp["componentName"]
-            error_msg = comp.get("error", "check failed without captured error line")
-            check_fault_type = f"prediagnostics-{check_name}-fail"
-            check_summary = f"{check_name} check failed: {error_msg[:500]}"
-            _send_onboarding_telemetry_event(check_fault_type, check_summary)
-
 
 def send_post_diagnostic_precheck_failure_telemetry(
     check_name: str, reason: str
