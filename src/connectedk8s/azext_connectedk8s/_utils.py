@@ -339,7 +339,7 @@ def _set_helm_timeout_classification_exception(
     if not fault_type:
         return
     telemetry.set_exception(
-        exception=diagnostics,
+        exception=Exception(diagnostics),
         fault_type=fault_type,
         summary=f"Helm timeout classified as {classification}",
     )
