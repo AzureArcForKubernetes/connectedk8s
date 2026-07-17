@@ -572,8 +572,8 @@ def create_connectedk8s(
                     "location."
                 )
                 raise ArgumentUsageError(err_msg)
-        except ArgumentUsageError as argex:
-            raise argex from argex
+        except ArgumentUsageError:
+            raise
         except Exception as ex:
             if (
                 isinstance(ex, HttpResponseError)
