@@ -163,6 +163,25 @@ def resource_providers_client(
     ).providers
     return providers
 
+
+def _feature_client_factory(cli_ctx: AzCli, subscription_id: str | None = None) -> Any:
+    access_token = os.getenv(consts.Azure_Access_Token_Variable)
+    if access_token is not None:
+        credential = AccessTokenCredential(access_token=access_token)
+        return get_mgmt_service_client(
+            cli_ctx,
+            ResourceType.MGMT_RESOURCE_FEATURES,
+            subscription_id=subscription_id,
+            credential=credential,
+        )
+    return get_mgmt_service_client(
+        cli_ctx, ResourceType.MGMT_RESOURCE_FEATURES, subscription_id=subscription_id
+    )
+
+
+def resource_features_client(cli_ctx: AzCli, subscription_id: str | None = None) -> Any:
+    return _feature_client_factory(cli_ctx, subscription_id).features
+
     # Alternate: This should also work
     # subscription_id = get_subscription_id(cli_ctx)
     # return get_mgmt_service_client(cli_ctx, ResourceType.MGMT_RESOURCE_RESOURCES,

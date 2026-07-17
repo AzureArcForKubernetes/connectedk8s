@@ -291,6 +291,9 @@ def create_connectedk8s(
     config_dp_endpoint, release_train = get_config_dp_endpoint(
         cmd, location, values_file, arm_metadata
     )
+    config_dp_endpoint_override = get_staging_config_dp_endpoint_override(
+        cmd, location, subscription_id
+    )
 
     # Loading the kubeconfig file in kubernetes client configuration
     load_kube_config(kube_config, kube_context, skip_ssl_verification)
@@ -1069,6 +1072,7 @@ def create_connectedk8s(
         registry_path,
         aad_identity_principal_id,
         onboarding_timeout,
+        config_dp_endpoint_override,
     )
 
     # Long Running Operation for Agent State
@@ -1603,6 +1607,36 @@ def get_default_config_dp_endpoint(cmd: CLICommand, location: str) -> str:
         f"https://{location}.dp.kubernetesconfiguration.azure.{cloud_based_domain}"
     )
     return config_dp_endpoint
+
+
+def get_staging_config_dp_endpoint(cmd: CLICommand, location: str) -> str:
+    # Regional staging DP host, e.g. westus2 -> westus2stg.dp.kubernetesconfiguration.azure.<domain>
+    default_config_dp_endpoint = get_default_config_dp_endpoint(cmd, location)
+    return default_config_dp_endpoint.replace(
+        f"https://{location}.dp.",
+        f"https://{location}{consts.Staging_Config_Dp_Region_Suffix}.dp.",
+        1,
+    )
+
+
+def get_staging_config_dp_endpoint_override(
+    cmd: CLICommand, location: str, subscription_id: str
+) -> str | None:
+    # Only westus2 has a staging extension DP today, and only subscriptions with the
+    # Microsoft.KubernetesConfiguration/Staging AFEC feature registered should use it.
+    if not location or location.lower() != consts.Staging_Supported_Location:
+        return None
+    if not utils.is_staging_feature_registered(cmd.cli_ctx, subscription_id):
+        return None
+    staging_endpoint = get_staging_config_dp_endpoint(cmd, location)
+    logger.warning(
+        "Subscription has the '%s/%s' feature registered; routing the config agent "
+        "data-plane endpoint to the staging extension DP: %s",
+        consts.Kubernetes_Configuration_Provider_Namespace,
+        consts.Staging_Feature_Name,
+        staging_endpoint,
+    )
+    return staging_endpoint
 
 
 def get_config_dp_endpoint(

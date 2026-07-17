@@ -86,3 +86,67 @@ def test_distro_invalid_metadata():
     node = create_node(provider_id="aws://node1", labels=None, annotations=None)
     api_response = V1NodeList(items=[node])
     assert get_kubernetes_distro(api_response) == "generic"
+
+
+class _FakeEndpoints:
+    def __init__(self, active_directory):
+        self.active_directory = active_directory
+
+
+class _FakeCloud:
+    def __init__(self, active_directory):
+        self.endpoints = _FakeEndpoints(active_directory)
+
+
+class _FakeCliCtx:
+    def __init__(self, active_directory="https://login.microsoftonline.com"):
+        self.cloud = _FakeCloud(active_directory)
+
+
+class _FakeCmd:
+    def __init__(self, active_directory="https://login.microsoftonline.com"):
+        self.cli_ctx = _FakeCliCtx(active_directory)
+
+
+def test_get_staging_config_dp_endpoint_public_cloud():
+    from azext_connectedk8s.custom import get_staging_config_dp_endpoint
+
+    cmd = _FakeCmd()
+    assert (
+        get_staging_config_dp_endpoint(cmd, "westus2")
+        == "https://westus2stg.dp.kubernetesconfiguration.azure.com"
+    )
+
+
+def test_get_staging_config_dp_endpoint_override_registered(monkeypatch):
+    from azext_connectedk8s import custom
+
+    monkeypatch.setattr(
+        custom.utils, "is_staging_feature_registered", lambda cli_ctx, sub: True
+    )
+    cmd = _FakeCmd()
+    assert (
+        custom.get_staging_config_dp_endpoint_override(cmd, "westus2", "sub-id")
+        == "https://westus2stg.dp.kubernetesconfiguration.azure.com"
+    )
+
+
+def test_get_staging_config_dp_endpoint_override_wrong_region(monkeypatch):
+    from azext_connectedk8s import custom
+
+    # Feature registered, but region is not the supported staging region -> no override.
+    monkeypatch.setattr(
+        custom.utils, "is_staging_feature_registered", lambda cli_ctx, sub: True
+    )
+    cmd = _FakeCmd()
+    assert custom.get_staging_config_dp_endpoint_override(cmd, "eastus", "sub-id") is None
+
+
+def test_get_staging_config_dp_endpoint_override_not_registered(monkeypatch):
+    from azext_connectedk8s import custom
+
+    monkeypatch.setattr(
+        custom.utils, "is_staging_feature_registered", lambda cli_ctx, sub: False
+    )
+    cmd = _FakeCmd()
+    assert custom.get_staging_config_dp_endpoint_override(cmd, "westus2", "sub-id") is None

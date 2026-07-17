@@ -40,6 +40,7 @@ from packaging import version
 import azext_connectedk8s._constants as consts
 from azext_connectedk8s._client_factory import (
     cf_resource_groups,
+    resource_features_client,
     resource_providers_client,
 )
 
@@ -1311,6 +1312,7 @@ def helm_install_release(
     registry_path: str,
     aad_identity_principal_id: str | None,
     onboarding_timeout: str = consts.DEFAULT_MAX_ONBOARDING_TIMEOUT_HELMVALUE_SECONDS,
+    config_dp_endpoint_override: str | None = None,
 ) -> None:
     cmd_helm_install = [
         helm_client_location,
@@ -1391,6 +1393,18 @@ def helm_install_release(
     # Add overrides for AGC Scenario
     if cloud_name.lower() == "ussec" or cloud_name.lower() == "usnat":
         add_agc_endpoint_overrides(location, cloud_name, arm_metadata, cmd_helm_install)
+
+    # Override the config agent's data-plane endpoint (staging routing). Set before the DP
+    # helmValues content so a DP-provided value can still override it, consistent with the
+    # other config_dp_endpoint_override paths above.
+    if config_dp_endpoint_override:
+        cmd_helm_install.extend(
+            [
+                "--set",
+                "systemDefaultValues.azureArcAgents.config_dp_endpoint_override="
+                f"{config_dp_endpoint_override}",
+            ]
+        )
 
     # Add helmValues content response from DP
     cmd_helm_install = parse_helm_values(helm_content_values, cmd_helm=cmd_helm_install)
@@ -1625,6 +1639,32 @@ def is_guid(guid: str) -> bool:
         uuid.UUID(guid)
         return True
     except ValueError:
+        return False
+
+
+def is_staging_feature_registered(cli_ctx: AzCli, subscription_id: str) -> bool:
+    """Return True when the AFEC feature Microsoft.KubernetesConfiguration/Staging is
+    registered on the subscription. Used to route the config agent's data-plane traffic
+    to the regional staging extension DP. Any failure to read the feature (e.g. missing
+    permissions or a transient ARM error) is treated as "not registered" so onboarding
+    falls back to the production data-plane endpoint rather than failing.
+    """
+    try:
+        features = resource_features_client(cli_ctx, subscription_id)
+        feature = features.get(
+            consts.Kubernetes_Configuration_Provider_Namespace,
+            consts.Staging_Feature_Name,
+        )
+        state = getattr(getattr(feature, "properties", None), "state", None)
+        return state == consts.Staging_Feature_Registered_State
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug(
+            "Could not read the '%s/%s' feature registration; "
+            "defaulting to the production config data-plane endpoint. Error: %s",
+            consts.Kubernetes_Configuration_Provider_Namespace,
+            consts.Staging_Feature_Name,
+            str(e),
+        )
         return False
 
 
