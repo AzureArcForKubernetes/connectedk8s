@@ -1720,8 +1720,8 @@ def check_provider_registrations(
                     "HybridCompute' before running the connect command."
                 )
                 raise ValidationError(err_msg)
-    except ValidationError as e:
-        raise e from e
+    except ValidationError:
+        raise
     except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Couldn't check the required provider's registration status")
 
