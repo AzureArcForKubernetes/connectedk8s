@@ -80,6 +80,16 @@ Custom_Locations_Provider_Namespace = "Microsoft.ExtendedLocation"
 Connected_Cluster_Provider_Namespace = "Microsoft.Kubernetes"
 Kubernetes_Configuration_Provider_Namespace = "Microsoft.KubernetesConfiguration"
 Hybrid_Compute_Provider_Namespace = "Microsoft.HybridCompute"
+
+# Staging config data-plane routing. When the subscription has the AFEC feature
+# "Microsoft.KubernetesConfiguration/Staging" registered and the cluster is being
+# onboarded in the supported staging region, the config agent's data-plane endpoint
+# is overridden to the regional staging DP (e.g. westus2 -> westus2stg.dp...), so
+# extension operations flow through the staging extension DP.
+Staging_Feature_Name = "Staging"
+Staging_Feature_Registered_State = "Registered"
+Staging_Supported_Location = "westus2"
+Staging_Config_Dp_Region_Suffix = "stg"
 Arc_Namespace = "azure-arc"
 Azure_PublicCloudName = "AZUREPUBLICCLOUD"
 Azure_USGovCloudName = "AZUREUSGOVERNMENTCLOUD"

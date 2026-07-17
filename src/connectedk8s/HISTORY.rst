@@ -2,6 +2,10 @@
 
 Release History
 ===============
+1.10.14
++++++++
+* Route the config agent data-plane endpoint to the regional staging extension DP (e.g. ``westus2stg``) during ``az connectedk8s connect`` when the subscription has the ``Microsoft.KubernetesConfiguration/Staging`` AFEC feature registered and the cluster is onboarded in ``westus2``.
+
 1.10.13
 +++++++
 * Propagate ``x-ms-correlation-request-id`` end-to-end for ``az connectedk8s proxy``: mint one uuid per session, stamp it on the outbound ARM call (echoed back by ARM) and thread it into every localhost call to arcProxy so the entire session (ARM → arcProxy → Relay → ConnectedProxyAgent) shares one id in logs and Geneva.
