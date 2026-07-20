@@ -6,6 +6,9 @@
 
 # pylint: disable=line-too-long
 
+Connected_Cluster_Arm_Id_Telemetry_Context_Key = "connectedk8s_arm_id"
+Connected_Cluster_Arm_Id_Telemetry_Property = "Context.Default.AzureCLI.resourceid"
+
 Distribution_Enum_Values = [
     "generic",
     "openshift",
