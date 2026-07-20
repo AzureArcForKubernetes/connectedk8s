@@ -550,6 +550,48 @@ def append_timeout_diagnostics(
     )
 
 
+def build_connected_cluster_arm_id(
+    subscription_id: str, resource_group_name: str, cluster_name: str
+) -> str:
+    return (
+        f"/subscriptions/{subscription_id}"
+        f"/resourceGroups/{resource_group_name}"
+        f"/providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}"
+    )
+
+
+def set_connected_cluster_arm_id_telemetry_context(
+    cmd: Any,
+    resource_group_name: str,
+    cluster_name: str,
+    subscription_id: str | None = None,
+) -> str:
+    subscription_id = subscription_id or get_subscription_id(cmd.cli_ctx)
+    arm_id = build_connected_cluster_arm_id(
+        subscription_id, resource_group_name, cluster_name
+    )
+    cmd.cli_ctx.data[consts.Connected_Cluster_Arm_Id_Telemetry_Context_Key] = arm_id
+    telemetry.set_debug_info(
+        consts.Connected_Cluster_Arm_Id_Telemetry_Property, arm_id
+    )
+    return arm_id
+
+
+def add_connectedk8s_telemetry_event(
+    cmd: Any | None, properties: dict[str, Any]
+) -> None:
+    event_properties = properties.copy()
+    if cmd is not None:
+        arm_id = cmd.cli_ctx.data.get(
+            consts.Connected_Cluster_Arm_Id_Telemetry_Context_Key
+        )
+        if arm_id:
+            event_properties[consts.Connected_Cluster_Arm_Id_Telemetry_Property] = (
+                arm_id
+            )
+    telemetry.add_extension_event("connectedk8s", event_properties)
+
+
 def ensure_correlation_id(cmd: CLICommand, log_prefix: str = "connectedk8s") -> str:
     """Ensure ``x-ms-correlation-request-id`` is present for this command session."""
     headers = cmd.cli_ctx.data.setdefault("headers", {})
@@ -1915,6 +1957,7 @@ def helm_install_release(
     registry_path: str,
     aad_identity_principal_id: str | None,
     onboarding_timeout: str = consts.DEFAULT_MAX_ONBOARDING_TIMEOUT_HELMVALUE_SECONDS,
+    cmd: Any | None = None,
 ) -> None:
     cmd_helm_install = [
         helm_client_location,
@@ -2043,9 +2086,7 @@ def helm_install_release(
             consts.Telemetry_Onboarding_Error_Type_Key: onboarding_error_type,
             consts.Telemetry_Onboarding_Error_Message_Key: helm_install_error_message,
         }
-        # Replace the existing calls with the new function
-
-        telemetry.add_extension_event("connectedk8s", helm_error_detail)
+        add_connectedk8s_telemetry_event(cmd, helm_error_detail)
         if not is_advanced_helm_timeout_diagnostics(helm_install_error_message):
             if any(
                 message in helm_install_error_message
