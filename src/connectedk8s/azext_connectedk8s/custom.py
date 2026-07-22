@@ -205,13 +205,8 @@ def create_connectedk8s(
         if custom_token_passed is True
         else get_subscription_id(cmd.cli_ctx)
     )
-
-    resource_id = (
-        f"/subscriptions/{subscription_id}/resourcegroups/{resource_group_name}/providers/Microsoft.\
-        Kubernetes/connectedClusters/{cluster_name}/location/{location}"
-    )
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.resourceid": resource_id}
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name, subscription_id
     )
 
     # Send cloud information to telemetry
@@ -529,7 +524,7 @@ def create_connectedk8s(
         "Context.Default.AzureCLI.KubernetesDistro": kubernetes_distro,
         "Context.Default.AzureCLI.KubernetesInfra": kubernetes_infra,
     }
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Checking if it is an AKS cluster
     is_aks_cluster = check_aks_cluster(kube_config, kube_context)
@@ -757,8 +752,8 @@ def create_connectedk8s(
 
                 # Get azure-arc agent version for telemetry
                 azure_arc_agent_version = registry_path.split(":")[1]
-                telemetry.add_extension_event(
-                    "connectedk8s",
+                utils.add_connectedk8s_telemetry_event(
+                    cmd,
                     {"Context.Default.AzureCLI.AgentVersion": azure_arc_agent_version},
                 )
 
@@ -1029,8 +1024,8 @@ def create_connectedk8s(
 
     # Get azure-arc agent version for telemetry
     azure_arc_agent_version = registry_path.split(":")[1]
-    telemetry.add_extension_event(
-        "connectedk8s",
+    utils.add_connectedk8s_telemetry_event(
+        cmd,
         {"Context.Default.AzureCLI.AgentVersion": azure_arc_agent_version},
     )
 
@@ -1075,6 +1070,7 @@ def create_connectedk8s(
         registry_path,
         aad_identity_principal_id,
         onboarding_timeout,
+        cmd,
     )
 
     # Long Running Operation for Agent State
@@ -1196,8 +1192,8 @@ def validate_existing_provisioned_cluster_for_reput(
 
 
 def send_cloud_telemetry(cmd: CLICommand) -> str:
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AzureCloud": cmd.cli_ctx.cloud.name}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AzureCloud": cmd.cli_ctx.cloud.name}
     )
     cloud_name: str = cmd.cli_ctx.cloud.name.upper()
     # Setting cloud name to format that is understood by golang SDK.
@@ -1448,8 +1444,8 @@ def install_helm_client(cmd: CLICommand) -> str:
     arch = "arm64" if machine_type.lower() in ("aarch64", "arm64") else "amd64"
 
     # Send machine telemetry
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.MachineType": machine_type}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.MachineType": machine_type}
     )
     # Set helm binary download & install locations
     if operating_system == "windows":
@@ -2055,6 +2051,9 @@ def get_connectedk8s(
     resource_group_name: str,
     cluster_name: str,
 ) -> ConnectedCluster:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     return client.get(resource_group_name, cluster_name)
 
 
@@ -2083,6 +2082,9 @@ def delete_connectedk8s(
     skip_ssl_verification: bool = False,
     yes: bool = False,
 ) -> None:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     # The force delete prompt is added because it can be used in the case where the config map is missing
     # so we cannot check if the user context is pointing to the cluster that he intends to delete
     if not force_delete:
@@ -2390,6 +2392,9 @@ def update_connected_cluster(
     configuration_settings: dict[str, Any] | None = None,
     configuration_protected_settings: dict[str, Any] | None = None,
 ) -> ConnectedCluster:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     # Prompt for confirmation for few parameters
     if azure_hybrid_benefit == "True":
         confirmation_message = (
@@ -2586,7 +2591,7 @@ def update_connected_cluster(
             kubernetes_infra
         )
 
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Get the connected cluster resource using latest api version and generate reput request payload
     connected_cluster = client.get(resource_group_name, cluster_name)
@@ -2731,8 +2736,8 @@ def update_connected_cluster(
 
     check_operation_support("update (properties)", agent_version)
 
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AgentVersion": agent_version}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AgentVersion": agent_version}
     )
 
     # Get Helm chart path
@@ -2781,6 +2786,9 @@ def upgrade_agents(
     arc_agent_version: str | None = None,
     upgrade_timeout: str = "600",
 ) -> str:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     # Check if cluster supports upgrading
     connected_cluster = client.get(resource_group_name, cluster_name)
 
@@ -2952,7 +2960,7 @@ def upgrade_agents(
             kubernetes_infra
         )
 
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Adding helm repo
     if os.getenv("HELMREPONAME") and os.getenv("HELMREPOURL"):
@@ -2974,8 +2982,8 @@ def upgrade_agents(
         agent_version = arc_agent_version
         registry_path = reg_path_array[0] + ":" + agent_version
 
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AgentVersion": agent_version}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AgentVersion": agent_version}
     )
 
     # Get Helm chart path
@@ -3244,6 +3252,15 @@ def enable_features(
         cmd, resource_group_name, "dummyLocation"
     )
 
+    subscription_id = (
+        os.getenv("AZURE_SUBSCRIPTION_ID")
+        if custom_token_passed is True
+        else get_subscription_id(cmd.cli_ctx)
+    )
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name, subscription_id
+    )
+
     features = [x.lower() for x in features]
     enable_cluster_connect, enable_azure_rbac, enable_cl = (
         utils.check_features_to_update(features)
@@ -3292,11 +3309,6 @@ def enable_features(
         azrbac_skip_authz_check = escape_proxy_settings(azrbac_skip_authz_check)
 
     if enable_cl:
-        subscription_id = (
-            os.getenv("AZURE_SUBSCRIPTION_ID")
-            if custom_token_passed is True
-            else get_subscription_id(cmd.cli_ctx)
-        )
         final_enable_cl, custom_locations_oid = check_cl_registration_and_get_oid(
             cmd, cl_oid, subscription_id
         )
@@ -3364,7 +3376,7 @@ def enable_features(
             kubernetes_infra
         )
 
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Adding helm repo
     if os.getenv("HELMREPONAME") and os.getenv("HELMREPOURL"):
@@ -3389,8 +3401,8 @@ def enable_features(
 
     check_operation_support("enable-features", agent_version)
 
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AgentVersion": agent_version}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AgentVersion": agent_version}
     )
 
     # Get Helm chart path
@@ -3482,6 +3494,9 @@ def disable_features(
     yes: bool = False,
     skip_ssl_verification: bool = False,
 ) -> str:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     features = [x.lower() for x in features]
     confirmation_message = (
         "Disabling few of the features may adversely impact dependent resources. Learn more "
@@ -3563,7 +3578,7 @@ def disable_features(
             kubernetes_infra
         )
 
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     if disable_clstr_connect:
         try:
@@ -3646,8 +3661,8 @@ def get_chart_and_disable_features(
 
     check_operation_support("disable-features", agent_version)
 
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AgentVersion": agent_version}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AgentVersion": agent_version}
     )
 
     # Get Helm chart path
@@ -3925,6 +3940,9 @@ def client_side_proxy_wrapper(
     context_name: str | None = None,
     api_server_port: int = consts.API_SERVER_PORT,
 ) -> None:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     cloud = send_cloud_telemetry(cmd)
     profile = Profile()
     tenant_id = profile.get_subscription()["tenantId"]
@@ -4418,6 +4436,9 @@ def troubleshoot(
     no_wait: bool = False,
     tags: dict[str, str] | None = None,
 ) -> None:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     try:
         logger.warning("Diagnoser running. This may take a while ...\n")
         absolute_path = os.path.abspath(os.path.dirname(__file__))
