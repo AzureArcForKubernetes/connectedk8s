@@ -70,6 +70,12 @@ HELM_TIMEOUT_CLASSIFICATION_FAULT_TYPES = {
     "ClusterIdentityFailure": consts.Helm_Timeout_ClusterIdentity_Fault_Type,
     "GenericHelmTimeout": consts.Helm_Timeout_Generic_Fault_Type,
 }
+HELM_TIMEOUT_CLASSIFICATION_ERROR_CODES = {
+    "ImagePullFailure": consts.Helm_Timeout_ImagePull_Error_Code,
+    "PendingOrUnschedulable": consts.Helm_Timeout_PendingOrUnschedulable_Error_Code,
+    "ClusterIdentityFailure": consts.Helm_Timeout_ClusterIdentity_Error_Code,
+    "GenericHelmTimeout": consts.Helm_Timeout_Generic_Error_Code,
+}
 HELM_TIMEOUT_USER_FAULT_CLASSIFICATIONS = {
     "ImagePullFailure",
     "PendingOrUnschedulable",
@@ -346,36 +352,32 @@ def _set_helm_timeout_classification_exception(
 
 
 def _build_helm_timeout_user_message(classification: str) -> str:
-    fault_type = HELM_TIMEOUT_CLASSIFICATION_FAULT_TYPES.get(
-        classification, consts.Helm_Timeout_Generic_Fault_Type
+    code = HELM_TIMEOUT_CLASSIFICATION_ERROR_CODES.get(
+        classification, consts.Helm_Timeout_Generic_Error_Code
     )
     messages = {
         "ImagePullFailure": (
-            "Azure Arc agents could not pull one or more required container images. "
-            "Check network connectivity from the cluster nodes, access to MCR "
-            "(mcr.microsoft.com), registry/proxy configuration, and available node disk space."
+            "Azure Arc agent pods could not pull their container images. Verify the "
+            "cluster nodes can reach mcr.microsoft.com, check any registry/proxy "
+            "settings, and confirm nodes have free disk space."
         ),
         "PendingOrUnschedulable": (
-            "Azure Arc agent pods are pending or unschedulable. Check the cluster nodes "
-            "for resource consumption, taints, node selectors, affinity rules, and other "
-            "scheduling constraints."
+            "Azure Arc agent pods are pending or unschedulable. Check node capacity, "
+            "taints, node selectors, and affinity rules."
         ),
         "ClusterIdentityFailure": (
-            "Azure Arc agent identity or certificate synchronization did not complete before "
-            "the Helm timeout. This may resolve over time. If it does not, delete the connected "
-            "cluster resource and re-onboard the cluster."
+            "Azure Arc agent identity/certificate sync did not finish before the Helm "
+            "timeout. If this persists, delete the connected "
+            "cluster resource and re-onboard."
         ),
         "GenericHelmTimeout": (
-            "Azure Arc agent installation did not complete before the Helm timeout. Retry "
-            f"onboarding or inspect the {consts.Arc_Namespace} namespace for pods that are not ready."
+            "Azure Arc agent install did not finish before the Helm timeout. Retry "
+            f"onboarding, or inspect the '{consts.Arc_Namespace}' namespace for pods "
+            "that are not ready."
         ),
     }
     message = messages.get(classification, messages["GenericHelmTimeout"])
-    return (
-        f"Error code: {fault_type}\n"
-        f"Message: {message}\n"
-        f"Classification: {classification}"
-    )
+    return f"[{code}] {message}"
 
 
 def is_advanced_helm_timeout_diagnostics(error_message: str) -> bool:
@@ -387,10 +389,8 @@ def get_advanced_helm_timeout_fault_type(error_message: str) -> str | None:
         return None
 
     for classification, fault_type in HELM_TIMEOUT_CLASSIFICATION_FAULT_TYPES.items():
-        if (
-            f"Likely failure classification: {classification}" in error_message
-            or f"Classification: {classification}" in error_message
-        ):
+        code = HELM_TIMEOUT_CLASSIFICATION_ERROR_CODES.get(classification)
+        if code and f"[{code}]" in error_message:
             return fault_type
 
     return consts.Helm_Timeout_Generic_Fault_Type

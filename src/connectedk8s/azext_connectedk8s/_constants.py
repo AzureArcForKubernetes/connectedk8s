@@ -155,6 +155,13 @@ Helm_Timeout_PendingOrUnschedulable_Fault_Type = (
 )
 Helm_Timeout_ClusterIdentity_Fault_Type = "helm-timeout-cluster-identity-error"
 Helm_Timeout_Generic_Fault_Type = "helm-timeout-error"
+# Customer-facing AZK8S error codes surfaced for Helm timeout classifications.
+# Ranges follow the error code chart: Helm & Agent Lifecycle (0500-0599),
+# Network & Connectivity (0300-0399).
+Helm_Timeout_PendingOrUnschedulable_Error_Code = "AZK8S0512"
+Helm_Timeout_ImagePull_Error_Code = "AZK8S0513"
+Helm_Timeout_Generic_Error_Code = "AZK8S0514"
+Helm_Timeout_ClusterIdentity_Error_Code = "AZK8S0309"
 Delete_HelmRelease_Fault_Type = "helm-release-delete-error"
 Check_PodStatus_Fault_Type = "check-pod-status-error"
 Kubernetes_Connectivity_FaultType = "kubernetes-cluster-connection-error"
