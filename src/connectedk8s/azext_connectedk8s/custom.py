@@ -510,7 +510,7 @@ def create_connectedk8s(
         )
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             check_name="LinuxNodeExists",
-            reason="Couldn't find any node on the kubernetes cluster with the OS 'linux'",
+            reason="Could not find any node on the kubernetes cluster with the OS linux",
         )
         logger.warning(
             "Please ensure that this Kubernetes cluster has any nodes with OS 'linux', for scheduling the "
