@@ -78,7 +78,10 @@ def _parse_entra_check_result(entra_check_log: str) -> str:
 
     The diagnostic container outputs a line like:
       "Entra Authentication Endpoint Connectivity Check Result : https://login.microsoftonline.com : 200"
-    A 200 or 404 response means the endpoint is reachable (404 is expected for some paths).
+    A 200 or 404 response means the endpoint is reachable. 404 is expected because the
+    diagnostic container curls the base login.microsoftonline.com path without a valid
+    tenant/resource URL suffix (e.g. /{tenant-id}/oauth2/v2.0/token), so the server
+    returns 404 — but receiving any HTTP response confirms network reachability.
     Any other response code indicates a connectivity failure.
     """
     if not entra_check_log:
@@ -727,7 +730,8 @@ def executing_cluster_diagnostic_checks_job(
             matching_pods.sort(
                 key=lambda p: p.metadata.creation_timestamp, reverse=True
             )
-            for each_pod in matching_pods[:1]:
+            if matching_pods:
+                each_pod = matching_pods[0]
                 # Fetching the current Pod name and creating a folder with that name inside the timestamp folder
                 pod_name = each_pod.metadata.name
 
@@ -803,7 +807,8 @@ def executing_cluster_diagnostic_checks_job(
             matching_pods.sort(
                 key=lambda p: p.metadata.creation_timestamp, reverse=True
             )
-            for each_pod in matching_pods[:1]:
+            if matching_pods:
+                each_pod = matching_pods[0]
                 pod_name = each_pod.metadata.name
                 try:
                     cluster_diagnostic_checks_container_log = (
