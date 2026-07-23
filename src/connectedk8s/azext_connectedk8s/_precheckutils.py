@@ -204,7 +204,7 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
 
     props = {
         consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
-        consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg),
+        consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg).replace("'", ""),
     }
     telemetry.add_extension_event("connectedk8s", props)
 
