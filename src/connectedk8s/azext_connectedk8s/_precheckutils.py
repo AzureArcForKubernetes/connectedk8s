@@ -244,10 +244,9 @@ def send_prediagnostic_check_failure_telemetry(
     # Attach structured error details from diagnoser_output
     _attach_error_details(components)
 
-    # Send structured telemetry via add_extension_event (best-effort, may be stripped)
     props = {
         consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_Prediagnostics_Fault_Type,
-        consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(components),
+        consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(components).replace("'", ""),
     }
     telemetry.add_extension_event("connectedk8s", props)
 
