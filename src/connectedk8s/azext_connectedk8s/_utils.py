@@ -669,11 +669,7 @@ def check_cluster_outbound_connectivity(
                                     f"{endpoint} (code=000, no HTTP response - "
                                     "likely firewall drop, proxy block, or network timeout)"
                                 )
-                            elif code.startswith(("4", "5")):
-                                failed_endpoints.append(endpoint)
-                                failed_endpoint_details.append(
-                                    f"{endpoint} (code={code})"
-                                )
+                            # Non-2xx (4xx/5xx) responses are treated as reachable and should not be labeled as failures here.
             except (IndexError, ValueError):
                 pass
 
