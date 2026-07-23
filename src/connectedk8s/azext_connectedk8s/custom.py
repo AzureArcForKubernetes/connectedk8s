@@ -448,7 +448,8 @@ def create_connectedk8s(
             diagnostic_checks == consts.Diagnostic_Check_Incomplete
             and precheckutils.prediagnostic_job_execution_status
             in (consts.Job_Status_Completed, consts.Job_Status_Not_Completed)
-            and precheckutils.prediagnostic_dns_check != consts.Diagnostic_Check_Not_Applicable
+            and precheckutils.prediagnostic_dns_check
+            != consts.Diagnostic_Check_Not_Applicable
         ):
             precheckutils.send_prediagnostic_check_failure_telemetry(
                 precheckutils.prediagnostic_dns_check,
