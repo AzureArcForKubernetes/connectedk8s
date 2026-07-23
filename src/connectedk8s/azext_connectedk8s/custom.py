@@ -457,7 +457,7 @@ def create_connectedk8s(
             precheckutils.send_prediagnostic_job_execution_error_telemetry()
         if storage_space_available:
             logger.warning(
-                "The pre-check result logs logs have been saved at this path: "
+                "The pre-check result logs have been saved at this path: "
                 "%s.\nThese logs can be attached while filing a support ticket for further assistance.\n",
                 filepath_with_timestamp,
             )
