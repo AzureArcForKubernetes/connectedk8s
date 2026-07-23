@@ -322,7 +322,7 @@ def get_precheck_failure_summary() -> str:
 # ---------------------------------------------------------------------------
 
 
-def fetch_diagnostic_checks_results(
+def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statements
     cmd: CLICommand,
     corev1_api_instance: CoreV1Api,
     batchv1_api_instance: BatchV1Api,
@@ -347,7 +347,7 @@ def fetch_diagnostic_checks_results(
           - Diagnostic_Check_Failed: at least one check failed, onboarding may be blocked
           - Diagnostic_Check_Incomplete: job didn't run or checks couldn't be determined
     """
-    global \
+    global \  # pylint: disable=global-statement
         prediagnostic_job_execution_status, \
         prediagnostic_dns_check, \
         prediagnostic_outbound_check, \
@@ -531,7 +531,7 @@ def executing_cluster_diagnostic_checks_job(
         - Container log string if the job ran (may be empty if pod produced no output)
         - None if the job could not be scheduled or cleanup of a stale release failed
     """
-    global prediagnostic_job_execution_status
+    global prediagnostic_job_execution_status  # pylint: disable=global-statement
     job_name = "cluster-diagnostic-checks-job"
     # Setting the log output as Empty
     cluster_diagnostic_checks_container_log = ""
@@ -839,7 +839,7 @@ def executing_cluster_diagnostic_checks_job(
                             "An exception has occured while saving the Cluster "
                             "Diagnostic Checks Job logs in the local machine."
                         )
-                except Exception:
+                except Exception:  # pylint: disable=broad-exception-caught
                     logger.exception(
                         "An exception has occured while saving the Cluster "
                         "Diagnostic Checks Job logs in the local machine."

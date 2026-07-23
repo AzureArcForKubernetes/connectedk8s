@@ -406,7 +406,7 @@ def check_cluster_DNS(
         formatted_dns_log = dns_check_log.replace("\t", "")
         # Validating if DNS is working or not and displaying proper result
         # These are standard error strings from DNS tools (nslookup/dig) indicating resolution failures
-        if (
+        if (  # pylint: disable=too-many-boolean-expressions
             "NXDOMAIN" in formatted_dns_log
             or "SERVFAIL" in formatted_dns_log
             or "connection timed out" in formatted_dns_log
@@ -506,7 +506,7 @@ def check_cluster_DNS(
 
 # pylint: disable=too-many-return-statements
 # Outbound connectivity check returns different results based on connection state
-def check_cluster_outbound_connectivity(
+def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,too-many-nested-blocks
     outbound_connectivity_check_log: str,
     filepath_with_timestamp: str,
     storage_space_available: bool,
