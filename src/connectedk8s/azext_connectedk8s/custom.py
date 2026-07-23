@@ -442,19 +442,18 @@ def create_connectedk8s(
         precheck_failure_summary_msg = (
             f" Details: {precheck_failure_summary}" if precheck_failure_summary else ""
         )
-        if precheckutils.prediagnostic_job_execution_status == "Completed" or (
-            precheckutils.prediagnostic_job_execution_status == "NotCompleted"
-            and precheckutils.prediagnostic_dns_check != "NotApplicable"
+        # fetch_diagnostic_checks_results() already emits telemetry for Failed and job-execution-error cases.
+        # Only emit check-level telemetry here when the job ran but checks are Incomplete.
+        if (
+            diagnostic_checks == consts.Diagnostic_Check_Incomplete
+            and precheckutils.prediagnostic_job_execution_status
+            in (consts.Job_Status_Completed, consts.Job_Status_Not_Completed)
+            and precheckutils.prediagnostic_dns_check != consts.Diagnostic_Check_Not_Applicable
         ):
             precheckutils.send_prediagnostic_check_failure_telemetry(
                 precheckutils.prediagnostic_dns_check,
                 precheckutils.prediagnostic_outbound_check,
             )
-        elif precheckutils.prediagnostic_job_execution_status not in (
-            "Completed",
-            "NotCompleted",
-        ):
-            precheckutils.send_prediagnostic_job_execution_error_telemetry()
         if storage_space_available:
             logger.warning(
                 "The pre-check result logs have been saved at this path: "
