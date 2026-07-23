@@ -347,12 +347,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
           - Diagnostic_Check_Failed: at least one check failed, onboarding may be blocked
           - Diagnostic_Check_Incomplete: job didn't run or checks couldn't be determined
     """
-    global \  # pylint: disable=global-statement
-        prediagnostic_job_execution_status, \
-        prediagnostic_dns_check, \
-        prediagnostic_outbound_check, \
-        prediagnostic_entra_check, \
-        prediagnostic_crd_check
+    global prediagnostic_job_execution_status, prediagnostic_dns_check, prediagnostic_outbound_check, prediagnostic_entra_check, prediagnostic_crd_check  # pylint: disable=global-statement
     try:
         diagnoser_output.clear()
         prediagnostic_job_execution_status = consts.Job_Status_Not_Started
