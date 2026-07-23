@@ -295,7 +295,7 @@ def send_post_diagnostic_precheck_failure_telemetry(
 
     props = {
         consts.Telemetry_Onboarding_Error_Type_Key: consts.Post_Diagnostic_Precheck_Fault_Type,
-        consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg),
+        consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg).replace("'", ""),
     }
     telemetry.add_extension_event("connectedk8s", props)
 
