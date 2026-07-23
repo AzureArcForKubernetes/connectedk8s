@@ -123,12 +123,16 @@ spec:
 
     It 'Combined MCR and Entra block triggers prediagnostics-failure telemetry' {
         $clusterName = "prediag-test-combined"
-        Invoke-CoreDNSBlock -Hosts @("mcr.microsoft.com", "login.microsoftonline.com")
-        $output = az connectedk8s connect -g $ENVCONFIG.resourceGroup -n $clusterName -l $ARC_LOCATION 2>&1
-        $? | Should -BeFalse
-        ($output -join "`n") | Should -Match "Pre-onboarding Diagnostic|pre-checks"
-        Invoke-RestoreCoreDNS
-        az connectedk8s delete -g $ENVCONFIG.resourceGroup -n $clusterName --force -y 2>&1 | Out-Null
+        try {
+            Invoke-CoreDNSBlock -Hosts @("mcr.microsoft.com", "login.microsoftonline.com")
+            $output = az connectedk8s connect -g $ENVCONFIG.resourceGroup -n $clusterName -l $ARC_LOCATION 2>&1
+            $? | Should -BeFalse
+            ($output -join "`n") | Should -Match "Pre-onboarding Diagnostic|pre-checks"
+        }
+        finally {
+            Invoke-RestoreCoreDNS
+            az connectedk8s delete -g $ENVCONFIG.resourceGroup -n $clusterName --force -y 2>&1 | Out-Null
+        }
     }
 
     It 'CRD ownership conflict triggers prediagnostics-failure telemetry' {
