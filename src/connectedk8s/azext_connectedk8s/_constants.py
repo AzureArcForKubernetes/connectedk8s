@@ -76,6 +76,30 @@ Helm_Install_Release_Userfault_Messages = [
     "timed out waiting for the condition",
     "connection refused",
 ]
+Helm_Timeout_Messages = (
+    "timed out waiting for the condition",
+    "context deadline exceeded",
+    "deadline exceeded",
+)
+Helm_Timeout_Signal_Classifications = (
+    "ImagePullFailure",
+    "CrashLoopBackOff",
+    "ContainerCreateFailure",
+    "PendingOrUnschedulable",
+    "ClusterResourceOrSchedulingConstraint",
+    "MissingIdentityCertificateSecret",
+    "MissingKubeAadProxyCertificateSecret",
+    "KeyPairOrIdentityCertificateSync",
+)
+Helm_Timeout_Resolved_Classifications = (
+    "GenericHelmTimeout",
+    "ImagePullFailure",
+    "PendingOrUnschedulable",
+    "ClusterIdentityFailure",
+)
+Max_Helm_Timeout_Diagnostic_Evidence = 8
+Max_Helm_Timeout_Event_Evidence = 5
+Cluster_Identity_Operator_Prefix = "clusteridentityoperator"
 Custom_Locations_Provider_Namespace = "Microsoft.ExtendedLocation"
 Connected_Cluster_Provider_Namespace = "Microsoft.Kubernetes"
 Kubernetes_Configuration_Provider_Namespace = "Microsoft.KubernetesConfiguration"
@@ -125,6 +149,26 @@ KeyPair_Generate_Fault_Type = "keypair-generation-error"
 PublicKey_Export_Fault_Type = "publickey-export-error"
 PrivateKey_Export_Fault_Type = "privatekey-export-error"
 Install_HelmRelease_Fault_Type = "helm-release-install-error"
+Helm_Timeout_ImagePull_Fault_Type = "helm-timeout-image-pull-failure"
+Helm_Timeout_PendingOrUnschedulable_Fault_Type = "helm-timeout-pending-or-unschedulable"
+Helm_Timeout_ClusterIdentity_Fault_Type = "helm-timeout-cluster-identity-error"
+Helm_Timeout_Generic_Fault_Type = "helm-timeout-error"
+# Customer-facing AZK8S error codes surfaced for Helm timeout classifications.
+# Ranges follow the error code chart: Helm & Agent Lifecycle (0500-0599),
+# Network & Connectivity (0300-0399).
+Helm_Timeout_PendingOrUnschedulable_Error_Code = "AZK8S0512"
+Helm_Timeout_ImagePull_Error_Code = "AZK8S0513"
+Helm_Timeout_Generic_Error_Code = "AZK8S0514"
+Helm_Timeout_ClusterIdentity_Error_Code = "AZK8S0309"
+Install_Prediagnostics_Fault_Type = "prediagnostics-failure"
+Install_Prediagnostics_Job_Execution_Error_Fault_Type = (
+    "prediagnostics-job-execution-error"
+)
+Post_Diagnostic_Precheck_Fault_Type = "post-diagnostic-precheck-failure"
+Telemetry_Onboarding_Error_Type_Key = "Context.Default.AzureCLI.onboardingErrorType"
+Telemetry_Onboarding_Error_Message_Key = (
+    "Context.Default.AzureCLI.onboardingErrorMessage"
+)
 Delete_HelmRelease_Fault_Type = "helm-release-delete-error"
 Check_PodStatus_Fault_Type = "check-pod-status-error"
 Kubernetes_Connectivity_FaultType = "kubernetes-cluster-connection-error"
@@ -381,6 +425,18 @@ Failed_To_Change_Telemetry_Push_Interval = (
 Diagnostic_Check_Passed = "Passed"
 Diagnostic_Check_Failed = "Failed"
 Diagnostic_Check_Incomplete = "Incomplete"
+Diagnostic_Check_Starting = "Starting"
+Diagnostic_Check_Not_Applicable = "NotApplicable"
+
+# Prediagnostic job execution status values
+Job_Status_Not_Started = "NotStarted"
+Job_Status_Running = "Running"
+Job_Status_Completed = "Completed"
+Job_Status_Not_Completed = "NotCompleted"
+Job_Status_Not_Scheduled = "NotScheduled"
+Job_Status_Cleanup_Failed = "CleanupFailed"
+Job_Status_Execution_Failed = "ExecutionFailed"
+
 # Name of the checks and operations
 Retrieve_Arc_Agents_Event_Logs = "retrieved_arc_agents_event_logs"
 Retrieve_Arc_Agents_Logs = "retrieved_arc_agents_logs"
@@ -455,6 +511,7 @@ Outbound_Connectivity_Check_Failed = "Outbound network connectivity check failed
 Outbound_Connectivity_Check_Failed_For_Onboarding = (
     "Outbound network connectivity check failed for onboarding"
 )
+Outbound_Connectivity_Non2xx_Response_Type = "prediagnostics-outbound-non2xx-response"
 DNS_Check_Failed = "DNS Resolution failed"
 Cluster_Diagnostic_Prechecks_Failed = "Cluster diagnostic prechecks failed"
 Cluster_Diagnostic_Prechecks_Incomplete = (
@@ -488,6 +545,10 @@ Outbound_Connectivity_Check_Failed_For_Cluster_Connect = (
     "Outbound network connectivity check failed for Cluster Connect"
 )
 DNS_Check_Result_String = "DNS Result:"
+Entra_Connectivity_Check_Result_String = (
+    "Entra Authentication Endpoint Connectivity Check Result"
+)
+CRD_Ownership_Check_Failed_String = "Check Failed: CRD"
 AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION = "2.30.0"
 CLIENT_PROXY_VERSION = "1.3.034631"
 CLIENT_PROXY_FOLDER = ".clientproxy"
