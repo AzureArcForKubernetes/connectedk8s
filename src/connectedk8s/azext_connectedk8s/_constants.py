@@ -250,6 +250,12 @@ EnableProxy_Conflict_Error = "Conflict detected: --disable-proxy can not be set 
 
 # --proxy-skip-range keyword that expands to the Azure Arc private-link endpoints.
 Proxy_Skip_Range_Arc_Keyword = "arc"
+# Arc private-link endpoint host suffixes the "arc" keyword expands to.
+Arc_Private_Link_Endpoints = [
+    ".his.arc.azure.{cloud_based_domain}",
+    ".dp.kubernetesconfiguration.azure.{cloud_based_domain}",
+    ".guestconfiguration.azure.{cloud_based_domain}",
+]
 
 Manual_Upgrade_Called_In_Auto_Update_Enabled = (
     "Manual Upgrade was called while in auto_Update enabled mode"

@@ -1329,9 +1329,8 @@ def get_arc_proxy_skip_range_endpoints(cmd: CLICommand) -> list[str]:
     # every region; suffix is derived so it works across public and sovereign clouds.
     cloud_based_domain = get_cloud_based_domain(cmd)
     return [
-        f".his.arc.azure.{cloud_based_domain}",
-        f".dp.kubernetesconfiguration.azure.{cloud_based_domain}",
-        f".guestconfiguration.azure.{cloud_based_domain}",
+        endpoint.format(cloud_based_domain=cloud_based_domain)
+        for endpoint in consts.Arc_Private_Link_Endpoints
     ]
 
 

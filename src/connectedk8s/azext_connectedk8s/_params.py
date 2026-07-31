@@ -98,7 +98,7 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             options_list=["--proxy-skip-range"],
             arg_group="Proxy",
             help="List of URLs/CIDRs for which proxy should not be used. Pass the "
-            "keyword 'Arc' to automatically skip the Azure Arc private-link endpoints.",
+            "keyword 'Arc' to bypass the proxy for the linked Azure Arc private-link endpoints.",
         )
         c.argument(
             "proxy_cert",
@@ -262,7 +262,7 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             options_list=["--proxy-skip-range"],
             arg_group="Proxy",
             help="List of URLs/CIDRs for which proxy should not be used. Pass the "
-            "keyword 'Arc' to automatically skip the Azure Arc private-link endpoints.",
+            "keyword 'Arc' to bypass the proxy for the linked Azure Arc private-link endpoints.",
         )
         c.argument(
             "distribution",
