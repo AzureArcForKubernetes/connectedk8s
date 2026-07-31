@@ -141,6 +141,26 @@ def test_expand_arc_keyword_usgov_cloud():
     )
 
 
+def test_expand_arc_keyword_ussec_cloud():
+    cmd = _proxy_cmd("https://login.microsoftonline.microsoft.scloud")
+    out = expand_proxy_skip_range_keywords(cmd, "Arc")
+    assert out == (
+        ".his.arc.azure.microsoft.scloud,"
+        ".dp.kubernetesconfiguration.azure.microsoft.scloud,"
+        ".guestconfiguration.azure.microsoft.scloud"
+    )
+
+
+def test_expand_arc_keyword_usnat_cloud():
+    cmd = _proxy_cmd("https://login.microsoftonline.eaglex.ic.gov")
+    out = expand_proxy_skip_range_keywords(cmd, "Arc")
+    assert out == (
+        ".his.arc.azure.eaglex.ic.gov,"
+        ".dp.kubernetesconfiguration.azure.eaglex.ic.gov,"
+        ".guestconfiguration.azure.eaglex.ic.gov"
+    )
+
+
 def test_expand_no_keyword_returns_unchanged():
     val = "10.0.0.0/16,.svc,localhost"
     assert expand_proxy_skip_range_keywords(_proxy_cmd(), val) == val
@@ -152,4 +172,10 @@ def test_expand_empty_returns_unchanged():
 
 def test_expand_arc_keyword_deduplicates():
     out = expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc,Arc")
+    assert out == ARC_PUBLIC
+
+
+def test_expand_arc_keyword_dedups_case_insensitive_endpoint():
+    # A user endpoint differing only in case is not duplicated in NO_PROXY.
+    out = expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc, .his.ARC.azure.com")
     assert out == ARC_PUBLIC

@@ -1348,13 +1348,16 @@ def expand_proxy_skip_range_keywords(cmd: CLICommand, no_proxy: str) -> str:
         return no_proxy
 
     expanded: list[str] = []
+    seen: set[str] = set()
     for entry in entries:
         stripped = entry.strip()
         if stripped.lower() == consts.Proxy_Skip_Range_Arc_Keyword:
             for endpoint in get_arc_proxy_skip_range_endpoints(cmd):
-                if endpoint not in expanded:
+                if endpoint.lower() not in seen:
+                    seen.add(endpoint.lower())
                     expanded.append(endpoint)
-        elif stripped and stripped not in expanded:
+        elif stripped and stripped.lower() not in seen:
+            seen.add(stripped.lower())
             expanded.append(stripped)
 
     return ",".join(expanded)
