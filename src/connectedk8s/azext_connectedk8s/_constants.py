@@ -133,6 +133,7 @@ Pls_Resource_Not_Found = "pls-resource-not-found"
 Invalid_Argument_Fault_Type = "argument-validation-error"
 Load_Kubeconfig_Fault_Type = "kubeconfig-load-error"
 Read_ConfigMap_Fault_Type = "configmap-read-error"
+Create_ConfigMap_Fault_Type = "configmap-create-error"
 Get_ResourceProvider_Fault_Type = "resource-provider-fetch-error"
 Get_ConnectedCluster_Fault_Type = "connected-cluster-fetch-error"
 Create_ConnectedCluster_Fault_Type = "connected-cluster-create-error"
@@ -256,6 +257,15 @@ Arc_Private_Link_Endpoints = [
     ".dp.kubernetesconfiguration.azure.{cloud_based_domain}",
     ".guestconfiguration.azure.{cloud_based_domain}",
 ]
+
+# --proxy-skip-range keyword that creates the Container Insights.
+Proxy_Skip_Range_ContainerInsights_Keyword = "containerinsights"
+
+# Container Insights proxy-skip-range ConfigMap created when the "ContainerInsights" is used.
+CI_ConfigMap_Name = "container-azm-ms-agentconfig"
+CI_ConfigMap_Namespace = "kube-system"
+# Data key holding the ama-logs agent settings that carry the proxy_config section.
+CI_ConfigMap_Agent_Settings_Key = "agent-settings"
 
 Manual_Upgrade_Called_In_Auto_Update_Enabled = (
     "Manual Upgrade was called while in auto_Update enabled mode"
