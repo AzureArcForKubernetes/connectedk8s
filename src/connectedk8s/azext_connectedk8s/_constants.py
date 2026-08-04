@@ -258,10 +258,10 @@ Arc_Private_Link_Endpoints = [
     ".guestconfiguration.azure.{cloud_based_domain}",
 ]
 
-# --proxy-skip-range keyword that creates the Container Insights.
+# --proxy-skip-range keyword: Container Insights agent bypasses the proxy (via its ConfigMap).
 Proxy_Skip_Range_ContainerInsights_Keyword = "containerinsights"
 
-# Container Insights proxy-skip-range ConfigMap created when the "ContainerInsights" is used.
+# ConfigMap the Container Insights agent reads; ignore_proxy_settings here drives the proxy bypass.
 CI_ConfigMap_Name = "container-azm-ms-agentconfig"
 CI_ConfigMap_Namespace = "kube-system"
 # Data key holding the ama-logs agent settings that carry the proxy_config section.

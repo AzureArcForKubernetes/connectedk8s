@@ -829,6 +829,11 @@ def create_connectedk8s(
                     release_namespace,
                     chart_path,
                 )
+            # Re-put path returns before the main ConfigMap step, so apply the bypass here too.
+            if container_insights_requested:
+                ensure_container_insights_proxy_bypass_configmap(
+                    kube_client.CoreV1Api()
+                )
             return cc_response
 
         # else case
@@ -1341,8 +1346,7 @@ def get_arc_proxy_skip_range_endpoints(cmd: CLICommand) -> list[str]:
 
 
 def expand_proxy_skip_range_keywords(cmd: CLICommand, no_proxy: str) -> str:
-    # Expand the "Arc" keyword to the Arc private-link endpoints and drop the
-    # "ContainerInsights" keyword (handled separately); other entries kept in order.
+    # Expand "Arc" into no_proxy addresses; drop "ContainerInsights" since it uses a ConfigMap.
     if not no_proxy:
         return no_proxy
 
@@ -1373,7 +1377,7 @@ def expand_proxy_skip_range_keywords(cmd: CLICommand, no_proxy: str) -> str:
 
 
 def container_insights_bypass_requested(no_proxy: str) -> bool:
-    # True when "ContainerInsights" (case-insensitive) is present in --proxy-skip-range.
+    # True when the user requested the Container Insights proxy bypass via the keyword.
     if not no_proxy:
         return False
     return any(
@@ -1383,8 +1387,7 @@ def container_insights_bypass_requested(no_proxy: str) -> bool:
 
 
 def merge_proxy_bypass_into_agent_settings(agent_settings: str) -> str:
-    # Ensure the agent-settings TOML enables ignore_proxy_settings = "true", preserving every
-    # other line; returns the input unchanged when the bypass is already active.
+    # Set ignore_proxy_settings to "true" in place, leaving the agent's other settings intact.
     lines = agent_settings.splitlines()
 
     # If an active (non-commented) ignore_proxy_settings line exists, force it to "true".
@@ -1419,7 +1422,7 @@ def ensure_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
 ) -> None:
     # Guarantee the Container Insights ConfigMap bypasses the proxy: create it when absent,
-    # otherwise merge the setting into the existing ConfigMap without touching anything else.
+    # otherwise merge the setting into the existing ConfigMap.
     print(
         f"Step: {utils.get_utctimestring()}: Ensuring '{consts.CI_ConfigMap_Name}' ConfigMap "
         f"in '{consts.CI_ConfigMap_Namespace}' namespace bypasses the proxy for Container Insights"
@@ -1485,7 +1488,7 @@ def ensure_container_insights_proxy_bypass_configmap(
 def create_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
 ) -> None:
-    # Create a minimal Container Insights ConfigMap that bypasses the proxy.
+    # Seed only the proxy-bypass setting; the Container Insights solution fills in the rest.
     configmap = kube_client.V1ConfigMap(
         metadata=kube_client.V1ObjectMeta(
             name=consts.CI_ConfigMap_Name,
@@ -2751,14 +2754,17 @@ def update_connected_cluster(
             and distribution_version is None
             and azure_hybrid_benefit is not None
         )
+        # Skip this early return when Container Insights is requested so its ConfigMap still runs.
         if (  # pylint: disable=too-many-boolean-expressions
             proxy_params_unset
             and auto_upgrade is None
             and container_log_path is None
             and arm_properties_only_ahb_set
+            and not container_insights_requested
         ):
             return patch_cc_response
 
+    # Container Insights alone is a valid update, so skip the no-parameters error below.
     if (  # pylint: disable=too-many-boolean-expressions
         proxy_params_unset
         and not auto_upgrade
@@ -2769,6 +2775,7 @@ def update_connected_cluster(
         and enable_workload_identity is None
         and gateway_resource_id == ""
         and not disable_gateway
+        and not container_insights_requested
     ):
         telemetry.set_exception(
             exception=consts.No_Param_Error,
