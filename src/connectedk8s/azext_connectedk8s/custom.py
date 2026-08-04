@@ -57,6 +57,7 @@ from kubernetes.config.kube_config import KubeConfigMerger
 from packaging import version
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._errors as errors
 import azext_connectedk8s._precheckutils as precheckutils
 import azext_connectedk8s._troubleshootutils as troubleshootutils
 import azext_connectedk8s._utils as utils
@@ -112,12 +113,17 @@ def _telemetry_catch_all(func: Callable[..., Any]) -> Callable[..., Any]:
         except AzCLIError:
             raise  # Already properly classified
         except Exception as ex:
-            telemetry.set_exception(
+            cmd = args[0] if args and hasattr(args[0], "cli_ctx") else kwargs.get("cmd")
+            if cmd is not None and not hasattr(cmd, "cli_ctx"):
+                cmd = None
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.UNEXPECTED_ERROR,
                 exception=ex,
                 fault_type=f"unhandled-exception-in-{func.__name__}",
-                summary=f"Unhandled {type(ex).__name__} in {func.__name__}",
-            )
-            raise CLIInternalError(f"An unexpected error occurred: {ex}") from ex
+                operation=func.__name__,
+                details=str(ex),
+            ) from ex
 
     return wrapper
 
@@ -820,6 +826,7 @@ def create_connectedk8s(
                     cluster_name,
                     release_namespace,
                     chart_path,
+                    cmd,
                 )
             return cc_response
 
@@ -1132,13 +1139,13 @@ def create_connectedk8s(
             )
             return connected_cluster
 
-        telemetry.set_exception(
-            exception="Timed out waiting for Agent State to reach terminal state",
-            fault_type=consts.Agent_State_Timeout_Fault_Type,
-            summary="Agent state did not reach terminal state within timeout during create",
-        )
-        raise CLIInternalError(
-            "Timed out waiting for Agent State to reach terminal state."
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.AGENT_STATE_TIMEOUT,
+            exception=Exception(
+                "Timed out waiting for Agent State to reach terminal state"
+            ),
+            operation="create",
         )
     if cl_oid and enable_custom_locations and cl_oid == custom_locations_oid:
         logger.warning(consts.Manual_Custom_Location_Oid_Warning)
@@ -2844,17 +2851,18 @@ def update_connected_cluster(
         cluster_name,
         release_namespace,
         chart_path,
+        cmd,
     )
 
     # If we didn't see a terminal agent state, now's the time to throw an error.
     if not terminal_agent_state:
-        telemetry.set_exception(
-            exception="Timed out waiting for Agent State to reach terminal state",
-            fault_type=consts.Agent_State_Timeout_Fault_Type,
-            summary="Agent state did not reach terminal state within timeout during update",
-        )
-        raise CLIInternalError(
-            "Timed out waiting for Agent State to reach terminal state."
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.AGENT_STATE_TIMEOUT,
+            exception=Exception(
+                "Timed out waiting for Agent State to reach terminal state"
+            ),
+            operation="update",
         )
 
     return connected_cluster
@@ -3167,23 +3175,25 @@ def upgrade_agents(
     _, error_helm_upgrade = response_helm_upgrade.communicate()
 
     if response_helm_upgrade.returncode != 0:
-        helm_upgrade_error_message = utils.append_timeout_diagnostics(
-            utils.process_helm_error_detail(error_helm_upgrade.decode("ascii")),
-            helm_operation="upgrade",
+        helm_upgrade_error_message = utils.process_helm_error_detail(
+            error_helm_upgrade.decode("ascii")
         )
-        if not utils.is_advanced_helm_timeout_diagnostics(helm_upgrade_error_message):
-            if any(
-                message in helm_upgrade_error_message
-                for message in consts.Helm_Install_Release_Userfault_Messages
-            ):
-                telemetry.set_user_fault()
-            telemetry.set_exception(
-                exception=Exception(helm_upgrade_error_message),
-                fault_type=consts.Install_HelmRelease_Fault_Type,
-                summary="Unable to install helm release",
-            )
-        raise CLIInternalError(
-            str.format(consts.Upgrade_Agent_Failure, helm_upgrade_error_message)
+        timeout_report = utils.build_helm_timeout_report(
+            helm_upgrade_error_message, helm_operation="upgrade"
+        )
+        if timeout_report:
+            raise utils.report_helm_timeout_error(cmd, timeout_report)
+        is_user_fault = any(
+            message in helm_upgrade_error_message
+            for message in consts.Helm_Install_Release_Userfault_Messages
+        )
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.HELM_RELEASE_OPERATION_FAILED,
+            exception=Exception(helm_upgrade_error_message),
+            user_fault=is_user_fault,
+            operation="upgrade",
+            details=helm_upgrade_error_message,
         )
 
     return str.format(consts.Upgrade_Agent_Success, connected_cluster.name)
