@@ -85,6 +85,8 @@ Describe 'Proxy Scenario' {
         # The Container Insights proxy-bypass ConfigMap must be created in kube-system
         $agentSettings = kubectl get configmap container-azm-ms-agentconfig -n kube-system -o jsonpath='{.data.agent-settings}'
         $? | Should -BeTrue
+        # kubectl returns the multi-line agent-settings as an array of lines; join it so the match sees every line.
+        $agentSettings = $agentSettings -join "`n"
         $agentSettings | Should -Match "ignore_proxy_settings"
     }
 
@@ -129,6 +131,8 @@ data:
         # The bypass is merged in...
         $agentSettings = kubectl get configmap container-azm-ms-agentconfig -n kube-system -o jsonpath='{.data.agent-settings}'
         $? | Should -BeTrue
+        # kubectl returns the multi-line agent-settings as an array of lines; join it so the match sees every line.
+        $agentSettings = $agentSettings -join "`n"
         $agentSettings | Should -Match "ignore_proxy_settings"
         # ...and the pre-existing setting is preserved, proving nothing was overwritten.
         $agentSettings | Should -Match "high_log_scale"
