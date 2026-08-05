@@ -1052,6 +1052,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
     storage_space_available: bool,
     diagnoser_output: list[str],
     outbound_connectivity_check_for: str = "pre-onboarding-inspector",
+    cmd: Any | None = None,
 ) -> tuple[str, bool]:
     try:
         if outbound_connectivity_check_for == "pre-onboarding-inspector":
@@ -1078,8 +1079,8 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                 if Cluster_Connect_Precheck_Endpoint_response_code.startswith(
                     ("4", "5")
                 ):
-                    telemetry.add_extension_event(
-                        "connectedk8s",
+                    add_connectedk8s_telemetry_event(
+                        cmd,
                         {
                             consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
                             consts.Telemetry_Onboarding_Error_Message_Key: (
@@ -1153,8 +1154,8 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                 if Onboarding_Precheck_Endpoint_outbound_connectivity_response.startswith(
                     ("4", "5")
                 ):
-                    telemetry.add_extension_event(
-                        "connectedk8s",
+                    add_connectedk8s_telemetry_event(
+                        cmd,
                         {
                             consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
                             consts.Telemetry_Onboarding_Error_Message_Key: (
@@ -1256,8 +1257,8 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
             if outbound_connectivity_response != "000":
                 # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
                 if outbound_connectivity_response.startswith(("4", "5")):
-                    telemetry.add_extension_event(
-                        "connectedk8s",
+                    add_connectedk8s_telemetry_event(
+                        cmd,
                         {
                             consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
                             consts.Telemetry_Onboarding_Error_Message_Key: (

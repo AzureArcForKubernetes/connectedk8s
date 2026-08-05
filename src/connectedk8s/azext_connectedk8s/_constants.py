@@ -573,7 +573,7 @@ Unsupported_OS_Fault_Type = Unsupported_Fault_Type
 Unsupported_Operation_Provisioned_Cluster_Fault_Type = (
     Provisioned_Cluster_Operation_Fault_Type
 )
-Gateway_ArmId_Is_Invalid_Fault_Type = Gateway_ArmId_Is_Invalid
+Gateway_ArmId_Is_Invalid_Fault_Type = "invalid-gateway-arm-id"
 Linux_Node_Not_Exists_Fault_Type = Linux_Node_Not_Exists
 Release_Namespace_Not_Found_Fault_Type = Release_Namespace_Not_Found
 Get_Helm_Values_Failed_Fault_Type = Get_Helm_Values_Failed

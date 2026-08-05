@@ -458,6 +458,14 @@ def test_error_catalog_codes_use_standard_format():
         )
 
 
+def test_error_catalog_fault_types_are_stable_identifiers():
+    assert all(
+        "{" not in fault_type and "}" not in fault_type
+        for error in errors_module.ALL_ERRORS
+        for fault_type in error.all_fault_types
+    )
+
+
 def test_non_fatal_catalog_entries_do_not_build_cli_exceptions():
     with pytest.raises(ValueError, match="non-raising diagnostic error"):
         errors_module.DNS_NXDOMAIN.as_error()
