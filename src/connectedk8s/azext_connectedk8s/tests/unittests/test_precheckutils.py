@@ -13,6 +13,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+
 # Stub out heavy dependencies before importing the module under test.
 # The _precheckutils module imports kubernetes, azure.cli.core, knack, etc. at module level.
 # In lightweight test environments (no full CLI installed), we inject MagicMock stubs into
@@ -64,10 +66,9 @@ _utils_stub = sys.modules.get("azext_connectedk8s._utils")
 if isinstance(_utils_stub, MagicMock):
     _utils_stub.process_helm_error_detail = lambda x: x
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+import azext_connectedk8s._constants as consts  # noqa: E402, I001
+import azext_connectedk8s._precheckutils as precheckutils  # noqa: E402
 
-import azext_connectedk8s._constants as consts
-import azext_connectedk8s._precheckutils as precheckutils
 
 for mod, original_module in _ORIGINAL_MODULES.items():
     if original_module is None:

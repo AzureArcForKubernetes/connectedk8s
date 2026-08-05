@@ -1721,7 +1721,7 @@ def get_cloud_based_domain(cmd: CLICommand) -> str:
         "."
     )
     # default for public, mc, ff clouds
-    cloud_based_domain = active_directory_array[2]
+    cloud_based_domain: str = active_directory_array[2]
     # special cases for USSec/USNat clouds
     if len(active_directory_array) == 4:
         cloud_based_domain = active_directory_array[2] + "." + active_directory_array[3]

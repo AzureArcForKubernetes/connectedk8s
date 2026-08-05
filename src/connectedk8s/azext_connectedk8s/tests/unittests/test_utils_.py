@@ -45,7 +45,7 @@ _STUBS = {
 for mod, stub in _STUBS.items():
     sys.modules.setdefault(mod, stub)
 
-from azure.cli.core.azclierror import (
+from azure.cli.core.azclierror import (  # noqa: E402
     ArgumentUsageError,
     CLIInternalError,
     FileOperationError,
@@ -55,10 +55,10 @@ from azure.cli.core.azclierror import (
     ValidationError,
 )
 
-import azext_connectedk8s._errors as errors_module
-import azext_connectedk8s._utils as utils_module
-from azext_connectedk8s._errors import ArcError
-from azext_connectedk8s._utils import (
+import azext_connectedk8s._errors as errors_module  # noqa: E402
+import azext_connectedk8s._utils as utils_module  # noqa: E402
+from azext_connectedk8s._errors import ArcError  # noqa: E402
+from azext_connectedk8s._utils import (  # noqa: E402
     HelmTimeoutReport,
     _build_helm_timeout_telemetry_properties,
     _collect_timeout_diagnostics_from_events,
@@ -517,7 +517,9 @@ def test_error_catalog_uses_proposed_exception_classes():
             assert error.az_error_cls is non_default_classes.get(code, CLIInternalError)
 
 
-def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id():
+def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id(
+    monkeypatch,
+):
     class TestCLIError(Exception):
         pass
 
@@ -533,7 +535,8 @@ def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id():
         "Microsoft.Kubernetes/connectedClusters/cluster"
     )
     cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={"connectedk8s_arm_id": arm_id}))
-    utils_module.telemetry.reset_mock()
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
 
     reported_error = report_connectedk8s_error(
         cmd,
@@ -546,18 +549,15 @@ def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id():
     expected_message = "[AZK8S0009] TestError: Test message: details"
     assert isinstance(reported_error, TestCLIError)
     assert str(reported_error) == expected_message
-    event_name, properties = utils_module.telemetry.add_extension_event.call_args.args
+    event_name, properties = mock_telemetry.add_extension_event.call_args.args
     assert event_name == "connectedk8s"
     assert properties["Context.Default.AzureCLI.resourceid"] == arm_id
     assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0009"
     assert properties["Context.Default.AzureCLI.errorFaultType"] == "test-error"
     assert properties["Context.Default.AzureCLI.errorName"] == "TestError"
     assert properties["Context.Default.AzureCLI.errorMessage"] == expected_message
-    assert (
-        utils_module.telemetry.set_exception.call_args.kwargs["summary"]
-        == expected_message
-    )
-    utils_module.telemetry.set_user_fault.assert_called_once_with()
+    assert mock_telemetry.set_exception.call_args.kwargs["summary"] == expected_message
+    mock_telemetry.set_user_fault.assert_called_once_with()
 
 
 def test_build_helm_timeout_report_preserves_failed_diagnostics(monkeypatch):
@@ -583,7 +583,9 @@ def test_build_helm_timeout_report_preserves_failed_diagnostics(monkeypatch):
     )
 
 
-def test_report_helm_timeout_error_uses_one_message_for_console_and_telemetry():
+def test_report_helm_timeout_error_uses_one_message_for_console_and_telemetry(
+    monkeypatch,
+):
     class TestCLIError(Exception):
         pass
 
@@ -603,7 +605,8 @@ def test_report_helm_timeout_error_uses_one_message_for_console_and_telemetry():
         user_fault=False,
     )
     cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
-    utils_module.telemetry.reset_mock()
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
 
     reported_error = report_helm_timeout_error(cmd, report)
 
@@ -612,18 +615,15 @@ def test_report_helm_timeout_error_uses_one_message_for_console_and_telemetry():
         "Helm command output:\ncontext deadline exceeded"
     )
     assert str(reported_error) == expected_message
-    _, properties = utils_module.telemetry.add_extension_event.call_args.args
+    _, properties = mock_telemetry.add_extension_event.call_args.args
     assert properties["Context.Default.AzureCLI.errorMessage"] == expected_message
     assert (
         properties["Context.Default.AzureCLI.onboardingErrorMessage"]
         == expected_message
     )
-    assert (
-        utils_module.telemetry.set_exception.call_args.kwargs["summary"]
-        == expected_message
-    )
-    utils_module.telemetry.add_extension_event.assert_called_once()
-    utils_module.telemetry.set_exception.assert_called_once()
+    assert mock_telemetry.set_exception.call_args.kwargs["summary"] == expected_message
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
 
 
 if __name__ == "__main__":
