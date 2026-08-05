@@ -414,7 +414,9 @@ def create_connectedk8s(
                 )
 
     except Exception as e:
-        precheckutils.send_prediagnostic_job_execution_error_telemetry(reason=str(e))
+        precheckutils.send_prediagnostic_job_execution_error_telemetry(
+            reason=str(e), cmd=cmd
+        )
         ex_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         summ_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
         telemetry.set_exception(
@@ -458,6 +460,7 @@ def create_connectedk8s(
             precheckutils.send_prediagnostic_check_failure_telemetry(
                 precheckutils.prediagnostic_dns_check,
                 precheckutils.prediagnostic_outbound_check,
+                cmd=cmd,
             )
         if storage_space_available:
             logger.warning(
@@ -515,6 +518,7 @@ def create_connectedk8s(
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             check_name="LinuxNodeExists",
             reason="Could not find any node on the kubernetes cluster with the OS linux",
+            cmd=cmd,
         )
         logger.warning(
             "Please ensure that this Kubernetes cluster has any nodes with OS 'linux', for scheduling the "
@@ -537,6 +541,7 @@ def create_connectedk8s(
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             check_name="ClusterRoleBindings",
             reason=ex_msg,
+            cmd=cmd,
         )
         err_msg = (
             "Your credentials doesn't have permission to create clusterrolebindings on this "
@@ -4768,6 +4773,7 @@ def troubleshoot(
                 diagnostic_checks[consts.KAP_Security_Policy_Check],
                 kube_config,
                 kube_context,
+                cmd,
             )
         )
 
