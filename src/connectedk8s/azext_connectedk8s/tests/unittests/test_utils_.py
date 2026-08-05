@@ -440,6 +440,12 @@ def test_error_catalog_contains_allocated_codes_and_fault_type_aliases():
         )
         is errors_module.CUSTOM_LOCATIONS_OID_FETCH_FAILED
     )
+    assert (
+        errors_module.get_error_by_fault_type(
+            errors_module.consts.Get_Helm_Values_Failed
+        )
+        is errors_module.HELM_VALUES_GET_FAILED
+    )
 
 
 def test_error_catalog_codes_use_standard_format():

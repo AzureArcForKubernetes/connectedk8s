@@ -2897,13 +2897,13 @@ def helm_update_agent(
     if response_helm_values_get.returncode != 0:
         error = error_helm_get_values.decode("ascii")
         if "forbidden" in error or "timed out waiting for the condition" in error:
-            telemetry.set_user_fault()
-            telemetry.set_exception(
+            raise report_connectedk8s_error(
+                cmd,
+                errors.HELM_VALUES_GET_FAILED,
                 exception=Exception(error),
-                fault_type=consts.Get_Helm_Values_Failed,
-                summary="Error while doing helm get values azure-arc",
+                user_fault=True,
+                details=error,
             )
-            raise CLIInternalError(str.format(consts.Update_Agent_Failure, error))
 
     cmd_helm_upgrade = [
         helm_client_location,
