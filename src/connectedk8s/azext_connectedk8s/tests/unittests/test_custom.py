@@ -5,16 +5,27 @@
 import os
 import sys
 from typing import Dict, Optional
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-from kubernetes.client.models import V1Node, V1NodeList, V1NodeSpec, V1ObjectMeta
+from kubernetes.client.models import (
+    V1ConfigMap,
+    V1Node,
+    V1NodeList,
+    V1NodeSpec,
+    V1ObjectMeta,
+)
+from kubernetes.client.rest import ApiException
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from azext_connectedk8s.custom import (
+    container_insights_bypass_requested,
+    create_container_insights_proxy_bypass_configmap,
+    ensure_container_insights_proxy_bypass_configmap,
     expand_proxy_skip_range_keywords,
     get_kubernetes_distro,
     get_kubernetes_infra,
+    merge_proxy_bypass_into_agent_settings,
 )
 
 
@@ -179,3 +190,176 @@ def test_expand_arc_keyword_dedups_case_insensitive_endpoint():
     # A user endpoint differing only in case is not duplicated in NO_PROXY.
     out = expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc, .his.ARC.azure.com")
     assert out == ARC_PUBLIC
+
+
+# ------------- Tests for the ContainerInsights proxy-skip-range keyword -------------
+def test_expand_container_insights_keyword_is_dropped():
+    # ContainerInsights is handled via a ConfigMap, so it is dropped from NO_PROXY.
+    assert expand_proxy_skip_range_keywords(_proxy_cmd(), "ContainerInsights") == ""
+
+
+def test_expand_container_insights_keyword_dropped_preserves_other_entries():
+    out = expand_proxy_skip_range_keywords(
+        _proxy_cmd(), "ContainerInsights,10.0.0.0/16,.svc"
+    )
+    assert out == "10.0.0.0/16,.svc"
+
+
+@pytest.mark.parametrize(
+    "keyword",
+    [
+        "ContainerInsights",
+        "containerinsights",
+        "CONTAINERINSIGHTS",
+        " ContainerInsights ",
+    ],
+)
+def test_expand_container_insights_keyword_is_case_and_space_insensitive(keyword):
+    assert expand_proxy_skip_range_keywords(_proxy_cmd(), keyword) == ""
+
+
+def test_expand_arc_and_container_insights_together():
+    # Arc expands to its endpoints; ContainerInsights is dropped; other entries kept.
+    out = expand_proxy_skip_range_keywords(
+        _proxy_cmd(), "Arc,ContainerInsights,10.0.0.0/16"
+    )
+    assert out == ARC_PUBLIC + ",10.0.0.0/16"
+
+
+@pytest.mark.parametrize(
+    "no_proxy",
+    [
+        "ContainerInsights",
+        "10.0.0.0/16,ContainerInsights",
+        "Arc, containerinsights ",
+        "CONTAINERINSIGHTS",
+    ],
+)
+def test_container_insights_bypass_requested_true(no_proxy):
+    assert container_insights_bypass_requested(no_proxy) is True
+
+
+@pytest.mark.parametrize("no_proxy", ["", None, "Arc", "10.0.0.0/16,.svc"])
+def test_container_insights_bypass_requested_false(no_proxy):
+    assert container_insights_bypass_requested(no_proxy) is False
+
+
+# ------------- Tests for merging the proxy bypass into an existing ConfigMap -------------
+def test_merge_adds_block_when_agent_settings_empty():
+    # An absent/empty agent-settings gets a fresh, active proxy_config block.
+    assert (
+        merge_proxy_bypass_into_agent_settings("")
+        == '[agent_settings.proxy_config]\n    ignore_proxy_settings = "true"'
+    )
+
+
+def test_merge_is_noop_when_already_true():
+    # Already bypassing: return the input unchanged so no needless ConfigMap write happens.
+    existing = '[agent_settings.proxy_config]\n    ignore_proxy_settings = "true"'
+    assert merge_proxy_bypass_into_agent_settings(existing) == existing
+
+
+def test_merge_flips_false_to_true_without_duplicating():
+    existing = '[agent_settings.proxy_config]\n    ignore_proxy_settings = "false"'
+    out = merge_proxy_bypass_into_agent_settings(existing)
+    assert 'ignore_proxy_settings = "true"' in out
+    assert '"false"' not in out
+    assert out.count("[agent_settings.proxy_config]") == 1
+
+
+def test_merge_preserves_existing_unrelated_settings():
+    existing = "[agent_settings.high_log_scale]\n  enabled = false\n"
+    out = merge_proxy_bypass_into_agent_settings(existing)
+    # Existing content is untouched...
+    assert "[agent_settings.high_log_scale]" in out
+    assert "enabled = false" in out
+    # ...and the bypass is appended.
+    assert "[agent_settings.proxy_config]" in out
+    assert 'ignore_proxy_settings = "true"' in out
+
+
+def test_merge_ignores_commented_template_and_adds_one_active_setting():
+    existing = (
+        "# [agent_settings.proxy_config]\n"
+        '#    ignore_proxy_settings = "true"  # if this is not applied, default value is false\n'
+    )
+    out = merge_proxy_bypass_into_agent_settings(existing)
+    # The commented template lines are preserved...
+    assert "# [agent_settings.proxy_config]" in out
+    # ...and exactly one ACTIVE ignore_proxy_settings line is present.
+    active = [
+        ln for ln in out.splitlines() if ln.strip().startswith("ignore_proxy_settings")
+    ]
+    assert active == ['    ignore_proxy_settings = "true"']
+
+
+def test_merge_inserts_under_active_header_without_duplicating():
+    out = merge_proxy_bypass_into_agent_settings("[agent_settings.proxy_config]\n")
+    assert out.count("[agent_settings.proxy_config]") == 1
+    assert 'ignore_proxy_settings = "true"' in out
+
+
+# --------- Tests for the ensure/create ConfigMap kube-client interaction ---------
+_BYPASS_SETTING = 'ignore_proxy_settings = "true"'
+_ALREADY_BYPASSING = f"[agent_settings.proxy_config]\n    {_BYPASS_SETTING}"
+
+
+def _configmap(data):
+    # Minimal V1ConfigMap stand-in carrying the given data dict.
+    return V1ConfigMap(data=data)
+
+
+def test_ensure_creates_configmap_when_absent():
+    # A 404 on read means the ConfigMap is absent, so a fresh one must be created.
+    api = MagicMock()
+    api.read_namespaced_config_map.side_effect = ApiException(status=404)
+
+    ensure_container_insights_proxy_bypass_configmap(api)
+
+    api.create_namespaced_config_map.assert_called_once()
+    body = api.create_namespaced_config_map.call_args.kwargs["body"]
+    assert _BYPASS_SETTING in body.data["agent-settings"]
+    api.replace_namespaced_config_map.assert_not_called()
+
+
+def test_ensure_merges_into_existing_configmap_preserving_other_settings():
+    # An existing ConfigMap is updated in place, keeping unrelated agent settings.
+    api = MagicMock()
+    api.read_namespaced_config_map.return_value = _configmap(
+        {"agent-settings": "[agent_settings.high_log_scale]\n  enabled = false\n"}
+    )
+
+    ensure_container_insights_proxy_bypass_configmap(api)
+
+    api.create_namespaced_config_map.assert_not_called()
+    api.replace_namespaced_config_map.assert_called_once()
+    body = api.replace_namespaced_config_map.call_args.kwargs["body"]
+    merged = body.data["agent-settings"]
+    assert "[agent_settings.high_log_scale]" in merged
+    assert _BYPASS_SETTING in merged
+
+
+def test_ensure_is_noop_when_existing_configmap_already_bypasses():
+    # If the ConfigMap already bypasses the proxy, no write should happen.
+    api = MagicMock()
+    api.read_namespaced_config_map.return_value = _configmap(
+        {"agent-settings": _ALREADY_BYPASSING}
+    )
+
+    ensure_container_insights_proxy_bypass_configmap(api)
+
+    api.replace_namespaced_config_map.assert_not_called()
+    api.create_namespaced_config_map.assert_not_called()
+
+
+def test_create_falls_back_to_merge_on_conflict():
+    # A 409 on create means the ConfigMap appeared concurrently; fall back to merge.
+    api = MagicMock()
+    api.create_namespaced_config_map.side_effect = ApiException(status=409)
+
+    with patch(
+        "azext_connectedk8s.custom.ensure_container_insights_proxy_bypass_configmap"
+    ) as mock_ensure:
+        create_container_insights_proxy_bypass_configmap(api)
+
+    mock_ensure.assert_called_once_with(api)
