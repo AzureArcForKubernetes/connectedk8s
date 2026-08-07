@@ -99,7 +99,8 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             arg_group="Proxy",
             help="List of URLs/CIDRs for which proxy should not be used. Pass the "
             "keyword 'Arc' to bypass the proxy for the linked Azure Arc private-link "
-            "endpoints, or 'ContainerInsights' to configure the Container Insights "
+            "endpoints, or 'Microsoft.AzureMonitor.Containers' to configure the Container "
+            "Insights "
             "agent to bypass the proxy.",
         )
         c.argument(
@@ -265,7 +266,8 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             arg_group="Proxy",
             help="List of URLs/CIDRs for which proxy should not be used. Pass the "
             "keyword 'Arc' to bypass the proxy for the linked Azure Arc private-link "
-            "endpoints, or 'ContainerInsights' to configure the Container Insights "
+            "endpoints, or 'Microsoft.AzureMonitor.Containers' to configure the Container "
+            "Insights "
             "agent to bypass the proxy.",
         )
         c.argument(
