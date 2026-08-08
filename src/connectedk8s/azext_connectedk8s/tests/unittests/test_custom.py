@@ -9,7 +9,7 @@ from typing import Dict, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
-from azure.cli.core.azclierror import MutuallyExclusiveArgumentError
+from azure.cli.core.azclierror import AzCLIError, MutuallyExclusiveArgumentError
 from kubernetes.client.models import (
     V1ConfigMap,
     V1Node,
@@ -22,6 +22,7 @@ from kubernetes.client.rest import ApiException
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from azext_connectedk8s._constants import CI_ConfigMap_Proxy_Bypass_Annotation
 from azext_connectedk8s.custom import (
+    add_config_protected_settings,
     container_insights_bypass_requested,
     create_container_insights_proxy_bypass_configmap,
     delete_connectedk8s,
@@ -44,6 +45,13 @@ def create_node(
     spec = V1NodeSpec(provider_id=provider_id)
     metadata = V1ObjectMeta(labels=labels or {}, annotations=annotations or {})
     return V1Node(spec=spec, metadata=metadata)
+
+
+class _StopUpdate(AzCLIError):
+    """Raised by tests to stop update_connected_cluster once the values are captured.
+
+    Subclasses AzCLIError so the telemetry decorator re-raises it untouched.
+    """
 
 
 @pytest.mark.parametrize(
@@ -589,3 +597,137 @@ def test_delete_removes_the_bypass_when_no_helm_release_is_present():
         )
 
     remove_bypass.assert_called_once_with(core_api.return_value)
+
+
+# --------------------- Tests for clearing NO_PROXY ---------------------
+def test_no_proxy_is_skipped_when_the_flag_was_not_passed():
+    # Nothing was requested, so the proxy feature must not be touched at all.
+    settings, protected, redacted = add_config_protected_settings(
+        "", "", "", "", None, None, None
+    )
+
+    assert settings == {}
+    assert protected == {}
+    assert redacted == {}
+
+
+def test_empty_no_proxy_is_sent_when_clearing_was_requested():
+    # The Container Insights keyword expands to an empty no_proxy. It still has to be sent,
+    # otherwise the previously configured NO_PROXY silently survives on the cluster.
+    settings, protected, redacted = add_config_protected_settings(
+        "", "", "", "", None, None, None, clear_no_proxy=True
+    )
+
+    assert settings == {"proxy": {}}
+    assert protected == {"proxy": {"no_proxy": ""}}
+    assert redacted == {"proxy": {"no_proxy": "redacted:proxy:no_proxy"}}
+
+
+def test_non_empty_no_proxy_is_unchanged_by_the_clear_flag():
+    _, protected, _ = add_config_protected_settings(
+        "", "", "10.0.0.0/24", "", None, None, None, clear_no_proxy=True
+    )
+
+    assert protected == {"proxy": {"no_proxy": "10.0.0.0/24"}}
+
+
+def test_clearing_no_proxy_preserves_the_other_proxy_settings():
+    _, protected, _ = add_config_protected_settings(
+        "http://proxy:3128",
+        "https://proxy:3128",
+        "",
+        "",
+        None,
+        None,
+        None,
+        clear_no_proxy=True,
+    )
+
+    assert protected == {
+        "proxy": {
+            "http_proxy": "http://proxy:3128",
+            "https_proxy": "https://proxy:3128",
+            "no_proxy": "",
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    "no_proxy, expected_no_proxy",
+    [
+        ("Microsoft.AzureMonitor.Containers", ""),
+        ("microsoft.azuremonitor.containers", ""),
+        ("10.0.0.0/24,Microsoft.AzureMonitor.Containers", "10.0.0.0\\/24"),
+    ],
+)
+def test_update_sends_no_proxy_for_every_proxy_skip_range(no_proxy, expected_no_proxy):
+    # Whatever the keyword expands to, --proxy-skip-range must always replace NO_PROXY
+    # rather than leave the previous value in place.
+    captured = {}
+
+    def fake_add_config(*args, **kwargs):
+        captured["no_proxy"] = args[2]
+        captured["clear_no_proxy"] = kwargs.get("clear_no_proxy")
+        raise _StopUpdate("stop")
+
+    patches = [
+        patch(
+            "azext_connectedk8s.custom.send_cloud_telemetry", return_value="AzureCloud"
+        ),
+        patch("azext_connectedk8s.custom.set_kube_config", return_value=None),
+        patch("azext_connectedk8s.custom.telemetry"),
+        patch(
+            "azext_connectedk8s.custom.add_config_protected_settings",
+            side_effect=fake_add_config,
+        ),
+    ]
+    with ExitStack() as stack:
+        for each in patches:
+            stack.enter_context(each)
+
+        with pytest.raises(_StopUpdate):
+            update_connected_cluster(
+                MagicMock(),
+                MagicMock(),
+                "resource-group",
+                "cluster",
+                no_proxy=no_proxy,
+            )
+
+    assert captured["no_proxy"] == expected_no_proxy
+    # An empty expansion still has to be written, so the clear flag carries the intent.
+    assert captured["clear_no_proxy"] is (expected_no_proxy == "")
+
+
+def test_update_does_not_clear_no_proxy_when_skip_range_was_not_passed():
+    captured = {}
+
+    def fake_add_config(*args, **kwargs):
+        captured["clear_no_proxy"] = kwargs.get("clear_no_proxy")
+        raise _StopUpdate("stop")
+
+    patches = [
+        patch(
+            "azext_connectedk8s.custom.send_cloud_telemetry", return_value="AzureCloud"
+        ),
+        patch("azext_connectedk8s.custom.set_kube_config", return_value=None),
+        patch("azext_connectedk8s.custom.telemetry"),
+        patch(
+            "azext_connectedk8s.custom.add_config_protected_settings",
+            side_effect=fake_add_config,
+        ),
+    ]
+    with ExitStack() as stack:
+        for each in patches:
+            stack.enter_context(each)
+
+        with pytest.raises(_StopUpdate):
+            update_connected_cluster(
+                MagicMock(),
+                MagicMock(),
+                "resource-group",
+                "cluster",
+                https_proxy="https://proxy:3128",
+            )
+
+    assert captured["clear_no_proxy"] is False
