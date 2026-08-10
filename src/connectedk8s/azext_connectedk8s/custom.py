@@ -230,9 +230,9 @@ def create_connectedk8s(
 
     print(f"Step: {utils.get_utctimestring()}: Escape Proxy Settings, if passed in")
 
-    # Preserve Container Insights bypass request before the keyword is stripped below.
+    # Record the Container Insights request before the keyword is stripped by the expansion below.
     container_insights_requested = container_insights_bypass_requested(no_proxy)
-    # The keyword expands to an empty string, so record here whether the flag was passed at all.
+    # The keyword can expand to an empty string, so track whether the flag was passed at all.
     proxy_skip_range_passed = bool(no_proxy)
 
     # Expand --proxy-skip-range service keywords (e.g. "Arc") before escaping.
@@ -831,8 +831,8 @@ def create_connectedk8s(
                     release_namespace,
                     chart_path,
                 )
-            # Re-put path returns before the main ConfigMap step, so reconcile here instead. Helm
-            # keeps the previous values, so only act when --proxy-skip-range was passed this time.
+            # Re-put returns before the ConfigMap step below, so handle it here. Helm keeps the
+            # previous proxy values, so only act when --proxy-skip-range was passed this time.
             if proxy_skip_range_passed:
                 if container_insights_requested:
                     ensure_container_insights_proxy_bypass_configmap(
@@ -1130,8 +1130,8 @@ def create_connectedk8s(
         onboarding_timeout,
     )
 
-    # Connect starts from a clean install, so the keyword alone decides the state: without it, a
-    # bypass left behind by an earlier onboarding is removed.
+    # A fresh install carries no previous proxy values, so the keyword alone decides the state
+    # and a bypass left behind by an earlier onboarding is removed.
     if container_insights_requested:
         ensure_container_insights_proxy_bypass_configmap(kube_client.CoreV1Api())
     else:
@@ -1399,69 +1399,68 @@ def container_insights_bypass_requested(no_proxy: str) -> bool:
     )
 
 
+def find_active_proxy_bypass_setting(lines: list[str]) -> tuple[int | None, int | None]:
+    # Find the active ignore_proxy_settings line inside [agent_settings.proxy_config]. The
+    # setting is scoped to that section, so a match anywhere else is not a proxy bypass.
+    # Returns its header and index, or the first proxy_config header when the setting is absent.
+    first_header: int | None = None
+    current_header: int | None = None
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        # Track which section the following settings belong to.
+        if stripped.startswith("["):
+            in_section = stripped.startswith(consts.CI_ConfigMap_Proxy_Config_Section)
+            current_header = i if in_section else None
+            if in_section and first_header is None:
+                first_header = i
+            continue
+        if current_header is not None and stripped.startswith("ignore_proxy_settings"):
+            return current_header, i
+
+    return first_header, None
+
+
 def merge_proxy_bypass_into_agent_settings(agent_settings: str) -> str:
     # Set ignore_proxy_settings to "true" in place, leaving the agent's other settings intact.
     lines = agent_settings.splitlines()
+    header, setting = find_active_proxy_bypass_setting(lines)
 
-    # If an active (non-commented) ignore_proxy_settings line exists, force it to "true".
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            continue
-        if stripped.startswith("ignore_proxy_settings"):
-            if stripped.replace(" ", "").startswith('ignore_proxy_settings="true"'):
-                return agent_settings
-            indent = line[: len(line) - len(line.lstrip())]
-            lines[i] = f'{indent}ignore_proxy_settings = "true"'
-            return "\n".join(lines)
+    # An existing active setting is forced to "true".
+    if setting is not None:
+        line = lines[setting]
+        if line.strip().replace(" ", "").startswith('ignore_proxy_settings="true"'):
+            return agent_settings
+        indent = line[: len(line) - len(line.lstrip())]
+        lines[setting] = f'{indent}ignore_proxy_settings = "true"'
+        return "\n".join(lines)
 
     # No active setting: add it under an existing active proxy_config header if present.
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if not stripped.startswith("#") and stripped.startswith(
-            "[agent_settings.proxy_config]"
-        ):
-            lines.insert(i + 1, '    ignore_proxy_settings = "true"')
-            return "\n".join(lines)
+    if header is not None:
+        lines.insert(header + 1, '    ignore_proxy_settings = "true"')
+        return "\n".join(lines)
 
-    # Otherwise append a fresh proxy_config block.
-    block = '[agent_settings.proxy_config]\n    ignore_proxy_settings = "true"'
+    # Otherwise append a fresh proxy_config section.
+    block = (
+        f'{consts.CI_ConfigMap_Proxy_Config_Section}\n    ignore_proxy_settings = "true"'
+    )
     if not agent_settings.strip():
         return block
     return agent_settings.rstrip("\n") + "\n" + block
 
 
 def remove_proxy_bypass_from_agent_settings(agent_settings: str) -> str:
-    # Remove the ignore_proxy_settings we added, leaving the agent's other settings intact.
+    # Remove the ignore_proxy_settings line, leaving the agent's other settings intact.
     lines = agent_settings.splitlines()
+    header, setting = find_active_proxy_bypass_setting(lines)
 
-    # Nothing to undo unless an active (non-commented) ignore_proxy_settings line exists.
-    target: int | None = None
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            continue
-        if stripped.startswith("ignore_proxy_settings"):
-            target = i
-            break
-
-    if target is None:
+    # Nothing to undo unless proxy_config holds an active setting.
+    if setting is None or header is None:
         return agent_settings
 
-    # Note the proxy_config header it sits under before removal shifts the indexes.
-    header: int | None = None
-    for i in range(target - 1, -1, -1):
-        stripped = lines[i].strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped.startswith("["):
-            if stripped.startswith("[agent_settings.proxy_config]"):
-                header = i
-            break
-
-    del lines[target]
-    if header is None:
-        return "\n".join(lines)
+    del lines[setting]
 
     # Drop that header as well, unless another setting still belongs to it.
     for i in range(header + 1, len(lines)):
@@ -1479,8 +1478,8 @@ def remove_proxy_bypass_from_agent_settings(agent_settings: str) -> str:
 def ensure_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
 ) -> None:
-    # Guarantee the Container Insights ConfigMap bypasses the proxy: create it when absent,
-    # otherwise merge the setting into the existing ConfigMap.
+    # Create the Container Insights ConfigMap when absent, otherwise merge the bypass setting
+    # into the existing one.
     print(
         f"Step: {utils.get_utctimestring()}: Ensuring '{consts.CI_ConfigMap_Name}' ConfigMap "
         f"in '{consts.CI_ConfigMap_Namespace}' namespace bypasses the proxy for Container Insights"
@@ -1501,19 +1500,15 @@ def ensure_container_insights_proxy_bypass_configmap(
             consts.CI_ConfigMap_Name,
             consts.CI_ConfigMap_Namespace,
         )
-        utils.kubernetes_exception_handler(
-            e,
-            consts.Read_ConfigMap_Fault_Type,
-            "Unable to read Container Insights proxy-bypass ConfigMap",
-            error_message=(
-                f"Unable to read ConfigMap '{consts.CI_ConfigMap_Name}' "
-                f"in '{consts.CI_ConfigMap_Namespace}' namespace: "
-            ),
-            raise_error=False,
+        logger.debug("Kubernetes Exception: ", exc_info=True)
+        telemetry.set_exception(
+            exception=e,
+            fault_type=consts.Read_ConfigMap_Fault_Type,
+            summary="Unable to read Container Insights proxy-bypass ConfigMap",
         )
         return
 
-    # ConfigMap exists: merge the bypass into its agent-settings, keeping all other settings.
+    # Merge the bypass into the existing agent-settings, keeping all other settings.
     data = existing.data or {}
     current = data.get(consts.CI_ConfigMap_Agent_Settings_Key, "")
     merged = merge_proxy_bypass_into_agent_settings(current)
@@ -1526,7 +1521,7 @@ def ensure_container_insights_proxy_bypass_configmap(
 
     data[consts.CI_ConfigMap_Agent_Settings_Key] = merged
     existing.data = data
-    # Reached only when we changed the bypass line, so it is ours to remove later.
+    # Only reached when this CLI changed the setting, so stamp it for removal by a later run.
     if existing.metadata is None:
         existing.metadata = kube_client.V1ObjectMeta(
             name=consts.CI_ConfigMap_Name,
@@ -1552,15 +1547,11 @@ def ensure_container_insights_proxy_bypass_configmap(
             consts.CI_ConfigMap_Name,
             consts.CI_ConfigMap_Namespace,
         )
-        utils.kubernetes_exception_handler(
-            e,
-            consts.Create_ConfigMap_Fault_Type,
-            "Unable to update Container Insights proxy-bypass ConfigMap",
-            error_message=(
-                f"Unable to update ConfigMap '{consts.CI_ConfigMap_Name}' "
-                f"in '{consts.CI_ConfigMap_Namespace}' namespace: "
-            ),
-            raise_error=False,
+        logger.debug("Kubernetes Exception: ", exc_info=True)
+        telemetry.set_exception(
+            exception=e,
+            fault_type=consts.Create_ConfigMap_Fault_Type,
+            summary="Unable to update Container Insights proxy-bypass ConfigMap",
         )
 
 
@@ -1572,7 +1563,7 @@ def create_container_insights_proxy_bypass_configmap(
         metadata=kube_client.V1ObjectMeta(
             name=consts.CI_ConfigMap_Name,
             namespace=consts.CI_ConfigMap_Namespace,
-            # We add the bypass line here, so it is ours to remove later.
+            # Stamp the ConfigMap so a later run can remove the setting added here.
             annotations={consts.CI_ConfigMap_Proxy_Bypass_Annotation: "azure-cli"},
         ),
         data={
@@ -1595,7 +1586,7 @@ def create_container_insights_proxy_bypass_configmap(
         )
     except Exception as e:  # pylint: disable=broad-except
         if getattr(e, "status", None) == 409:
-            # ConfigMap appeared between our read and create; merge into it instead.
+            # ConfigMap appeared between the read and this create; merge into it instead.
             logger.warning(
                 "ConfigMap '%s' appeared concurrently in '%s' namespace; merging the "
                 "proxy-bypass setting into it.",
@@ -1610,30 +1601,26 @@ def create_container_insights_proxy_bypass_configmap(
             consts.CI_ConfigMap_Name,
             consts.CI_ConfigMap_Namespace,
         )
-        utils.kubernetes_exception_handler(
-            e,
-            consts.Create_ConfigMap_Fault_Type,
-            "Unable to create Container Insights proxy-bypass ConfigMap",
-            error_message=(
-                f"Unable to create ConfigMap '{consts.CI_ConfigMap_Name}' "
-                f"in '{consts.CI_ConfigMap_Namespace}' namespace: "
-            ),
-            raise_error=False,
+        logger.debug("Kubernetes Exception: ", exc_info=True)
+        telemetry.set_exception(
+            exception=e,
+            fault_type=consts.Create_ConfigMap_Fault_Type,
+            summary="Unable to create Container Insights proxy-bypass ConfigMap",
         )
 
 
 def remove_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
 ) -> None:
-    # Undo the proxy bypass, but only where this CLI added it: without our annotation the setting
-    # belongs to the customer.
+    # Undo the proxy bypass only where this CLI added it. Without the annotation the setting is
+    # customer-configured and is left untouched.
     try:
         existing = api_instance.read_namespaced_config_map(
             name=consts.CI_ConfigMap_Name,
             namespace=consts.CI_ConfigMap_Namespace,
         )
     except Exception as e:  # pylint: disable=broad-except
-        # No ConfigMap means there is no bypass of ours to undo; never create one here.
+        # No ConfigMap means there is no setting to undo; never create one here.
         if getattr(e, "status", None) == 404:
             return
         logger.warning(
@@ -1642,19 +1629,15 @@ def remove_container_insights_proxy_bypass_configmap(
             consts.CI_ConfigMap_Name,
             consts.CI_ConfigMap_Namespace,
         )
-        utils.kubernetes_exception_handler(
-            e,
-            consts.Read_ConfigMap_Fault_Type,
-            "Unable to read Container Insights proxy-bypass ConfigMap",
-            error_message=(
-                f"Unable to read ConfigMap '{consts.CI_ConfigMap_Name}' "
-                f"in '{consts.CI_ConfigMap_Namespace}' namespace: "
-            ),
-            raise_error=False,
+        logger.debug("Kubernetes Exception: ", exc_info=True)
+        telemetry.set_exception(
+            exception=e,
+            fault_type=consts.Read_ConfigMap_Fault_Type,
+            summary="Unable to read Container Insights proxy-bypass ConfigMap",
         )
         return
 
-    # Without metadata there is no stamp, so the setting is not ours to touch.
+    # Without metadata there is no annotation, so the setting was not added by this CLI.
     metadata = existing.metadata
     annotations = (metadata.annotations or {}) if metadata else {}
     if consts.CI_ConfigMap_Proxy_Bypass_Annotation not in annotations:
@@ -1667,7 +1650,7 @@ def remove_container_insights_proxy_bypass_configmap(
     )
     existing.data = data
 
-    # Drop the stamp too, so a later run does not look for a setting that is no longer there.
+    # Drop the annotation too, so a later run does not look for a setting that is no longer there.
     del annotations[consts.CI_ConfigMap_Proxy_Bypass_Annotation]
     metadata.annotations = annotations
 
@@ -1689,15 +1672,11 @@ def remove_container_insights_proxy_bypass_configmap(
             consts.CI_ConfigMap_Name,
             consts.CI_ConfigMap_Namespace,
         )
-        utils.kubernetes_exception_handler(
-            e,
-            consts.Create_ConfigMap_Fault_Type,
-            "Unable to remove the Container Insights proxy-bypass setting",
-            error_message=(
-                f"Unable to update ConfigMap '{consts.CI_ConfigMap_Name}' "
-                f"in '{consts.CI_ConfigMap_Namespace}' namespace: "
-            ),
-            raise_error=False,
+        logger.debug("Kubernetes Exception: ", exc_info=True)
+        telemetry.set_exception(
+            exception=e,
+            fault_type=consts.Create_ConfigMap_Fault_Type,
+            summary="Unable to remove the Container Insights proxy-bypass setting",
         )
 
 
@@ -2586,7 +2565,7 @@ def delete_connectedk8s(
                 True,
             )
 
-        # Force delete cleans up regardless of the helm state, so undo our bypass here too.
+        # Force delete cleans up regardless of the helm state, so remove the bypass here too.
         remove_container_insights_proxy_bypass_configmap(api_instance)
 
         return
@@ -2595,7 +2574,7 @@ def delete_connectedk8s(
         delete_cc_resource(
             client, resource_group_name, cluster_name, no_wait, force=force_delete
         ).result()
-        # The agents are already gone, but our bypass can still be on the cluster.
+        # The agents are already gone, but the bypass can still be on the cluster.
         remove_container_insights_proxy_bypass_configmap(api_instance)
         return
 
@@ -2675,7 +2654,7 @@ def delete_connectedk8s(
         is_arm64_cluster,
     )
 
-    # The bypass we added is Arc state, so clean it up along with the agents.
+    # The bypass is Arc state, so clean it up along with the agents.
     remove_container_insights_proxy_bypass_configmap(api_instance)
 
     print(f"Step: {utils.get_utctimestring()}: Delete of Connected Cluster ended.")
@@ -2831,9 +2810,9 @@ def update_connected_cluster(
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
 
-    # Remember Container Insights bypass request before the keyword is stripped below.
+    # Record the Container Insights request before the keyword is stripped by the expansion below.
     container_insights_requested = container_insights_bypass_requested(no_proxy)
-    # The keyword expands to an empty string, so record here whether the flag was passed at all.
+    # The keyword can expand to an empty string, so track whether the flag was passed at all.
     proxy_skip_range_passed = bool(no_proxy)
 
     # Expand --proxy-skip-range service keywords (e.g. "Arc") before escaping.
@@ -2874,8 +2853,8 @@ def update_connected_cluster(
         configuration_settings,
         configuration_protected_settings,
         # --proxy-skip-range with only the Container Insights keyword expands to an empty
-        # string. Without this the setting is skipped and whatever NO_PROXY was configured
-        # earlier silently stays in effect on the cluster.
+        # string. Without this flag the setting is skipped and the previously configured
+        # NO_PROXY silently stays in effect on the cluster.
         clear_no_proxy=proxy_skip_range_passed and not no_proxy,
     )
     arc_agentry_configurations = generate_arc_agent_configuration(
@@ -2965,8 +2944,8 @@ def update_connected_cluster(
         telemetry.set_user_fault()
         raise RequiredArgumentMissingError(consts.No_Param_Error)
 
-    # The Container Insights keyword expands to an empty no_proxy, so check the recorded
-    # request too; otherwise this conflict goes undetected for that keyword.
+    # The Container Insights keyword expands to an empty no_proxy, so check the recorded request
+    # as well; otherwise the conflict goes undetected for that keyword.
     if (
         https_proxy or http_proxy or no_proxy or container_insights_requested
     ) and disable_proxy:
@@ -3202,7 +3181,7 @@ def update_connected_cluster(
         chart_path,
     )
 
-    # Helm keeps the previous values, so only reconcile when --proxy-skip-range was passed.
+    # Helm keeps the previous proxy values, so only act when --proxy-skip-range was passed.
     if proxy_skip_range_passed:
         if container_insights_requested:
             ensure_container_insights_proxy_bypass_configmap(kube_client.CoreV1Api())
