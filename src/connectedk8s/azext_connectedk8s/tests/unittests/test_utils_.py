@@ -42,6 +42,7 @@ from azext_connectedk8s._utils import (
     remove_rsa_private_key,
     report_connectedk8s_diagnostic,
     report_connectedk8s_error,
+    report_connectedk8s_warning,
     report_helm_timeout_error,
     scrub_proxy_url,
     should_use_secret_injection_flow,
@@ -460,7 +461,6 @@ def test_error_catalog_uses_proposed_exception_classes():
         "AZK8S0105": ArgumentUsageError,
         "AZK8S0106": InvalidArgumentValueError,
         "AZK8S0200": FileOperationError,
-        "AZK8S0203": ValidationError,
         "AZK8S0403": ArgumentUsageError,
         "AZK8S0404": ArgumentUsageError,
         "AZK8S0405": ArgumentUsageError,
@@ -666,6 +666,33 @@ def test_report_connectedk8s_diagnostic_does_not_build_cli_exception(monkeypatch
     add_event.assert_called_once()
     mock_telemetry.set_exception.assert_called_once()
     mock_telemetry.set_user_fault.assert_called_once_with()
+
+
+def test_report_connectedk8s_warning_does_not_mark_command_failed(
+    monkeypatch,
+):
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    message = report_connectedk8s_warning(
+        cmd,
+        errors_module.KUBERNETES_NAMESPACE_GET_FAILED,
+        details="namespace lookup failed",
+    )
+
+    assert message.startswith(
+        "[AZK8S0204] KubernetesNamespaceGetFailed: "
+        "Failed to determine the Kubernetes namespace."
+    )
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.warningCode"] == "AZK8S0204"
+    assert (
+        properties["Context.Default.AzureCLI.warningFaultType"]
+        == errors_module.KUBERNETES_NAMESPACE_GET_FAILED.fault_type
+    )
+    mock_telemetry.set_exception.assert_not_called()
+    mock_telemetry.set_user_fault.assert_not_called()
 
 
 def test_build_helm_timeout_report_preserves_failed_diagnostics(monkeypatch):
