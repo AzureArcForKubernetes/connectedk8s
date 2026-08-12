@@ -571,17 +571,17 @@ def create_connectedk8s(
         )
 
     if not required_node_exists:
-        telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(
-                "Could not find any node on the kubernetes cluster with the OS linux"
-            ),
-            fault_type=consts.Linux_Node_Not_Exists,
-            summary="Could not find any node on the kubernetes cluster with the OS linux",
+        linux_node_error = (
+            "Could not find any node on the Kubernetes cluster with the OS linux."
+        )
+        utils.report_connectedk8s_warning(
+            cmd,
+            errors.LINUX_NODE_NOT_FOUND,
+            details=linux_node_error,
         )
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             check_name="LinuxNodeExists",
-            reason="Could not find any node on the kubernetes cluster with the OS linux",
+            reason=linux_node_error,
             cmd=cmd,
         )
         logger.warning(
@@ -596,12 +596,6 @@ def create_connectedk8s(
     crb_permission = utils.can_create_clusterrolebindings()
     if not crb_permission or crb_permission == "Unknown":
         ex_msg = "Your credentials doesn't have permission to create clusterrolebindings on this kubernetes cluster."
-        summ_msg = "Your credentials doesn't have permission to create clusterrolebindings on this kubernetes cluster."
-        telemetry.set_exception(
-            exception=Exception(ex_msg),
-            fault_type=consts.Cannot_Create_ClusterRoleBindings_Fault_Type,
-            summary=summ_msg,
-        )
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             check_name="ClusterRoleBindings",
             reason=ex_msg,
@@ -611,7 +605,13 @@ def create_connectedk8s(
             "Your credentials doesn't have permission to create clusterrolebindings on this "
             "kubernetes cluster. Please check your permissions."
         )
-        raise ValidationError(err_msg)
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.CLUSTER_ROLE_BINDING_CREATE_FORBIDDEN,
+            exception=Exception(ex_msg),
+            user_fault=True,
+            details=err_msg,
+        )
 
     print(
         f"Step: {utils.get_utctimestring()}: Determining Cluster Distribution and Infrastructure"
@@ -732,6 +732,8 @@ def create_connectedk8s(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
+                arc_error=errors.CONFIGMAP_READ_FAILED,
+                cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
         configmap_cluster_name = configmap.data["AZURE_RESOURCE_NAME"]
@@ -1241,22 +1243,24 @@ def create_connectedk8s(
             },
         )
 
-        if use_secret_injection_flow:
-            # Inject the private key BEFORE running helm so that the cluster always
-            # has the onboarding secret available - even if the subsequent helm
-            # install/CLI is interrupted - preventing a stuck-disconnected state.
-            try:
-                utils.inject_onboarding_private_key_secret(private_key_pem)
-            except Exception as e:
-                telemetry.set_exception(
-                    exception=e,
-                    fault_type=consts.Inject_PrivateKey_Secret_Fault_Type,
-                    summary="Failed to pre-create onboarding private key secret",
-                )
-                raise CLIInternalError(
-                    "Failed to pre-create onboarding private key secret on the "
-                    f"Kubernetes cluster: {e}"
-                )
+    if use_secret_injection_flow:
+        # Inject the private key BEFORE running helm so that the cluster always
+        # has the onboarding secret available - even if the subsequent helm
+        # install/CLI is interrupted - preventing a stuck-disconnected state.
+        try:
+            utils.inject_onboarding_private_key_secret(private_key_pem)
+        except AzCLIError:
+            raise
+        except Exception as e:
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                exception=e,
+                details=(
+                    "Failed to pre-create the onboarding private key secret on "
+                    f"the Kubernetes cluster: {e}"
+                ),
+            ) from e
 
         # Install azure-arc agents
         utils.helm_install_release(
@@ -1616,6 +1620,7 @@ def check_kube_connection() -> str:
             e,
             consts.Kubernetes_Connectivity_FaultType,
             "Unable to verify connectivity to the Kubernetes cluster",
+            arc_error=errors.KUBERNETES_CONNECTIVITY_FAILED,
         )
 
     assert False
@@ -1983,14 +1988,12 @@ def load_kube_config(
             default_config.verify_ssl = False
             Configuration.set_default(default_config)
     except Exception as e:
-        telemetry.set_exception(
-            exception=e,
-            fault_type=consts.Load_Kubeconfig_Fault_Type,
-            summary="Problem loading the kubeconfig file",
-        )
         logger.warning(consts.Kubeconfig_Load_Failed_Warning)
-        raise FileOperationError(
-            "Problem loading the kubeconfig file. " + str(e)
+        raise utils.report_connectedk8s_error(
+            None,
+            errors.KUBECONFIG_LOAD_FAILED,
+            exception=e,
+            details=f"Problem loading the kubeconfig file. {e}",
         ) from e
 
 
@@ -2068,6 +2071,7 @@ def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
             consts.Get_Kubernetes_Distro_Fault_Type,
             "Unable to fetch kubernetes distribution",
             raise_error=False,
+            arc_error=errors.KUBERNETES_DISTRIBUTION_DETECTION_FAILED,
         )
         return "generic"
 
@@ -2312,13 +2316,11 @@ def get_kubeconfig_node_dict(kube_config: str | None = None) -> ConfigNode:
     try:
         kubeconfig_data = KubeConfigMerger(kube_config).config
     except Exception as ex:
-        telemetry.set_exception(
+        raise utils.report_connectedk8s_error(
+            None,
+            errors.KUBECONFIG_LOAD_FAILED,
             exception=ex,
-            fault_type=consts.Load_Kubeconfig_Fault_Type,
-            summary="Error while fetching details from kubeconfig",
-        )
-        raise FileOperationError(
-            "Error while fetching details from kubeconfig." + str(ex)
+            details=f"Error while fetching details from kubeconfig. {ex}",
         ) from ex
     return kubeconfig_data
 
@@ -2528,6 +2530,8 @@ def delete_connectedk8s(
             "Unable to read ConfigMap",
             error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
             message_for_not_found=err_msg,
+            arc_error=errors.CONFIGMAP_READ_FAILED,
+            cmd=cmd,
         )
 
     subscription_id = (
@@ -3240,6 +3244,8 @@ def upgrade_agents(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
+                arc_error=errors.CONFIGMAP_READ_FAILED,
+                cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
         configmap_cluster_name = configmap.data["AZURE_RESOURCE_NAME"]
@@ -3525,6 +3531,7 @@ def validate_release_namespace(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
+                arc_error=errors.CONFIGMAP_READ_FAILED,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
         configmap_cluster_name = configmap.data["AZURE_RESOURCE_NAME"]
@@ -4268,13 +4275,11 @@ def merge_kubernetes_configurations(
         existing = load_kubernetes_configuration(existing_file)
         addition = load_kubernetes_configuration(addition_file)
     except Exception as ex:
-        telemetry.set_exception(
+        raise utils.report_connectedk8s_error(
+            None,
+            errors.KUBERNETES_CONFIGURATION_LOAD_FAILED,
             exception=ex,
-            fault_type=consts.Failed_To_Load_K8s_Configuration_Fault_Type,
-            summary="Exception while loading kubernetes configuration",
-        )
-        raise CLIInternalError(
-            f"Exception while loading kubernetes configuration: {ex}"
+            details=f"Exception while loading Kubernetes configuration: {ex}",
         ) from ex
 
     if context_name is not None:
@@ -4729,14 +4734,13 @@ def client_side_proxy(
         try:
             kubeconfig = json.loads(response.text)
         except Exception as e:
-            telemetry.set_exception(
+            clientproxy_process.terminate()
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.KUBECONFIG_LOAD_FAILED,
                 exception=e,
-                fault_type=consts.Load_Kubeconfig_Fault_Type,
-                summary="Unable to load Kubeconfig",
-            )
-            clientproxyutils.close_subprocess_and_raise_cli_error(
-                clientproxy_process, "Failed to load kubeconfig." + str(e)
-            )
+                details=f"Failed to load kubeconfig. {e}",
+            ) from e
 
         kubeconfig = kubeconfig["kubeconfigs"][0]["value"]
         kubeconfig = b64decode(kubeconfig).decode("utf-8")
