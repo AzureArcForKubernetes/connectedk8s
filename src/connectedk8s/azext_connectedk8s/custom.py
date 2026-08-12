@@ -1157,8 +1157,8 @@ def create_connectedk8s(
         registry_path,
         aad_identity_principal_id,
         onboarding_timeout,
-        cmd,
         inject_private_key_via_helm=not use_secret_injection_flow,
+        cmd=cmd,
     )
 
     # Long Running Operation for Agent State
