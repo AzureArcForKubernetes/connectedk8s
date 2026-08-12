@@ -13,6 +13,11 @@ Telemetry_Error_Fault_Type_Key = "Context.Default.AzureCLI.errorFaultType"
 Telemetry_Error_Name_Key = "Context.Default.AzureCLI.errorName"
 Telemetry_Error_Message_Key = "Context.Default.AzureCLI.errorMessage"
 Telemetry_Error_Tsg_Link_Key = "Context.Default.AzureCLI.errorTsgLink"
+Telemetry_Warning_Code_Key = "Context.Default.AzureCLI.warningCode"
+Telemetry_Warning_Fault_Type_Key = "Context.Default.AzureCLI.warningFaultType"
+Telemetry_Warning_Name_Key = "Context.Default.AzureCLI.warningName"
+Telemetry_Warning_Message_Key = "Context.Default.AzureCLI.warningMessage"
+Telemetry_Warning_Tsg_Link_Key = "Context.Default.AzureCLI.warningTsgLink"
 
 Distribution_Enum_Values = [
     "generic",

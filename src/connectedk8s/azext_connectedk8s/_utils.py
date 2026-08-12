@@ -549,6 +549,31 @@ def add_connectedk8s_telemetry_event(
     telemetry.add_extension_event("connectedk8s", event_properties)
 
 
+def report_connectedk8s_warning(
+    cmd: Any | None,
+    error: errors.ArcError,
+    *,
+    telemetry_properties: dict[str, Any] | None = None,
+    fault_type: str | None = None,
+    **context: object,
+) -> str:
+    """Report a standardized warning without marking the command as failed."""
+    message = error.format(**context)
+    properties = (telemetry_properties or {}).copy()
+    properties.update(
+        {
+            consts.Telemetry_Warning_Code_Key: error.code,
+            consts.Telemetry_Warning_Fault_Type_Key: fault_type or error.fault_type,
+            consts.Telemetry_Warning_Name_Key: error.name,
+            consts.Telemetry_Warning_Message_Key: message,
+        }
+    )
+    if error.tsg_link:
+        properties[consts.Telemetry_Warning_Tsg_Link_Key] = error.tsg_link
+    add_connectedk8s_telemetry_event(cmd, properties)
+    return message
+
+
 def report_connectedk8s_error(
     cmd: Any | None,
     error: errors.ArcError,
@@ -1773,8 +1798,10 @@ def kubernetes_exception_handler(
     "ensure you have cluster admin privileges on the cluster to onboard.",
     message_for_not_found: str = "The requested kubernetes resource was not found.",
     raise_error: bool = True,
+    arc_error: errors.ArcError | None = None,
+    cmd: Any | None = None,
 ) -> None:
-    telemetry.set_user_fault()
+    details: str
     if isinstance(ex, ApiException):
         status_code = ex.status
         if status_code == 403:
@@ -1783,17 +1810,52 @@ def kubernetes_exception_handler(
             logger.warning(message_for_not_found)
         else:
             logger.debug("Kubernetes Exception: ", exc_info=True)
+        details = error_message + "\nError Response: " + str(ex.body)
+        if arc_error is not None:
+            if raise_error:
+                raise report_connectedk8s_error(
+                    cmd,
+                    arc_error,
+                    exception=ex,
+                    user_fault=True,
+                    details=details,
+                ) from ex
+            report_connectedk8s_warning(
+                cmd,
+                arc_error,
+                details=details,
+            )
+            return
+        telemetry.set_user_fault()
         if raise_error:
             telemetry.set_exception(
                 exception=ex, fault_type=fault_type, summary=summary
             )
-            raise ValidationError(error_message + "\nError Response: " + str(ex.body))
+            raise ValidationError(details)
     else:
+        details = error_message + "\nError: " + str(ex)
+        if arc_error is not None:
+            if raise_error:
+                raise report_connectedk8s_error(
+                    cmd,
+                    arc_error,
+                    exception=ex,
+                    user_fault=True,
+                    details=details,
+                ) from ex
+            report_connectedk8s_warning(
+                cmd,
+                arc_error,
+                details=details,
+            )
+            logger.debug("Kubernetes Exception", exc_info=True)
+            return
+        telemetry.set_user_fault()
         if raise_error:
             telemetry.set_exception(
                 exception=ex, fault_type=fault_type, summary=summary
             )
-            raise ValidationError(error_message + "\nError: " + str(ex))
+            raise ValidationError(details)
 
         logger.debug("Kubernetes Exception", exc_info=True)
 
@@ -1848,6 +1910,7 @@ def ensure_namespace_cleanup() -> None:
                 consts.Get_Kubernetes_Namespace_Fault_Type,
                 "Unable to fetch kubernetes namespace",
                 raise_error=False,
+                arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
             )
 
 
@@ -2022,6 +2085,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 consts.Get_Kubernetes_Namespace_Fault_Type,
                 error_message=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
+                arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
             )
             return
         # Namespace does not exist, create it with the required metadata.
@@ -2037,9 +2101,10 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
         except ApiException as create_ex:
             kubernetes_exception_handler(
                 create_ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=f"Unable to create namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to create namespace '{consts.Arc_Namespace}'",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
             )
         return
 
@@ -2055,7 +2120,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
     except ApiException as patch_ex:
         kubernetes_exception_handler(
             patch_ex,
-            consts.Inject_PrivateKey_Secret_Fault_Type,
+            errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
             error_message=(
                 f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
                 "ownership metadata"
@@ -2064,6 +2129,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
                 "ownership metadata"
             ),
+            arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
         )
 
 
@@ -2107,13 +2173,14 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         if ex.status != 409:
             kubernetes_exception_handler(
                 ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=(
                     "Unable to create onboarding private key secret "
                     f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
                     f"'{consts.Arc_Namespace}'"
                 ),
                 summary="Unable to create onboarding private key secret",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
             )
             return
         # Secret already exists - replace its contents
@@ -2127,13 +2194,14 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         except ApiException as replace_ex:
             kubernetes_exception_handler(
                 replace_ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=(
                     "Unable to update existing onboarding private key secret "
                     f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
                     f"'{consts.Arc_Namespace}'"
                 ),
                 summary="Unable to update onboarding private key secret",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
             )
 
 
@@ -2214,6 +2282,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 consts.Get_Kubernetes_Namespace_Fault_Type,
                 error_message=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
+                arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
             )
             return
         # Namespace does not exist, create it with the required metadata.
@@ -2229,9 +2298,10 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
         except ApiException as create_ex:
             kubernetes_exception_handler(
                 create_ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=f"Unable to create namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to create namespace '{consts.Arc_Namespace}'",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
             )
         return
 
@@ -2247,7 +2317,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
     except ApiException as patch_ex:
         kubernetes_exception_handler(
             patch_ex,
-            consts.Inject_PrivateKey_Secret_Fault_Type,
+            errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
             error_message=(
                 f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
                 "ownership metadata"
@@ -2256,6 +2326,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
                 "ownership metadata"
             ),
+            arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
         )
 
 
@@ -2299,13 +2370,14 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         if ex.status != 409:
             kubernetes_exception_handler(
                 ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=(
                     "Unable to create onboarding private key secret "
                     f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
                     f"'{consts.Arc_Namespace}'"
                 ),
                 summary="Unable to create onboarding private key secret",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
             )
             return
         # Secret already exists - replace its contents
@@ -2319,13 +2391,14 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         except ApiException as replace_ex:
             kubernetes_exception_handler(
                 replace_ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=(
                     "Unable to update existing onboarding private key secret "
                     f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
                     f"'{consts.Arc_Namespace}'"
                 ),
                 summary="Unable to update onboarding private key secret",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
             )
 
 
