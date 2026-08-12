@@ -234,6 +234,13 @@ KUBERNETES_CONFIGURATION_LOAD_FAILED = _define(
     fault_type=consts.Failed_To_Load_K8s_Configuration_Fault_Type,
 )
 
+KUBERNETES_PRIVATE_KEY_INJECTION_FAILED = _define(
+    code="AZK8S0209",
+    name="KubernetesPrivateKeyInjectionFailed",
+    description="Failed to inject the private key into the Kubernetes cluster.",
+    fault_type=consts.Failed_To_Inject_Private_Key_Fault_Type,
+)
+
 # Network & Connectivity (AZK8S0300-AZK8S0399)
 DATA_PLANE_HEALTH_CHECK_FAILED = _define(
     code="AZK8S0300",

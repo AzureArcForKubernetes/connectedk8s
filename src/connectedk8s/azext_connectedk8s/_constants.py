@@ -214,6 +214,7 @@ Get_Credentials_Failed_Fault_Type = "failed-to-get-list-cluster-user-credentials
 Failed_To_Merge_Credentials_Fault_Type = "failed-to-merge-credentials"
 Kubeconfig_Failed_To_Load_Fault_Type = "failed-to-load-kubeconfig-file"
 Failed_To_Load_K8s_Configuration_Fault_Type = "failed-to-load-kubernetes-configuration"
+Failed_To_Inject_Private_Key_Fault_Type = "failed-to-inject-private-key"
 Failed_To_Merge_Kubeconfig_File = "failed-to-merge-kubeconfig-file"
 Download_Helm_Fault_Type = "helm-client-download-error"
 Create_HelmExe_Fault_Type = "helm-client-create-error"
