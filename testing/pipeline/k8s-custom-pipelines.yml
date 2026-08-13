@@ -50,6 +50,10 @@ stages:
       path: ./test/configurations/WorkloadIdentity.Tests.ps1
   - template: ./templates/run-test.yml
     parameters:
+      jobName: GatewayWorkloadIdentityTest
+      path: ./test/configurations/GatewayWorkloadIdentity.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
       jobName: TroubleshootTest
       path: ./test/configurations/Troubleshoot.Tests.ps1
   - template: ./templates/run-test.yml
