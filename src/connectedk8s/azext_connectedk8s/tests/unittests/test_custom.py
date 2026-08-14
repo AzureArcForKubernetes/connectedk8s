@@ -24,6 +24,7 @@ from kubernetes.client.models import (
 from kubernetes.client.rest import ApiException
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from azext_connectedk8s import custom
 from azext_connectedk8s._constants import (
     CI_ConfigMap_Error_Message,
     CI_ConfigMap_Proxy_Bypass_Annotation,
@@ -40,6 +41,7 @@ from azext_connectedk8s._containerinsightsutils import (
     sync_container_insights_proxy_bypass_configmap,
 )
 from azext_connectedk8s.custom import (
+    _telemetry_catch_all,
     add_config_protected_settings,
     create_connectedk8s,
     delete_connectedk8s,
@@ -48,6 +50,25 @@ from azext_connectedk8s.custom import (
     get_kubernetes_infra,
     update_connected_cluster,
 )
+
+
+def test_telemetry_catch_all_uses_keyword_cmd(monkeypatch):
+    class ReportedError(Exception):
+        pass
+
+    cmd = MagicMock()
+    cmd.cli_ctx = MagicMock()
+    report_error = MagicMock(return_value=ReportedError("reported"))
+    monkeypatch.setattr(custom.utils, "report_connectedk8s_error", report_error)
+
+    @_telemetry_catch_all
+    def command(*, cmd):
+        raise RuntimeError("failed")
+
+    with pytest.raises(ReportedError):
+        command(cmd=cmd)
+
+    assert report_error.call_args.args[0] is cmd
 
 
 def create_node(

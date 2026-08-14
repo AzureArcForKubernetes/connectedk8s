@@ -6,6 +6,14 @@
 
 # pylint: disable=line-too-long
 
+Connected_Cluster_Arm_Id_Telemetry_Context_Key = "connectedk8s_arm_id"
+Connected_Cluster_Arm_Id_Telemetry_Property = "Context.Default.AzureCLI.resourceid"
+Telemetry_Error_Code_Key = "Context.Default.AzureCLI.errorCode"
+Telemetry_Error_Fault_Type_Key = "Context.Default.AzureCLI.errorFaultType"
+Telemetry_Error_Name_Key = "Context.Default.AzureCLI.errorName"
+Telemetry_Error_Message_Key = "Context.Default.AzureCLI.errorMessage"
+Telemetry_Error_Tsg_Link_Key = "Context.Default.AzureCLI.errorTsgLink"
+
 Distribution_Enum_Values = [
     "generic",
     "openshift",
@@ -123,6 +131,15 @@ Custom_Access_Token_Env_Var_Tenant_Id_Missing_Fault_Type = (
 )
 Custom_Token_Env_Var_Sub_Id_Missing_Fault_Type = "Required environment variable 'AZURE_SUBSCRIPTION_ID' is not set, when using Custom Acces Token."
 Release_Install_Namespace = "azure-arc-release"
+Helm_Release_Name = "azure-arc"
+Onboarding_PrivateKey_Secret_Name = "azure-arc-connect-privatekey"
+Onboarding_PrivateKey_Secret_Data_Key = "privateKey"
+Min_Agent_Version_For_Secret_Injection = "1.35.3"
+Min_Agent_Version_For_Secret_Injection_Preview = "1.35.3-preview"
+Stable_Release_Train = "stable"
+Preview_Release_Train = "preview"
+Inject_PrivateKey_Secret_Fault_Type = "inject-private-key-secret-error"
+Strip_Chart_PrivateKey_Secret_Fault_Type = "strip-chart-private-key-secret-error"
 Workload_Identity_Release_Name = "wiextension"
 Workload_Identity_Release_Namespace = "arc-workload-identity"
 Helm_Environment_File_Fault_Type = "helm-environment-file-error"
@@ -154,13 +171,6 @@ Helm_Timeout_ImagePull_Fault_Type = "helm-timeout-image-pull-failure"
 Helm_Timeout_PendingOrUnschedulable_Fault_Type = "helm-timeout-pending-or-unschedulable"
 Helm_Timeout_ClusterIdentity_Fault_Type = "helm-timeout-cluster-identity-error"
 Helm_Timeout_Generic_Fault_Type = "helm-timeout-error"
-# Customer-facing AZK8S error codes surfaced for Helm timeout classifications.
-# Ranges follow the error code chart: Helm & Agent Lifecycle (0500-0599),
-# Network & Connectivity (0300-0399).
-Helm_Timeout_PendingOrUnschedulable_Error_Code = "AZK8S0512"
-Helm_Timeout_ImagePull_Error_Code = "AZK8S0513"
-Helm_Timeout_Generic_Error_Code = "AZK8S0514"
-Helm_Timeout_ClusterIdentity_Error_Code = "AZK8S0309"
 Install_Prediagnostics_Fault_Type = "prediagnostics-failure"
 Install_Prediagnostics_Job_Execution_Error_Fault_Type = (
     "prediagnostics-job-execution-error"
@@ -602,8 +612,46 @@ Entra_Connectivity_Check_Result_String = (
     "Entra Authentication Endpoint Connectivity Check Result"
 )
 CRD_Ownership_Check_Failed_String = "Check Failed: CRD"
+
+# Canonical fault-type names used by the standardized AZK8S error catalog.
+# Aliases retain the exact string values already emitted by existing call sites.
+Catch_All_Fault_Type = "unexpected-connectedk8s-error"
+Unsupported_OS_Fault_Type = Unsupported_Fault_Type
+Unsupported_Operation_Provisioned_Cluster_Fault_Type = (
+    Provisioned_Cluster_Operation_Fault_Type
+)
+Gateway_ArmId_Is_Invalid_Fault_Type = "invalid-gateway-arm-id"
+Linux_Node_Not_Exists_Fault_Type = Linux_Node_Not_Exists
+Release_Namespace_Not_Found_Fault_Type = Release_Namespace_Not_Found
+Get_Helm_Values_Failed_Fault_Type = Get_Helm_Values_Failed
+DNS_NXDomain_Fault_Type = "prediagnostics-dns-nxdomain"
+DNS_Timeout_Fault_Type = "prediagnostics-dns-timeout"
+DNS_ServFail_Fault_Type = "prediagnostics-dns-servfail"
+DNS_No_Servers_Reachable_Fault_Type = "prediagnostics-dns-no-servers-reachable"
+DNS_Communications_Error_Fault_Type = "prediagnostics-dns-communications-error"
+Outbound_Connectivity_Check_Failed_For_Onboarding_Fault_Type = (
+    Outbound_Connectivity_Check_Failed_For_Onboarding
+)
+Outbound_Connectivity_Check_Failed_For_Cluster_Connect_Fault_Type = (
+    Outbound_Connectivity_Check_Failed_For_Cluster_Connect
+)
+Prediagnostics_Outbound_Non2xx_Response_Fault_Type = (
+    Outbound_Connectivity_Non2xx_Response_Type
+)
+Cluster_Diagnostic_Prechecks_Incomplete_Fault_Type = (
+    Cluster_Diagnostic_Prechecks_Incomplete
+)
+Cluster_Diagnostic_Checks_Job_Not_Scheduled_Fault_Type = (
+    Cluster_Diagnostic_Checks_Job_Not_Scheduled
+)
+Cluster_Diagnostic_Checks_Job_Not_Complete_Fault_Type = (
+    Cluster_Diagnostic_Checks_Job_Not_Complete
+)
+Cluster_Diagnostic_Checks_Job_Log_Save_Failed_Fault_Type = (
+    Cluster_Diagnostic_Checks_Job_Log_Save_Failed
+)
 AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION = "2.30.0"
-CLIENT_PROXY_VERSION = "1.3.034631"
+CLIENT_PROXY_VERSION = "1.3.035022"
 CLIENT_PROXY_FOLDER = ".clientproxy"
 API_SERVER_PORT = 47011
 CLIENT_PROXY_PORT = 47010
