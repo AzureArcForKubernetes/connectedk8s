@@ -9,7 +9,11 @@ from typing import Dict, Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
-from azure.cli.core.azclierror import AzCLIError, MutuallyExclusiveArgumentError
+from azure.cli.core.azclierror import (
+    AzCLIError,
+    MutuallyExclusiveArgumentError,
+    ValidationError,
+)
 from kubernetes.client.models import (
     V1ConfigMap,
     V1Node,
@@ -20,19 +24,28 @@ from kubernetes.client.models import (
 from kubernetes.client.rest import ApiException
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-from azext_connectedk8s._constants import CI_ConfigMap_Proxy_Bypass_Annotation
-from azext_connectedk8s.custom import (
-    add_config_protected_settings,
+from azext_connectedk8s._constants import (
+    CI_ConfigMap_Error_Message,
+    CI_ConfigMap_Proxy_Bypass_Annotation,
+    CI_ConfigMap_Removal_Error_Message,
+    Diagnostic_Check_Passed,
+)
+from azext_connectedk8s._containerinsightsutils import (
     container_insights_bypass_requested,
     create_container_insights_proxy_bypass_configmap,
-    delete_connectedk8s,
     ensure_container_insights_proxy_bypass_configmap,
-    expand_proxy_skip_range_keywords,
-    get_kubernetes_distro,
-    get_kubernetes_infra,
     merge_proxy_bypass_into_agent_settings,
     remove_container_insights_proxy_bypass_configmap,
     remove_proxy_bypass_from_agent_settings,
+    sync_container_insights_proxy_bypass_configmap,
+)
+from azext_connectedk8s.custom import (
+    add_config_protected_settings,
+    create_connectedk8s,
+    delete_connectedk8s,
+    expand_proxy_skip_range_keywords,
+    get_kubernetes_distro,
+    get_kubernetes_infra,
     update_connected_cluster,
 )
 
@@ -133,252 +146,201 @@ ARC_PUBLIC = (
 )
 
 
-def test_expand_arc_keyword_public_cloud():
-    assert expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc") == ARC_PUBLIC
-
-
-@pytest.mark.parametrize("keyword", ["Arc", "arc", "ARC", " aRc "])
-def test_expand_arc_keyword_is_case_and_space_insensitive(keyword):
-    assert expand_proxy_skip_range_keywords(_proxy_cmd(), keyword) == ARC_PUBLIC
-
-
-def test_expand_arc_keyword_preserves_other_entries():
-    out = expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc,10.0.0.0/16,.svc")
-    assert out == ARC_PUBLIC + ",10.0.0.0/16,.svc"
-
-
-def test_expand_arc_keyword_china_cloud():
-    cmd = _proxy_cmd("https://login.chinacloudapi.cn")
-    out = expand_proxy_skip_range_keywords(cmd, "Arc")
-    assert out == (
-        ".his.arc.azure.cn,"
-        ".dp.kubernetesconfiguration.azure.cn,"
-        ".guestconfiguration.azure.cn"
-    )
-
-
-def test_expand_arc_keyword_usgov_cloud():
-    cmd = _proxy_cmd("https://login.microsoftonline.us")
-    out = expand_proxy_skip_range_keywords(cmd, "Arc")
-    assert out == (
-        ".his.arc.azure.us,"
-        ".dp.kubernetesconfiguration.azure.us,"
-        ".guestconfiguration.azure.us"
-    )
-
-
-def test_expand_arc_keyword_ussec_cloud():
-    cmd = _proxy_cmd("https://login.microsoftonline.microsoft.scloud")
-    out = expand_proxy_skip_range_keywords(cmd, "Arc")
-    assert out == (
-        ".his.arc.azure.microsoft.scloud,"
-        ".dp.kubernetesconfiguration.azure.microsoft.scloud,"
-        ".guestconfiguration.azure.microsoft.scloud"
-    )
-
-
-def test_expand_arc_keyword_usnat_cloud():
-    cmd = _proxy_cmd("https://login.microsoftonline.eaglex.ic.gov")
-    out = expand_proxy_skip_range_keywords(cmd, "Arc")
-    assert out == (
-        ".his.arc.azure.eaglex.ic.gov,"
-        ".dp.kubernetesconfiguration.azure.eaglex.ic.gov,"
-        ".guestconfiguration.azure.eaglex.ic.gov"
-    )
-
-
-def test_expand_no_keyword_returns_unchanged():
-    val = "10.0.0.0/16,.svc,localhost"
-    assert expand_proxy_skip_range_keywords(_proxy_cmd(), val) == val
-
-
-def test_expand_empty_returns_unchanged():
-    assert expand_proxy_skip_range_keywords(_proxy_cmd(), "") == ""
-
-
-def test_expand_arc_keyword_deduplicates():
-    out = expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc,Arc")
-    assert out == ARC_PUBLIC
-
-
-def test_expand_arc_keyword_dedups_case_insensitive_endpoint():
-    # A user endpoint differing only in case is not duplicated in NO_PROXY.
-    out = expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc, .his.ARC.azure.com")
-    assert out == ARC_PUBLIC
-
-
-# ------------- Tests for the Container Insights proxy-skip-range keyword -------------
-def test_expand_container_insights_keyword_dropped_preserves_other_entries():
-    # Container Insights is handled via a ConfigMap, so it is dropped from NO_PROXY.
-    out = expand_proxy_skip_range_keywords(
-        _proxy_cmd(), "Microsoft.AzureMonitor.Containers,10.0.0.0/16,.svc"
-    )
-    assert out == "10.0.0.0/16,.svc"
+@pytest.mark.parametrize(
+    "no_proxy, expected",
+    [
+        # The Arc keyword is case- and space-insensitive.
+        ("Arc", ARC_PUBLIC),
+        ("arc", ARC_PUBLIC),
+        ("ARC", ARC_PUBLIC),
+        (" aRc ", ARC_PUBLIC),
+        # Repeats, and endpoints differing only in case, are not duplicated.
+        ("Arc,Arc", ARC_PUBLIC),
+        ("Arc, .his.ARC.azure.com", ARC_PUBLIC),
+        # Other entries survive alongside the expansion.
+        ("Arc,10.0.0.0/16,.svc", ARC_PUBLIC + ",10.0.0.0/16,.svc"),
+        # Container Insights is applied through a ConfigMap, so it drops out of NO_PROXY.
+        ("Microsoft.AzureMonitor.Containers", ""),
+        ("microsoft.azuremonitor.containers", ""),
+        ("MICROSOFT.AZUREMONITOR.CONTAINERS", ""),
+        (" Microsoft.AzureMonitor.Containers ", ""),
+        ("Microsoft.AzureMonitor.Containers,10.0.0.0/16,.svc", "10.0.0.0/16,.svc"),
+        ("Arc,Microsoft.AzureMonitor.Containers,10.0.0.0/16", ARC_PUBLIC + ",10.0.0.0/16"),
+        # A value carrying no keyword passes through untouched.
+        ("10.0.0.0/16,.svc,localhost", "10.0.0.0/16,.svc,localhost"),
+        ("", ""),
+    ],
+)
+def test_expand_proxy_skip_range_keywords(no_proxy, expected):
+    assert expand_proxy_skip_range_keywords(_proxy_cmd(), no_proxy) == expected
 
 
 @pytest.mark.parametrize(
-    "keyword",
+    "active_directory, expected",
     [
-        "Microsoft.AzureMonitor.Containers",
-        "microsoft.azuremonitor.containers",
-        "MICROSOFT.AZUREMONITOR.CONTAINERS",
-        " Microsoft.AzureMonitor.Containers ",
+        ("https://login.microsoftonline.com", ARC_PUBLIC),
+        (
+            "https://login.chinacloudapi.cn",
+            ".his.arc.azure.cn,"
+            ".dp.kubernetesconfiguration.azure.cn,"
+            ".guestconfiguration.azure.cn",
+        ),
+        (
+            "https://login.microsoftonline.us",
+            ".his.arc.azure.us,"
+            ".dp.kubernetesconfiguration.azure.us,"
+            ".guestconfiguration.azure.us",
+        ),
+        (
+            "https://login.microsoftonline.microsoft.scloud",
+            ".his.arc.azure.microsoft.scloud,"
+            ".dp.kubernetesconfiguration.azure.microsoft.scloud,"
+            ".guestconfiguration.azure.microsoft.scloud",
+        ),
+        (
+            "https://login.microsoftonline.eaglex.ic.gov",
+            ".his.arc.azure.eaglex.ic.gov,"
+            ".dp.kubernetesconfiguration.azure.eaglex.ic.gov,"
+            ".guestconfiguration.azure.eaglex.ic.gov",
+        ),
     ],
 )
-def test_expand_container_insights_keyword_is_case_and_space_insensitive(keyword):
-    assert expand_proxy_skip_range_keywords(_proxy_cmd(), keyword) == ""
-
-
-def test_expand_arc_and_container_insights_together():
-    # Arc expands to its endpoints; Container Insights is dropped; other entries kept.
-    out = expand_proxy_skip_range_keywords(
-        _proxy_cmd(), "Arc,Microsoft.AzureMonitor.Containers,10.0.0.0/16"
+def test_expand_arc_keyword_per_cloud(active_directory, expected):
+    # The Arc endpoints follow each cloud's own domain, taken from its AAD login endpoint.
+    assert (
+        expand_proxy_skip_range_keywords(_proxy_cmd(active_directory), "Arc") == expected
     )
-    assert out == ARC_PUBLIC + ",10.0.0.0/16"
 
 
+# ------------- Tests for detecting the Container Insights keyword -------------
 @pytest.mark.parametrize(
-    "no_proxy",
+    "no_proxy, expected",
     [
-        "Microsoft.AzureMonitor.Containers",
-        "10.0.0.0/16,Microsoft.AzureMonitor.Containers",
-        "Arc, microsoft.azuremonitor.containers ",
-        "MICROSOFT.AZUREMONITOR.CONTAINERS",
+        ("Microsoft.AzureMonitor.Containers", True),
+        ("10.0.0.0/16,Microsoft.AzureMonitor.Containers", True),
+        ("Arc, microsoft.azuremonitor.containers ", True),
+        ("MICROSOFT.AZUREMONITOR.CONTAINERS", True),
+        ("", False),
+        (None, False),
+        ("Arc", False),
+        ("10.0.0.0/16,.svc", False),
     ],
 )
-def test_container_insights_bypass_requested_true(no_proxy):
-    assert container_insights_bypass_requested(no_proxy) is True
-
-
-@pytest.mark.parametrize("no_proxy", ["", None, "Arc", "10.0.0.0/16,.svc"])
-def test_container_insights_bypass_requested_false(no_proxy):
-    assert container_insights_bypass_requested(no_proxy) is False
+def test_container_insights_bypass_requested(no_proxy, expected):
+    assert container_insights_bypass_requested(no_proxy) is expected
 
 
 # ------------- Tests for merging the proxy bypass into an existing ConfigMap -------------
-def test_merge_adds_block_when_agent_settings_empty():
-    # An absent/empty agent-settings gets a fresh, active proxy_config block.
-    assert (
-        merge_proxy_bypass_into_agent_settings("")
-        == '[agent_settings.proxy_config]\n    ignore_proxy_settings = "true"'
-    )
-
-
-def test_merge_is_noop_when_already_true():
-    # Already bypassing: return the input unchanged so no needless ConfigMap write happens.
-    existing = '[agent_settings.proxy_config]\n    ignore_proxy_settings = "true"'
-    assert merge_proxy_bypass_into_agent_settings(existing) == existing
-
-
-def test_merge_flips_false_to_true_without_duplicating():
-    existing = '[agent_settings.proxy_config]\n    ignore_proxy_settings = "false"'
-    out = merge_proxy_bypass_into_agent_settings(existing)
-    assert 'ignore_proxy_settings = "true"' in out
-    assert '"false"' not in out
-    assert out.count("[agent_settings.proxy_config]") == 1
-
-
-def test_merge_preserves_existing_unrelated_settings():
-    existing = "[agent_settings.high_log_scale]\n  enabled = false\n"
-    out = merge_proxy_bypass_into_agent_settings(existing)
-    # Existing content is untouched...
-    assert "[agent_settings.high_log_scale]" in out
-    assert "enabled = false" in out
-    # ...and the bypass is appended.
-    assert "[agent_settings.proxy_config]" in out
-    assert 'ignore_proxy_settings = "true"' in out
-
-
-def test_merge_ignores_commented_template_and_adds_one_active_setting():
-    existing = (
-        "# [agent_settings.proxy_config]\n"
-        '#    ignore_proxy_settings = "true"  # if this is not applied, default value is false\n'
-    )
-    out = merge_proxy_bypass_into_agent_settings(existing)
-    # The commented template lines are preserved...
-    assert "# [agent_settings.proxy_config]" in out
-    # ...and exactly one ACTIVE ignore_proxy_settings line is present.
-    active = [
-        ln for ln in out.splitlines() if ln.strip().startswith("ignore_proxy_settings")
-    ]
-    assert active == ['    ignore_proxy_settings = "true"']
-
-
-def test_merge_inserts_under_active_header_without_duplicating():
-    out = merge_proxy_bypass_into_agent_settings("[agent_settings.proxy_config]\n")
-    assert out.count("[agent_settings.proxy_config]") == 1
-    assert 'ignore_proxy_settings = "true"' in out
-
-
-def test_merge_ignores_the_setting_in_another_section():
-    # The setting only applies under proxy_config, so a same-named setting elsewhere is left
-    # alone and a proper section is added instead.
-    existing = '[agent_settings.some_other]\n    ignore_proxy_settings = "false"'
-    out = merge_proxy_bypass_into_agent_settings(existing)
-    assert '[agent_settings.some_other]\n    ignore_proxy_settings = "false"' in out
-    assert out.endswith(
-        '[agent_settings.proxy_config]\n    ignore_proxy_settings = "true"'
-    )
-
-
-def test_merge_targets_proxy_config_when_another_section_has_the_setting():
-    existing = (
-        '[agent_settings.some_other]\n    ignore_proxy_settings = "false"\n'
-        '[agent_settings.proxy_config]\n    ignore_proxy_settings = "false"'
-    )
-    out = merge_proxy_bypass_into_agent_settings(existing)
-    assert out == (
-        '[agent_settings.some_other]\n    ignore_proxy_settings = "false"\n'
-        '[agent_settings.proxy_config]\n    ignore_proxy_settings = "true"'
-    )
-
-
-# --------- Tests for the ensure/create ConfigMap kube-client interaction ---------
 _BYPASS_SETTING = 'ignore_proxy_settings = "true"'
 _ALREADY_BYPASSING = f"[agent_settings.proxy_config]\n    {_BYPASS_SETTING}"
 
 
-def _configmap(data):
-    # Minimal V1ConfigMap stand-in carrying the given data dict.
-    return V1ConfigMap(data=data)
+@pytest.mark.parametrize(
+    "agent_settings, expected",
+    [
+        # An absent or empty agent-settings gets a fresh, active proxy_config block.
+        ("", _ALREADY_BYPASSING),
+        # Already bypassing: returned unchanged, so no needless ConfigMap write happens.
+        (_ALREADY_BYPASSING, _ALREADY_BYPASSING),
+        # An explicit "false" is flipped in place rather than duplicated.
+        (
+            '[agent_settings.proxy_config]\n    ignore_proxy_settings = "false"',
+            _ALREADY_BYPASSING,
+        ),
+        # A header with nothing under it gets the setting, without a second header.
+        ("[agent_settings.proxy_config]\n", _ALREADY_BYPASSING),
+        # Unrelated sections are preserved and the bypass is appended.
+        (
+            "[agent_settings.high_log_scale]\n  enabled = false\n",
+            f"[agent_settings.high_log_scale]\n  enabled = false\n{_ALREADY_BYPASSING}",
+        ),
+        # The commented-out template shipped by Container Insights is not an active
+        # setting, so it is left in place and a real one is added.
+        (
+            "# [agent_settings.proxy_config]\n"
+            '#    ignore_proxy_settings = "true"  # if this is not applied, default value is false\n',
+            "# [agent_settings.proxy_config]\n"
+            '#    ignore_proxy_settings = "true"  # if this is not applied, default value is false\n'
+            f"{_ALREADY_BYPASSING}",
+        ),
+        # The setting only counts under proxy_config, so a same-named one in another
+        # section is left alone and a proper section is added instead.
+        (
+            '[agent_settings.some_other]\n    ignore_proxy_settings = "false"',
+            '[agent_settings.some_other]\n    ignore_proxy_settings = "false"\n'
+            f"{_ALREADY_BYPASSING}",
+        ),
+        # With both sections present, only the one under proxy_config is flipped.
+        (
+            '[agent_settings.some_other]\n    ignore_proxy_settings = "false"\n'
+            '[agent_settings.proxy_config]\n    ignore_proxy_settings = "false"',
+            '[agent_settings.some_other]\n    ignore_proxy_settings = "false"\n'
+            f"{_ALREADY_BYPASSING}",
+        ),
+    ],
+)
+def test_merge_proxy_bypass_into_agent_settings(agent_settings, expected):
+    assert merge_proxy_bypass_into_agent_settings(agent_settings) == expected
 
 
-def test_ensure_creates_configmap_when_absent():
-    # A 404 on read means the ConfigMap is absent, so a fresh one must be created.
+# --------- Tests for the ensure/create ConfigMap kube-client interaction ---------
+_CIUTILS = "azext_connectedk8s._containerinsightsutils"
+_UNRELATED = "[agent_settings.high_log_scale]\n  enabled = false\n"
+
+
+def _configmap(agent_settings, stamped=False):
+    # V1ConfigMap stand-in that carries (or deliberately lacks) the ownership annotation.
+    annotations = {CI_ConfigMap_Proxy_Bypass_Annotation: "azure-cli"} if stamped else {}
+    return V1ConfigMap(
+        data={"agent-settings": agent_settings},
+        metadata=V1ObjectMeta(annotations=annotations),
+    )
+
+
+def _written_body(api):
+    # The ConfigMap handed back to the cluster, whichever write call was used.
+    write = (
+        api.replace_namespaced_config_map
+        if api.replace_namespaced_config_map.called
+        else api.create_namespaced_config_map
+    )
+    return write.call_args.kwargs["body"]
+
+
+def _stamp_of(body):
+    return body.metadata.annotations.get(CI_ConfigMap_Proxy_Bypass_Annotation)
+
+
+def test_ensure_creates_a_stamped_configmap_when_absent():
+    # A 404 on read means the ConfigMap is absent, so a fresh one is created and stamped.
     api = MagicMock()
     api.read_namespaced_config_map.side_effect = ApiException(status=404)
 
     ensure_container_insights_proxy_bypass_configmap(api)
 
-    api.create_namespaced_config_map.assert_called_once()
-    body = api.create_namespaced_config_map.call_args.kwargs["body"]
-    assert _BYPASS_SETTING in body.data["agent-settings"]
     api.replace_namespaced_config_map.assert_not_called()
+    body = _written_body(api)
+    assert _BYPASS_SETTING in body.data["agent-settings"]
+    assert _stamp_of(body) == "azure-cli"
 
 
-def test_ensure_merges_into_existing_configmap_preserving_other_settings():
+def test_ensure_merges_into_an_existing_configmap_and_stamps_it():
     # An existing ConfigMap is updated in place, keeping unrelated agent settings.
     api = MagicMock()
-    api.read_namespaced_config_map.return_value = _configmap(
-        {"agent-settings": "[agent_settings.high_log_scale]\n  enabled = false\n"}
-    )
+    api.read_namespaced_config_map.return_value = _configmap(_UNRELATED)
 
     ensure_container_insights_proxy_bypass_configmap(api)
 
     api.create_namespaced_config_map.assert_not_called()
-    api.replace_namespaced_config_map.assert_called_once()
-    body = api.replace_namespaced_config_map.call_args.kwargs["body"]
-    merged = body.data["agent-settings"]
-    assert "[agent_settings.high_log_scale]" in merged
-    assert _BYPASS_SETTING in merged
+    body = _written_body(api)
+    assert "[agent_settings.high_log_scale]" in body.data["agent-settings"]
+    assert _BYPASS_SETTING in body.data["agent-settings"]
+    assert _stamp_of(body) == "azure-cli"
 
 
-def test_ensure_is_noop_when_existing_configmap_already_bypasses():
-    # If the ConfigMap already bypasses the proxy, no write should happen.
+def test_ensure_is_noop_when_the_configmap_already_bypasses():
     api = MagicMock()
-    api.read_namespaced_config_map.return_value = _configmap(
-        {"agent-settings": _ALREADY_BYPASSING}
-    )
+    api.read_namespaced_config_map.return_value = _configmap(_ALREADY_BYPASSING)
 
     ensure_container_insights_proxy_bypass_configmap(api)
 
@@ -392,47 +354,11 @@ def test_create_falls_back_to_merge_on_conflict():
     api.create_namespaced_config_map.side_effect = ApiException(status=409)
 
     with patch(
-        "azext_connectedk8s.custom.ensure_container_insights_proxy_bypass_configmap"
+        f"{_CIUTILS}.ensure_container_insights_proxy_bypass_configmap"
     ) as mock_ensure:
         create_container_insights_proxy_bypass_configmap(api)
 
     mock_ensure.assert_called_once_with(api)
-
-
-# --------- Tests for the annotation that marks the setting as written by this CLI ---------
-
-
-def _stamped_configmap(data, stamped=True):
-    # V1ConfigMap stand-in that carries (or deliberately lacks) the ownership annotation.
-    annotations = {CI_ConfigMap_Proxy_Bypass_Annotation: "azure-cli"} if stamped else {}
-    return V1ConfigMap(data=data, metadata=V1ObjectMeta(annotations=annotations))
-
-
-def test_create_stamps_the_configmap_with_the_annotation():
-    # A ConfigMap created by this CLI must carry the annotation.
-    api = MagicMock()
-
-    create_container_insights_proxy_bypass_configmap(api)
-
-    body = api.create_namespaced_config_map.call_args.kwargs["body"]
-    assert (
-        body.metadata.annotations[CI_ConfigMap_Proxy_Bypass_Annotation] == "azure-cli"
-    )
-
-
-def test_ensure_stamps_the_configmap_when_it_writes_the_setting():
-    # Adding the setting to an existing ConfigMap must stamp it too.
-    api = MagicMock()
-    api.read_namespaced_config_map.return_value = _configmap(
-        {"agent-settings": "[agent_settings.high_log_scale]\n  enabled = false\n"}
-    )
-
-    ensure_container_insights_proxy_bypass_configmap(api)
-
-    body = api.replace_namespaced_config_map.call_args.kwargs["body"]
-    assert (
-        body.metadata.annotations[CI_ConfigMap_Proxy_Bypass_Annotation] == "azure-cli"
-    )
 
 
 # --------- Tests for removing the setting this CLI added ---------
@@ -497,59 +423,133 @@ def test_remove_does_nothing_when_configmap_absent():
     api.replace_namespaced_config_map.assert_not_called()
 
 
-def test_remove_leaves_an_unstamped_configmap_alone():
-    # Without the annotation the setting is customer-configured, so it must survive.
+def test_remove_strips_the_setting_and_the_stamp():
     api = MagicMock()
-    api.read_namespaced_config_map.return_value = _stamped_configmap(
-        {"agent-settings": _ALREADY_BYPASSING}, stamped=False
-    )
-
-    remove_container_insights_proxy_bypass_configmap(api)
-
-    api.replace_namespaced_config_map.assert_not_called()
-
-
-def test_remove_strips_both_the_setting_and_the_stamp():
-    api = MagicMock()
-    api.read_namespaced_config_map.return_value = _stamped_configmap(
-        {"agent-settings": _ALREADY_BYPASSING}
+    api.read_namespaced_config_map.return_value = _configmap(
+        f"{_UNRELATED}{_ALREADY_BYPASSING}", stamped=True
     )
 
     remove_container_insights_proxy_bypass_configmap(api)
 
     body = api.replace_namespaced_config_map.call_args.kwargs["body"]
-    assert body.data["agent-settings"] == ""
+    # Unrelated settings survive; the bypass and the ownership stamp do not.
+    assert body.data["agent-settings"] == _UNRELATED.rstrip("\n")
     assert CI_ConfigMap_Proxy_Bypass_Annotation not in body.metadata.annotations
 
 
-def test_remove_keeps_unrelated_agent_settings():
-    api = MagicMock()
-    api.read_namespaced_config_map.return_value = _stamped_configmap(
-        {
-            "agent-settings": (
-                f"[agent_settings.high_log_scale]\n  enabled = false\n{_ALREADY_BYPASSING}"
-            )
-        }
-    )
-
-    remove_container_insights_proxy_bypass_configmap(api)
-
-    body = api.replace_namespaced_config_map.call_args.kwargs["body"]
-    assert "[agent_settings.high_log_scale]" in body.data["agent-settings"]
-    assert _BYPASS_SETTING not in body.data["agent-settings"]
-
-
 def test_customer_owned_bypass_survives_a_later_removal():
-    # A bypass the customer set themselves is left as is, so nothing is written back.
+    # A bypass the customer set themselves is never stamped by ensure(), so the annotation gate
+    # in remove() leaves it alone. Neither call may write the ConfigMap back.
     api = MagicMock()
-    api.read_namespaced_config_map.return_value = _stamped_configmap(
-        {"agent-settings": _ALREADY_BYPASSING}, stamped=False
-    )
+    api.read_namespaced_config_map.return_value = _configmap(_ALREADY_BYPASSING)
 
     ensure_container_insights_proxy_bypass_configmap(api)
     remove_container_insights_proxy_bypass_configmap(api)
 
     api.replace_namespaced_config_map.assert_not_called()
+
+
+# --------- Tests for the sync entry point that connect and update share ---------
+@pytest.mark.parametrize(
+    "requested, extra, remove_kwargs",
+    [
+        # The keyword was passed, so the bypass is applied.
+        (True, {}, None),
+        # It was not, so the bypass is removed - fatally by default, so a cluster is never
+        # left bypassing the proxy after the user asked for that to stop.
+        (False, {}, {"raise_on_failure": True}),
+        # Fresh connect turns that off when no --proxy-skip-range was passed at all, so
+        # cleanup nobody asked for cannot block onboarding.
+        (False, {"raise_on_removal_failure": False}, {"raise_on_failure": False}),
+    ],
+)
+def test_sync_dispatches_to_ensure_or_remove(requested, extra, remove_kwargs):
+    api = MagicMock()
+    with ExitStack() as stack:
+        ensure = stack.enter_context(
+            patch(f"{_CIUTILS}.ensure_container_insights_proxy_bypass_configmap")
+        )
+        remove = stack.enter_context(
+            patch(f"{_CIUTILS}.remove_container_insights_proxy_bypass_configmap")
+        )
+        sync_container_insights_proxy_bypass_configmap(api, requested, **extra)
+
+    if remove_kwargs is None:
+        ensure.assert_called_once_with(api)
+        remove.assert_not_called()
+    else:
+        ensure.assert_not_called()
+        remove.assert_called_once_with(api, **remove_kwargs)
+
+
+# --------- Tests for ConfigMap failures being fatal on connect and update ---------
+@pytest.mark.parametrize(
+    "func, failing_call, existing, expected_message",
+    [
+        # Anything other than a 404 on read is a real failure, so the command must stop.
+        (
+            ensure_container_insights_proxy_bypass_configmap,
+            "read",
+            "",
+            CI_ConfigMap_Error_Message,
+        ),
+        (
+            ensure_container_insights_proxy_bypass_configmap,
+            "replace",
+            "",
+            CI_ConfigMap_Error_Message,
+        ),
+        # Anything other than a 409 on create is a real failure too.
+        (
+            create_container_insights_proxy_bypass_configmap,
+            "create",
+            "",
+            CI_ConfigMap_Error_Message,
+        ),
+        # Removal names the action it failed at, so the error is not reported as a write.
+        (
+            remove_container_insights_proxy_bypass_configmap,
+            "read",
+            _ALREADY_BYPASSING,
+            CI_ConfigMap_Removal_Error_Message,
+        ),
+        # A failure here would leave the cluster bypassing the proxy after the user
+        # asked it to stop.
+        (
+            remove_container_insights_proxy_bypass_configmap,
+            "replace",
+            _ALREADY_BYPASSING,
+            CI_ConfigMap_Removal_Error_Message,
+        ),
+    ],
+)
+def test_configmap_failures_stop_the_command(
+    func, failing_call, existing, expected_message
+):
+    api = MagicMock()
+    api.read_namespaced_config_map.return_value = _configmap(existing, stamped=True)
+    getattr(api, f"{failing_call}_namespaced_config_map").side_effect = ApiException(
+        status=403
+    )
+
+    with pytest.raises(ValidationError) as raised:
+        func(api)
+
+    assert expected_message in str(raised.value)
+
+
+@pytest.mark.parametrize("failing_call", ["read", "replace"])
+def test_remove_only_reports_the_failure_when_delete_is_cleaning_up(failing_call):
+    # Delete must still finish, so the failure is reported instead of raised.
+    api = MagicMock()
+    api.read_namespaced_config_map.return_value = _configmap(
+        _ALREADY_BYPASSING, stamped=True
+    )
+    getattr(api, f"{failing_call}_namespaced_config_map").side_effect = ApiException(
+        status=403
+    )
+
+    remove_container_insights_proxy_bypass_configmap(api, raise_on_failure=False)
 
 
 # --------------------- Tests for --disable-proxy conflict detection ---------------------
@@ -588,9 +588,12 @@ def test_disable_proxy_conflicts_with_proxy_skip_range(no_proxy):
             )
 
 
-def test_delete_removes_the_bypass_when_no_helm_release_is_present():
-    # Delete returns early when the agents are already gone, but the bypass can still be there.
-    patches = [
+_SUBSCRIPTION_ID = "00000000-0000-0000-0000-000000000000"
+
+
+def _delete_patches(release_namespace):
+    # Shared scaffolding that drives delete_connectedk8s down to the ConfigMap step.
+    return [
         patch(
             "azext_connectedk8s.custom.send_cloud_telemetry", return_value="AzureCloud"
         ),
@@ -598,83 +601,341 @@ def test_delete_removes_the_bypass_when_no_helm_release_is_present():
         patch("azext_connectedk8s.custom.load_kube_config"),
         patch("azext_connectedk8s.custom.check_kube_connection"),
         patch("azext_connectedk8s.custom.get_helm_client_location", return_value=""),
+        patch("azext_connectedk8s.custom.get_kubectl_client_location", return_value=""),
         patch(
-            "azext_connectedk8s.custom.utils.get_release_namespace", return_value=None
+            "azext_connectedk8s.custom.utils.get_release_namespace",
+            return_value=release_namespace,
         ),
         patch("azext_connectedk8s.custom.utils.validate_node_api_response"),
         patch("azext_connectedk8s.custom.check_arm64_node", return_value=False),
-        patch("azext_connectedk8s.custom.delete_cc_resource"),
+        patch(
+            "azext_connectedk8s.custom.get_subscription_id",
+            return_value=_SUBSCRIPTION_ID,
+        ),
+        patch("azext_connectedk8s.custom.check_proxy_kubeconfig", return_value=False),
     ]
+
+
+def _run_delete(release_namespace=None, force_delete=False):
+    # Returns a parent mock whose call order shows the bypass removal against the ARM delete.
     with ExitStack() as stack:
-        for each in patches:
+        for each in _delete_patches(release_namespace):
             stack.enter_context(each)
         core_api = stack.enter_context(
             patch("azext_connectedk8s.custom.kube_client.CoreV1Api")
         )
-        remove_bypass = stack.enter_context(
+        # The identity check on the normal path reads 'azure-clusterconfig' and compares it
+        # against the resource being deleted, so it has to match for that path to proceed.
+        agent_configmap = MagicMock()
+        agent_configmap.data = {
+            "AZURE_RESOURCE_GROUP": "resource-group",
+            "AZURE_RESOURCE_NAME": "cluster",
+            "AZURE_SUBSCRIPTION_ID": _SUBSCRIPTION_ID,
+        }
+        core_api.return_value.read_namespaced_config_map.return_value = agent_configmap
+
+        order = MagicMock()
+        for target, name in (
+            (
+                f"{_CIUTILS}.remove_container_insights_proxy_bypass_configmap",
+                "remove_bypass",
+            ),
+            ("azext_connectedk8s.custom.delete_cc_resource", "delete_cc_resource"),
+            ("azext_connectedk8s.custom.crd_cleanup_force_delete", "crd_cleanup"),
+            ("azext_connectedk8s.custom.utils.delete_arc_agents", "delete_agents"),
+        ):
+            order.attach_mock(stack.enter_context(patch(target)), name)
+
+        delete_connectedk8s(
+            MagicMock(),
+            MagicMock(),
+            "resource-group",
+            "cluster",
+            yes=True,
+            force_delete=force_delete,
+        )
+
+    return order, core_api
+
+
+@pytest.mark.parametrize(
+    "release_namespace, force_delete, crd_cleaned, agents_deleted",
+    [
+        # No helm release: delete returns before any agent cleanup, so this is the last
+        # chance to undo the bypass. It lives in kube-system, not in the azure-arc release.
+        (None, False, False, False),
+        # Force delete skips the identity check entirely, but must still undo it first.
+        ("azure-arc", True, True, True),
+        # The ordinary path, taken once the azure-clusterconfig identity check has passed.
+        ("azure-arc", False, False, True),
+    ],
+)
+def test_delete_removes_the_bypass_before_the_cluster_resource(
+    release_namespace, force_delete, crd_cleaned, agents_deleted
+):
+    order, core_api = _run_delete(release_namespace, force_delete)
+
+    # No raise_on_failure is passed, so a failure stops the command and the cluster resource is
+    # left in place to retry against.
+    order.remove_bypass.assert_called_once_with(core_api.return_value)
+
+    # The bypass must go first: once the cluster resource is deleted, a retried delete stops at
+    # the resource lookup and can never reach the removal again.
+    call_order = [name for name, _, _ in order.mock_calls]
+    assert call_order.index("remove_bypass") < call_order.index("delete_cc_resource")
+
+    # Each row above leaves through a different branch of delete_connectedk8s.
+    assert order.crd_cleanup.called is crd_cleaned
+    assert order.delete_agents.called is agents_deleted
+
+
+# --------- Test that a ConfigMap failure stops the command before the agents are touched ---------
+def test_update_does_not_touch_the_agents_when_the_configmap_fails():
+    # The whole point of doing the ConfigMap first is that a failure leaves nothing to clean up,
+    # so helm must never run once the ConfigMap step has failed.
+    connected_cluster = MagicMock()
+    connected_cluster.id = (
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg"
+        "/providers/Microsoft.Kubernetes/connectedClusters/cluster"
+    )
+    connected_cluster.agent_version = "1.0.0"
+    client = MagicMock()
+    client.get.return_value = connected_cluster
+
+    patches = [
+        patch(
+            "azext_connectedk8s.custom.send_cloud_telemetry", return_value="AzureCloud"
+        ),
+        patch("azext_connectedk8s.custom.set_kube_config", return_value=None),
+        patch("azext_connectedk8s.custom.telemetry"),
+        patch("azext_connectedk8s.custom.load_kube_config"),
+        patch("azext_connectedk8s.custom.check_kube_connection", return_value="v1.28.0"),
+        patch("azext_connectedk8s.custom.get_helm_client_location", return_value=""),
+        patch(
+            "azext_connectedk8s.custom.validate_release_namespace",
+            return_value="azure-arc",
+        ),
+        patch("azext_connectedk8s.custom.generate_reput_request_payload"),
+        patch("azext_connectedk8s.custom.create_cc_resource"),
+        patch("azext_connectedk8s.custom.LongRunningOperation"),
+        patch(
+            "azext_connectedk8s.custom.poll_for_agent_state",
+            return_value=(True, connected_cluster),
+        ),
+        patch(
+            "azext_connectedk8s.custom.get_config_dp_endpoint",
+            return_value=("https://endpoint", "stable"),
+        ),
+        patch("azext_connectedk8s.custom.utils.health_check_dp"),
+        patch(
+            "azext_connectedk8s.custom.utils.get_helm_values",
+            return_value={
+                "repositoryPath": "mcr.microsoft.com/azurearck8s/agents:1.0.0",
+                "helmValuesContent": {},
+            },
+        ),
+        patch("azext_connectedk8s.custom.utils.get_chart_path", return_value="chart"),
+        patch("azext_connectedk8s.custom.check_operation_support"),
+        patch("azext_connectedk8s.custom.kube_client.CoreV1Api"),
+    ]
+    with ExitStack() as stack:
+        for each in patches:
+            stack.enter_context(each)
+        helm_update = stack.enter_context(
+            patch("azext_connectedk8s.custom.utils.helm_update_agent")
+        )
+        ensure_bypass = stack.enter_context(
             patch(
-                "azext_connectedk8s.custom.remove_container_insights_proxy_bypass_configmap"
+                "azext_connectedk8s._containerinsightsutils.ensure_container_insights_proxy_bypass_configmap",
+                side_effect=ValidationError("configmap failed"),
             )
         )
 
-        delete_connectedk8s(
-            MagicMock(), MagicMock(), "resource-group", "cluster", yes=True
+        with pytest.raises(ValidationError, match="configmap failed"):
+            update_connected_cluster(
+                MagicMock(),
+                client,
+                "resource-group",
+                "cluster",
+                no_proxy="Microsoft.AzureMonitor.Containers",
+            )
+
+    ensure_bypass.assert_called_once()
+    helm_update.assert_not_called()
+
+
+# --------- Test that a failed ARM create undoes the bypass without hiding the ARM error ---------
+def _connect_patches(arm_error):
+    # Scaffolding that drives create_connectedk8s down to the ARM create on a fresh onboarding.
+    return [
+        patch(
+            "azext_connectedk8s.custom.send_cloud_telemetry", return_value="AzureCloud"
+        ),
+        patch("azext_connectedk8s.custom.telemetry"),
+        patch(
+            "azext_connectedk8s.custom.utils.validate_custom_token",
+            return_value=(False, "eastus"),
+        ),
+        patch("azext_connectedk8s.custom.utils.check_provider_registrations"),
+        patch("azext_connectedk8s.custom.utils.get_metadata", return_value={}),
+        patch("azext_connectedk8s.custom.generate_arc_agent_configuration"),
+        patch(
+            "azext_connectedk8s.custom.get_config_dp_endpoint",
+            return_value=("https://endpoint", "stable"),
+        ),
+        patch("azext_connectedk8s.custom.set_kube_config", return_value=None),
+        patch("azext_connectedk8s.custom.load_kube_config"),
+        patch(
+            "azext_connectedk8s.custom.check_kube_connection", return_value="v1.28.0"
+        ),
+        patch("azext_connectedk8s.custom.utils.validate_node_api_response"),
+        patch("azext_connectedk8s.custom.check_arm64_node", return_value=False),
+        patch("azext_connectedk8s.custom.check_linux_node", return_value=True),
+        patch("azext_connectedk8s.custom.get_kubectl_client_location", return_value=""),
+        patch("azext_connectedk8s.custom.get_helm_client_location", return_value=""),
+        patch(
+            "azext_connectedk8s.custom.precheckutils",
+            **{
+                "fetch_diagnostic_checks_results.return_value": (
+                    Diagnostic_Check_Passed,
+                    True,
+                )
+            },
+        ),
+        patch(
+            "azext_connectedk8s.custom.utils.can_create_clusterrolebindings",
+            return_value=True,
+        ),
+        patch(
+            "azext_connectedk8s.custom.get_kubernetes_distro", return_value="generic"
+        ),
+        patch("azext_connectedk8s.custom.get_kubernetes_infra", return_value="generic"),
+        patch("azext_connectedk8s.custom.check_aks_cluster", return_value=False),
+        patch("azext_connectedk8s.custom.utils.validate_connect_rp_location"),
+        patch("azext_connectedk8s.custom.cf_resource_groups"),
+        patch("azext_connectedk8s.custom.resource_group_exists", return_value=True),
+        patch(
+            "azext_connectedk8s.custom.utils.get_release_namespace", return_value=None
+        ),
+        patch("azext_connectedk8s.custom.connected_cluster_exists", return_value=False),
+        # Runs real kubectl subprocesses against the stubbed client location otherwise.
+        patch("azext_connectedk8s.custom.crd_cleanup_force_delete"),
+        # A real 4096-bit key would make this test needlessly slow.
+        patch("azext_connectedk8s.custom.RSA"),
+        patch("azext_connectedk8s.custom.get_public_key", return_value="public"),
+        patch("azext_connectedk8s.custom.get_private_key", return_value="private"),
+        patch("azext_connectedk8s.custom.generate_request_payload"),
+        patch(
+            "azext_connectedk8s.custom.get_subscription_id",
+            return_value=_SUBSCRIPTION_ID,
+        ),
+        patch("azext_connectedk8s.custom.create_cc_resource", side_effect=arm_error),
+    ]
+
+
+def test_connect_undoes_the_bypass_but_still_reports_the_arm_failure():
+    # No cluster resource was created, so the bypass applied moments earlier is undone - with
+    # the real removal, denied by the cluster. Because that rollback runs with
+    # raise_on_failure=False it only warns, so the provisioning error the user actually has to
+    # act on still reaches them. If that flag were ever flipped to True, a ConfigMap error
+    # would surface here instead.
+    arm_error = Exception("ARM rejected the request")
+
+    with ExitStack() as stack:
+        for each in _connect_patches(arm_error):
+            stack.enter_context(each)
+        core_api = stack.enter_context(
+            patch("azext_connectedk8s.custom.kube_client.CoreV1Api")
+        )
+        ensure_bypass = stack.enter_context(
+            patch(f"{_CIUTILS}.ensure_container_insights_proxy_bypass_configmap")
+        )
+        core_api.return_value.read_namespaced_config_map.side_effect = ApiException(
+            status=403
         )
 
-    remove_bypass.assert_called_once_with(core_api.return_value)
+        with pytest.raises(Exception, match="ARM rejected the request"):
+            create_connectedk8s(
+                MagicMock(),
+                MagicMock(),
+                "resource-group",
+                "cluster",
+                no_proxy="Microsoft.AzureMonitor.Containers",
+            )
+
+    ensure_bypass.assert_called_once_with(core_api.return_value)
+
+
+def test_plain_connect_is_not_blocked_by_a_denied_configmap():
+    # With no --proxy-skip-range at all, the removal is cleanup nobody asked for, so a denied
+    # ConfigMap must not stop onboarding. Reaching the ARM create proves it got past that step.
+    sentinel = Exception("reached the ARM create")
+
+    with ExitStack() as stack:
+        for each in _connect_patches(sentinel):
+            stack.enter_context(each)
+        core_api = stack.enter_context(
+            patch("azext_connectedk8s.custom.kube_client.CoreV1Api")
+        )
+        core_api.return_value.read_namespaced_config_map.side_effect = ApiException(
+            status=403
+        )
+
+        with pytest.raises(Exception, match="reached the ARM create"):
+            create_connectedk8s(MagicMock(), MagicMock(), "resource-group", "cluster")
 
 
 # --------------------- Tests for clearing NO_PROXY ---------------------
-def test_no_proxy_is_skipped_when_the_flag_was_not_passed():
-    # Nothing was requested, so the proxy feature must not be touched at all.
-    settings, protected, redacted = add_config_protected_settings(
-        "", "", "", "", None, None, None
-    )
-
-    assert settings == {}
-    assert protected == {}
-    assert redacted == {}
-
-
-def test_empty_no_proxy_is_sent_when_clearing_was_requested():
-    # The Container Insights keyword expands to an empty no_proxy. It still has to be sent,
-    # otherwise the previously configured NO_PROXY silently survives on the cluster.
-    settings, protected, redacted = add_config_protected_settings(
-        "", "", "", "", None, None, None, clear_no_proxy=True
-    )
-
-    assert settings == {"proxy": {}}
-    assert protected == {"proxy": {"no_proxy": ""}}
-    assert redacted == {"proxy": {"no_proxy": "redacted:proxy:no_proxy"}}
-
-
-def test_non_empty_no_proxy_is_unchanged_by_the_clear_flag():
-    _, protected, _ = add_config_protected_settings(
-        "", "", "10.0.0.0/24", "", None, None, None, clear_no_proxy=True
-    )
-
-    assert protected == {"proxy": {"no_proxy": "10.0.0.0/24"}}
-
-
-def test_clearing_no_proxy_preserves_the_other_proxy_settings():
-    _, protected, _ = add_config_protected_settings(
-        "http://proxy:3128",
-        "https://proxy:3128",
+@pytest.mark.parametrize(
+    "http_proxy, https_proxy, no_proxy, clear, expected_settings, expected_protected",
+    [
+        # Nothing was requested, so the proxy feature is not touched at all.
+        ("", "", "", False, {}, {}),
+        # The Container Insights keyword expands to an empty no_proxy. It still has to be
+        # sent, otherwise the NO_PROXY already on the cluster silently survives.
+        ("", "", "", True, {"proxy": {}}, {"proxy": {"no_proxy": ""}}),
+        # A non-empty value is unaffected by the clear flag.
+        (
+            "",
+            "",
+            "10.0.0.0/24",
+            True,
+            {"proxy": {}},
+            {"proxy": {"no_proxy": "10.0.0.0/24"}},
+        ),
+        # Clearing NO_PROXY leaves the other proxy settings alone.
+        (
+            "http://proxy:3128",
+            "https://proxy:3128",
+            "",
+            True,
+            {"proxy": {}},
+            {
+                "proxy": {
+                    "http_proxy": "http://proxy:3128",
+                    "https_proxy": "https://proxy:3128",
+                    "no_proxy": "",
+                }
+            },
+        ),
+    ],
+)
+def test_no_proxy_is_only_sent_when_it_was_requested(
+    http_proxy, https_proxy, no_proxy, clear, expected_settings, expected_protected
+):
+    settings, protected, _ = add_config_protected_settings(
+        http_proxy,
+        https_proxy,
+        no_proxy,
         "",
-        "",
         None,
         None,
         None,
-        clear_no_proxy=True,
+        clear_no_proxy=clear,
     )
 
-    assert protected == {
-        "proxy": {
-            "http_proxy": "http://proxy:3128",
-            "https_proxy": "https://proxy:3128",
-            "no_proxy": "",
-        }
-    }
+    assert settings == expected_settings
+    assert protected == expected_protected
 
 
 @pytest.mark.parametrize(

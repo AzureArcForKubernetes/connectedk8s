@@ -269,8 +269,40 @@ CI_ConfigMap_Namespace = "kube-system"
 CI_ConfigMap_Agent_Settings_Key = "agent-settings"
 # Section that scopes ignore_proxy_settings; the setting has no effect in any other section.
 CI_ConfigMap_Proxy_Config_Section = "[agent_settings.proxy_config]"
+# Setting inside that section which drives the proxy bypass.
+CI_ConfigMap_Proxy_Bypass_Setting = "ignore_proxy_settings"
+# Setting line written to enable the bypass.
+CI_ConfigMap_Proxy_Bypass_Enabled = f'{CI_ConfigMap_Proxy_Bypass_Setting} = "true"'
+# Section and setting written together when agent-settings has no proxy_config section yet.
+CI_ConfigMap_Proxy_Bypass_Block = (
+    f"{CI_ConfigMap_Proxy_Config_Section}\n    {CI_ConfigMap_Proxy_Bypass_Enabled}"
+)
 # Set when this CLI writes ignore_proxy_settings, so a later run can remove it.
 CI_ConfigMap_Proxy_Bypass_Annotation = "connectedk8s.arc.azure.com/proxy-bypass"
+# Prefix for the error raised when the bypass cannot be applied or removed.
+CI_ConfigMap_Error_Message = (
+    f"Unable to configure the '{CI_ConfigMap_Name}' ConfigMap that carries the Container Insights "
+    "proxy bypass: "
+)
+# Guidance for the most likely failure, which is no access to the ConfigMap.
+CI_ConfigMap_Unauthorized_Message = (
+    f"The user does not have the required privileges to update the '{CI_ConfigMap_Name}' "
+    f"ConfigMap in the '{CI_ConfigMap_Namespace}' namespace, which carries the Container "
+    f"Insights proxy bypass. Please ensure you have permissions to get, create and update "
+    f"ConfigMaps in the '{CI_ConfigMap_Namespace}' namespace."
+)
+# Removal failures stop the command, so the message says why and how to get past it.
+CI_ConfigMap_Removal_Error_Message = (
+    f"Unable to remove the Container Insights proxy bypass from the '{CI_ConfigMap_Name}' "
+    f"ConfigMap in the '{CI_ConfigMap_Namespace}' namespace. The command stopped here so the "
+    "cluster is not left bypassing the proxy; run it again once the ConfigMap is reachable: "
+)
+# Reported when removal fails on a path that carries on, so the setting can still be on the cluster.
+CI_ConfigMap_Removal_Failed_Warning = (
+    f"Unable to remove the Container Insights proxy bypass from the '{CI_ConfigMap_Name}' "
+    f"ConfigMap in the '{CI_ConfigMap_Namespace}' namespace, so Container Insights may continue "
+    "to bypass the proxy."
+)
 
 Manual_Upgrade_Called_In_Auto_Update_Enabled = (
     "Manual Upgrade was called while in auto_Update enabled mode"
