@@ -33,7 +33,10 @@ from subprocess import PIPE, Popen
 from typing import TYPE_CHECKING, Any
 
 from azure.cli.core import telemetry
-from azure.cli.core.azclierror import AzCLIError
+from azure.cli.core.azclierror import (
+    AzCLIError,
+    CLIInternalError,
+)
 from knack.log import get_logger
 from kubernetes import config, watch
 
@@ -1062,14 +1065,16 @@ def helm_install_release_cluster_diagnostic_checks(
     if response_helm_install.returncode != 0:
         error = error_helm_install.decode("ascii")
         error = azext_utils.process_helm_error_detail(error)
-        user_fault = (
-            "forbidden" in error or "timed out waiting for the condition" in error
-        )
+        if "forbidden" in error or "timed out waiting for the condition" in error:
+            telemetry.set_user_fault()
+
         raise azext_utils.report_connectedk8s_error(
-            cmd,
+            None,
             errors.PREDIAGNOSTICS_HELM_INSTALL_FAILED,
             exception=Exception(error),
-            user_fault=user_fault,
+            user_fault=(
+                "forbidden" in error or "timed out waiting for the condition" in error
+            ),
             details=error,
         )
 
