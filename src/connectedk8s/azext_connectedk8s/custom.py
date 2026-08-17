@@ -978,12 +978,12 @@ def create_connectedk8s(
     )
 
     # Sync the ConfigMap before the cluster resource exists, so a failure leaves nothing behind
-    # in Azure. Removal only warns when --proxy-skip-range was not passed.
-    ciutils.sync_container_insights_proxy_bypass_configmap(
-        kube_client.CoreV1Api(),
-        container_insights_requested,
-        raise_on_removal_failure=proxy_skip_range_passed,
-    )
+    # in Azure. Only act when --proxy-skip-range was passed; a plain onboarding has no reason
+    # to read kube-system.
+    if proxy_skip_range_passed:
+        ciutils.sync_container_insights_proxy_bypass_configmap(
+            kube_client.CoreV1Api(), container_insights_requested
+        )
 
     print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
     # Create connected cluster resource

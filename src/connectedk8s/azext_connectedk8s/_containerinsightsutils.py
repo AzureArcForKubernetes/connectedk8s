@@ -135,10 +135,11 @@ def report_container_insights_configmap_failure(
     summary: str,
     raise_on_failure: bool = True,
     error_message: str = consts.CI_ConfigMap_Error_Message,
+    warning_message: str = consts.CI_ConfigMap_Removal_Failed_Warning,
 ) -> None:
     # True raises so the command stops here; False logs a warning and returns.
     if not raise_on_failure:
-        logger.warning(consts.CI_ConfigMap_Removal_Failed_Warning)
+        logger.warning(warning_message)
         logger.debug("Kubernetes Exception: ", exc_info=True)
         telemetry.set_exception(exception=e, fault_type=fault_type, summary=summary)
         return
@@ -329,13 +330,11 @@ def remove_container_insights_proxy_bypass_configmap(
 def sync_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
     requested: bool,
-    raise_on_removal_failure: bool = True,
 ) -> None:
-    # Single entry point for connect and update, so the two cannot drift apart.
+    # Single entry point for connect and update, so the two cannot drift apart. Callers only
+    # reach here when --proxy-skip-range was passed, so a failure is always fatal.
     # Apply the bypass when requested, otherwise remove it.
     if requested:
         ensure_container_insights_proxy_bypass_configmap(api_instance)
     else:
-        remove_container_insights_proxy_bypass_configmap(
-            api_instance, raise_on_failure=raise_on_removal_failure
-        )
+        remove_container_insights_proxy_bypass_configmap(api_instance)

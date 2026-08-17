@@ -304,8 +304,9 @@ CI_ConfigMap_Unauthorized_Message = (
 # Removal failures stop the command, so the message says why and how to get past it.
 CI_ConfigMap_Removal_Error_Message = (
     f"Unable to remove the Container Insights proxy bypass from the '{CI_ConfigMap_Name}' "
-    f"ConfigMap in the '{CI_ConfigMap_Namespace}' namespace. The command stopped here so the "
-    "cluster is not left bypassing the proxy; run it again once the ConfigMap is reachable: "
+    f"ConfigMap in the '{CI_ConfigMap_Namespace}' namespace, so Container Insights may still "
+    "be bypassing the proxy. The command stopped here without making any further changes; "
+    "run it again once the ConfigMap is reachable: "
 )
 # Reported when removal fails on a path that carries on, so the setting can still be on the cluster.
 CI_ConfigMap_Removal_Failed_Warning = (

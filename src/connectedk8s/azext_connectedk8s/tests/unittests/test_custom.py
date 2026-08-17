@@ -472,19 +472,17 @@ def test_customer_owned_bypass_survives_a_later_removal():
 
 # --------- Tests for the sync entry point that connect and update share ---------
 @pytest.mark.parametrize(
-    "requested, extra, remove_kwargs",
+    "requested, removed",
     [
         # The keyword was passed, so the bypass is applied.
-        (True, {}, None),
-        # It was not, so the bypass is removed - fatally by default, so a cluster is never
+        (True, False),
+        # It was not, so the bypass is removed. Callers only reach sync() when
+        # --proxy-skip-range was passed, so the removal is always fatal - a cluster is never
         # left bypassing the proxy after the user asked for that to stop.
-        (False, {}, {"raise_on_failure": True}),
-        # Fresh connect turns that off when no --proxy-skip-range was passed at all, so
-        # cleanup nobody asked for cannot block onboarding.
-        (False, {"raise_on_removal_failure": False}, {"raise_on_failure": False}),
+        (False, True),
     ],
 )
-def test_sync_dispatches_to_ensure_or_remove(requested, extra, remove_kwargs):
+def test_sync_dispatches_to_ensure_or_remove(requested, removed):
     api = MagicMock()
     with ExitStack() as stack:
         ensure = stack.enter_context(
@@ -493,14 +491,14 @@ def test_sync_dispatches_to_ensure_or_remove(requested, extra, remove_kwargs):
         remove = stack.enter_context(
             patch(f"{_CIUTILS}.remove_container_insights_proxy_bypass_configmap")
         )
-        sync_container_insights_proxy_bypass_configmap(api, requested, **extra)
+        sync_container_insights_proxy_bypass_configmap(api, requested)
 
-    if remove_kwargs is None:
+    if removed:
+        ensure.assert_not_called()
+        remove.assert_called_once_with(api)
+    else:
         ensure.assert_called_once_with(api)
         remove.assert_not_called()
-    else:
-        ensure.assert_not_called()
-        remove.assert_called_once_with(api, **remove_kwargs)
 
 
 # --------- Tests for ConfigMap failures being fatal on connect and update ---------
@@ -560,8 +558,11 @@ def test_configmap_failures_stop_the_command(
 
 
 @pytest.mark.parametrize("failing_call", ["read", "replace"])
-def test_remove_only_reports_the_failure_when_delete_is_cleaning_up(failing_call):
-    # Delete must still finish, so the failure is reported instead of raised.
+def test_remove_only_reports_the_failure_when_rolling_back(failing_call):
+    # connect's rollback after a failed ARM create is the only caller that passes
+    # raise_on_failure=False: the provisioning error is the one the user has to act on, so a
+    # ConfigMap failure is reported instead of raised and cannot mask it. Delete does the
+    # opposite - see test_delete_removes_the_bypass_before_the_cluster_resource.
     api = MagicMock()
     api.read_namespaced_config_map.return_value = _configmap(
         _ALREADY_BYPASSING, stamped=True
@@ -887,9 +888,10 @@ def test_connect_undoes_the_bypass_but_still_reports_the_arm_failure():
     ensure_bypass.assert_called_once_with(core_api.return_value)
 
 
-def test_plain_connect_is_not_blocked_by_a_denied_configmap():
-    # With no --proxy-skip-range at all, the removal is cleanup nobody asked for, so a denied
-    # ConfigMap must not stop onboarding. Reaching the ARM create proves it got past that step.
+def test_plain_connect_never_reads_the_configmap():
+    # With no --proxy-skip-range at all there is nothing to sync, so onboarding must not reach
+    # into kube-system - a denied ConfigMap there cannot warn about or block an onboarding that
+    # asked for nothing proxy-related. Reaching the ARM create proves it got past that step.
     sentinel = Exception("reached the ARM create")
 
     with ExitStack() as stack:
@@ -904,6 +906,8 @@ def test_plain_connect_is_not_blocked_by_a_denied_configmap():
 
         with pytest.raises(Exception, match="reached the ARM create"):
             create_connectedk8s(MagicMock(), MagicMock(), "resource-group", "cluster")
+
+    core_api.return_value.read_namespaced_config_map.assert_not_called()
 
 
 # --------------------- Tests for clearing NO_PROXY ---------------------
