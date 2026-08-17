@@ -57,6 +57,7 @@ from kubernetes.config.kube_config import KubeConfigMerger
 from packaging import version
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._containerinsightsutils as ciutils
 import azext_connectedk8s._errors as errors
 import azext_connectedk8s._precheckutils as precheckutils
 import azext_connectedk8s._troubleshootutils as troubleshootutils
@@ -230,6 +231,11 @@ def create_connectedk8s(
     kube_config = set_kube_config(kube_config)
 
     print(f"Step: {utils.get_utctimestring()}: Escape Proxy Settings, if passed in")
+
+    # Record the Container Insights request before the keyword is stripped by the expansion below.
+    container_insights_requested = ciutils.container_insights_bypass_requested(no_proxy)
+    # The keyword can expand to an empty string, so track whether the flag was passed at all.
+    proxy_skip_range_passed = bool(no_proxy)
 
     # Expand --proxy-skip-range service keywords (e.g. "Arc") before escaping.
     no_proxy = expand_proxy_skip_range_keywords(cmd, no_proxy)
@@ -735,6 +741,14 @@ def create_connectedk8s(
             )
             dp_request_payload = cc_poller.result()
             cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(cc_poller)
+
+            # Re-put returns before the ConfigMap step below, so handle it here. Helm keeps the
+            # previous proxy values, so only act when --proxy-skip-range was passed this time.
+            if proxy_skip_range_passed:
+                ciutils.sync_container_insights_proxy_bypass_configmap(
+                    kube_client.CoreV1Api(), container_insights_requested
+                )
+
             # Disabling cluster-connect if private link is getting enabled
             if enable_private_link is True:
                 disable_cluster_connect(
@@ -963,13 +977,32 @@ def create_connectedk8s(
         arc_agent_profile,
     )
 
+    # Sync the ConfigMap before the cluster resource exists, so a failure leaves nothing behind
+    # in Azure. Only act when --proxy-skip-range was passed; a plain onboarding has no reason
+    # to read kube-system.
+    if proxy_skip_range_passed:
+        ciutils.sync_container_insights_proxy_bypass_configmap(
+            kube_client.CoreV1Api(), container_insights_requested
+        )
+
     print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
     # Create connected cluster resource
-    put_cc_poller = create_cc_resource(
-        client, resource_group_name, cluster_name, cc, no_wait
-    )
-    dp_request_payload = put_cc_poller.result()
-    put_cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(put_cc_poller)
+    try:
+        put_cc_poller = create_cc_resource(
+            client, resource_group_name, cluster_name, cc, no_wait
+        )
+        dp_request_payload = put_cc_poller.result()
+        put_cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(
+            put_cc_poller
+        )
+    except Exception:  # pylint: disable=broad-except
+        # Undo the bypass applied above so a failed command does not leave the cluster changed.
+        # raise_on_failure=False keeps the provisioning error as the one the user sees.
+        if container_insights_requested:
+            ciutils.remove_container_insights_proxy_bypass_configmap(
+                kube_client.CoreV1Api(), raise_on_failure=False
+            )
+        raise
 
     # Checking if custom locations rp is registered and fetching oid if it is registered
     enable_custom_locations, custom_locations_oid = check_cl_registration_and_get_oid(
@@ -1382,22 +1415,25 @@ def get_arc_proxy_skip_range_endpoints(cmd: CLICommand) -> list[str]:
 
 
 def expand_proxy_skip_range_keywords(cmd: CLICommand, no_proxy: str) -> str:
-    # Replace the "Arc" keyword (case-insensitive) with the Arc private-link endpoints,
-    # keeping all other entries in order; returns the value unchanged if no keyword.
+    # Expand "Arc" into no_proxy addresses; drop the Container Insights extension type since
+    # that bypass is configured through a ConfigMap instead.
     if not no_proxy:
         return no_proxy
 
     entries = no_proxy.split(",")
-    if not any(
-        entry.strip().lower() == consts.Proxy_Skip_Range_Arc_Keyword
-        for entry in entries
-    ):
+    keywords = {
+        consts.Proxy_Skip_Range_Arc_Keyword,
+        consts.Proxy_Skip_Range_ContainerInsights_Keyword,
+    }
+    if not any(entry.strip().lower() in keywords for entry in entries):
         return no_proxy
 
     expanded: list[str] = []
     seen: set[str] = set()
     for entry in entries:
         stripped = entry.strip()
+        if stripped.lower() == consts.Proxy_Skip_Range_ContainerInsights_Keyword:
+            continue
         if stripped.lower() == consts.Proxy_Skip_Range_Arc_Keyword:
             for endpoint in get_arc_proxy_skip_range_endpoints(cmd):
                 if endpoint.lower() not in seen:
@@ -2284,6 +2320,10 @@ def delete_connectedk8s(
             cmd, azure_cloud=azure_cloud
         )
 
+        # Undo the bypass first: once the cluster resource is gone, a retried delete stops at
+        # the client.get above and can never reach this line again.
+        ciutils.remove_container_insights_proxy_bypass_configmap(api_instance)
+
         delete_cc_resource(
             client, resource_group_name, cluster_name, no_wait, force=force_delete
         ).result()
@@ -2306,6 +2346,9 @@ def delete_connectedk8s(
         return
 
     if not release_namespace:
+        # Undo the bypass first, for the same reason as the force path above.
+        ciutils.remove_container_insights_proxy_bypass_configmap(api_instance)
+
         delete_cc_resource(
             client, resource_group_name, cluster_name, no_wait, force=force_delete
         ).result()
@@ -2361,6 +2404,10 @@ def delete_connectedk8s(
                 "az connectedk8s delete is not supported when using the Cluster Connect kubeconfig.",
                 recommendation=reco_str,
             )
+
+        # Undo the bypass first, now that the identity check above has confirmed this is the
+        # right cluster. A failure leaves the cluster resource in place to retry against.
+        ciutils.remove_container_insights_proxy_bypass_configmap(api_instance)
 
         delete_cc_resource(
             client, resource_group_name, cluster_name, no_wait, force=force_delete
@@ -2543,6 +2590,11 @@ def update_connected_cluster(
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
 
+    # Record the Container Insights request before the keyword is stripped by the expansion below.
+    container_insights_requested = ciutils.container_insights_bypass_requested(no_proxy)
+    # The keyword can expand to an empty string, so track whether the flag was passed at all.
+    proxy_skip_range_passed = bool(no_proxy)
+
     # Expand --proxy-skip-range service keywords (e.g. "Arc") before escaping.
     no_proxy = expand_proxy_skip_range_keywords(cmd, no_proxy)
 
@@ -2580,6 +2632,13 @@ def update_connected_cluster(
         container_log_path,
         configuration_settings,
         configuration_protected_settings,
+        # `--proxy-skip-range Microsoft.AzureMonitor.Containers` asks for the Container
+        # Insights bypass, which is applied through the container-azm-ms-agentconfig
+        # ConfigMap rather than NO_PROXY, so the expansion above dropped the keyword
+        # and left no_proxy empty. helm_update_agent reapplies whatever the previous
+        # release set for any value it is not given, so the empty value has to be sent
+        # explicitly or the old NO_PROXY would stay on the cluster.
+        container_insights_noproxy=proxy_skip_range_passed and not no_proxy,
     )
     arc_agentry_configurations = generate_arc_agent_configuration(
         configuration_settings, redacted_protected_values
@@ -2637,14 +2696,17 @@ def update_connected_cluster(
             and distribution_version is None
             and azure_hybrid_benefit is not None
         )
+        # Skip this early return when Container Insights is requested so its ConfigMap still runs.
         if (  # pylint: disable=too-many-boolean-expressions
             proxy_params_unset
             and auto_upgrade is None
             and container_log_path is None
             and arm_properties_only_ahb_set
+            and not container_insights_requested
         ):
             return patch_cc_response
 
+    # Container Insights alone is a valid update, so skip the no-parameters error below.
     if (  # pylint: disable=too-many-boolean-expressions
         proxy_params_unset
         and not auto_upgrade
@@ -2655,6 +2717,7 @@ def update_connected_cluster(
         and enable_workload_identity is None
         and gateway_resource_id == ""
         and not disable_gateway
+        and not container_insights_requested
     ):
         telemetry.set_exception(
             exception=consts.No_Param_Error,
@@ -2664,7 +2727,11 @@ def update_connected_cluster(
         telemetry.set_user_fault()
         raise RequiredArgumentMissingError(consts.No_Param_Error)
 
-    if (https_proxy or http_proxy or no_proxy) and disable_proxy:
+    # The Container Insights keyword expands to an empty no_proxy, so check the recorded request
+    # as well; otherwise the conflict goes undetected for that keyword.
+    if (
+        https_proxy or http_proxy or no_proxy or container_insights_requested
+    ) and disable_proxy:
         telemetry.set_exception(
             exception=consts.EnableProxy_Conflict_Error,
             fault_type=consts.Update_Proxy_Conflict_Fault_Type,
@@ -2881,6 +2948,13 @@ def update_connected_cluster(
     chart_path = utils.get_chart_path(
         registry_path, kube_config, kube_context, helm_client_location
     )
+
+    # Helm keeps the previous proxy values, so only act when --proxy-skip-range was passed.
+    # Runs before the agents are updated, so a failure leaves the cluster in its previous state.
+    if proxy_skip_range_passed:
+        ciutils.sync_container_insights_proxy_bypass_configmap(
+            kube_client.CoreV1Api(), container_insights_requested
+        )
 
     print(
         f"Step: {utils.get_utctimestring()}: Starting to update Azure arc agents on the Kubernetes cluster."
@@ -5137,6 +5211,7 @@ def add_config_protected_settings(
     container_log_path: str | None,
     configuration_settings: dict[str, Any] | None,
     configuration_protected_settings: dict[str, Any] | None,
+    container_insights_noproxy: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     redacted_protected_values: dict[str, Any] = {}
 
@@ -5151,14 +5226,20 @@ def add_config_protected_settings(
         configuration_settings.setdefault(
             "logging", {"container_log_path": container_log_path}
         )
-    if any([https_proxy, http_proxy, no_proxy, proxy_cert]):
+    if (
+        any([https_proxy, http_proxy, no_proxy, proxy_cert])
+        or container_insights_noproxy
+    ):
         configuration_protected_settings.setdefault("proxy", {})
         configuration_settings.setdefault("proxy", {})
         if https_proxy:
             configuration_protected_settings["proxy"]["https_proxy"] = https_proxy
         if http_proxy:
             configuration_protected_settings["proxy"]["http_proxy"] = http_proxy
-        if no_proxy:
+        # no_proxy arrives empty when --proxy-skip-range held only the Container Insights
+        # keyword, since that keyword is stripped during expansion. The empty value still has
+        # to be written, otherwise the NO_PROXY from the previous run stays on the cluster.
+        if no_proxy or container_insights_noproxy:
             configuration_protected_settings["proxy"]["no_proxy"] = no_proxy
         if proxy_cert:
             configuration_protected_settings["proxy"]["proxy_cert"] = proxy_cert
