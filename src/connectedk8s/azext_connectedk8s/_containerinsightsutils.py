@@ -313,8 +313,8 @@ def remove_container_insights_proxy_bypass_configmap(
             body=existing,
         )
         print(
-            f"Step: {utils.get_utctimestring()}: Removed the Container Insights proxy bypass "
-            f"from '{consts.CI_ConfigMap_Name}' ConfigMap in "
+            f"Step: {utils.get_utctimestring()}: Disabled the Container Insights "
+            f"proxy bypass in '{consts.CI_ConfigMap_Name}' ConfigMap in "
             f"'{consts.CI_ConfigMap_Namespace}' namespace"
         )
     except Exception as e:  # pylint: disable=broad-exception-caught

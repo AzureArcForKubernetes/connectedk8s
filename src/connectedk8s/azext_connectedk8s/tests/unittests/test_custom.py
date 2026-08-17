@@ -910,16 +910,16 @@ def test_plain_connect_never_reads_the_configmap():
     core_api.return_value.read_namespaced_config_map.assert_not_called()
 
 
-# --------------------- Tests for clearing NO_PROXY ---------------------
+# --------------------- Tests for sending an empty NO_PROXY ---------------------
 @pytest.mark.parametrize(
-    "http_proxy, https_proxy, no_proxy, clear, expected_settings, expected_protected",
+    "http_proxy, https_proxy, no_proxy, ci_noproxy, expected_settings, expected_protected",
     [
         # Nothing was requested, so the proxy feature is not touched at all.
         ("", "", "", False, {}, {}),
         # The Container Insights keyword expands to an empty no_proxy. It still has to be
         # sent, otherwise the NO_PROXY already on the cluster silently survives.
         ("", "", "", True, {"proxy": {}}, {"proxy": {"no_proxy": ""}}),
-        # A non-empty value is unaffected by the clear flag.
+        # A non-empty value is unaffected by the flag.
         (
             "",
             "",
@@ -928,7 +928,7 @@ def test_plain_connect_never_reads_the_configmap():
             {"proxy": {}},
             {"proxy": {"no_proxy": "10.0.0.0/24"}},
         ),
-        # Clearing NO_PROXY leaves the other proxy settings alone.
+        # Sending an empty NO_PROXY leaves the other proxy settings alone.
         (
             "http://proxy:3128",
             "https://proxy:3128",
@@ -946,7 +946,7 @@ def test_plain_connect_never_reads_the_configmap():
     ],
 )
 def test_no_proxy_is_only_sent_when_it_was_requested(
-    http_proxy, https_proxy, no_proxy, clear, expected_settings, expected_protected
+    http_proxy, https_proxy, no_proxy, ci_noproxy, expected_settings, expected_protected
 ):
     settings, protected, _ = add_config_protected_settings(
         http_proxy,
@@ -956,7 +956,7 @@ def test_no_proxy_is_only_sent_when_it_was_requested(
         None,
         None,
         None,
-        clear_no_proxy=clear,
+        container_insights_noproxy=ci_noproxy,
     )
 
     assert settings == expected_settings
@@ -978,7 +978,9 @@ def test_update_sends_no_proxy_for_every_proxy_skip_range(no_proxy, expected_no_
 
     def fake_add_config(*args, **kwargs):
         captured["no_proxy"] = args[2]
-        captured["clear_no_proxy"] = kwargs.get("clear_no_proxy")
+        captured["container_insights_noproxy"] = kwargs.get(
+            "container_insights_noproxy"
+        )
         raise _StopUpdate("stop")
 
     patches = [
@@ -1006,15 +1008,17 @@ def test_update_sends_no_proxy_for_every_proxy_skip_range(no_proxy, expected_no_
             )
 
     assert captured["no_proxy"] == expected_no_proxy
-    # An empty expansion still has to be written, so the clear flag carries the intent.
-    assert captured["clear_no_proxy"] is (expected_no_proxy == "")
+    # An empty expansion still has to be written, so the flag carries that intent.
+    assert captured["container_insights_noproxy"] is (expected_no_proxy == "")
 
 
-def test_update_does_not_clear_no_proxy_when_skip_range_was_not_passed():
+def test_update_does_not_send_empty_no_proxy_when_skip_range_was_not_passed():
     captured = {}
 
     def fake_add_config(*args, **kwargs):
-        captured["clear_no_proxy"] = kwargs.get("clear_no_proxy")
+        captured["container_insights_noproxy"] = kwargs.get(
+            "container_insights_noproxy"
+        )
         raise _StopUpdate("stop")
 
     patches = [
@@ -1041,4 +1045,4 @@ def test_update_does_not_clear_no_proxy_when_skip_range_was_not_passed():
                 https_proxy="https://proxy:3128",
             )
 
-    assert captured["clear_no_proxy"] is False
+    assert captured["container_insights_noproxy"] is False

@@ -2632,9 +2632,13 @@ def update_connected_cluster(
         container_log_path,
         configuration_settings,
         configuration_protected_settings,
-        # The Container Insights keyword expands to an empty string; without this flag the
-        # previously configured NO_PROXY would silently stay in effect on the cluster.
-        clear_no_proxy=proxy_skip_range_passed and not no_proxy,
+        # `--proxy-skip-range Microsoft.AzureMonitor.Containers` asks for the Container
+        # Insights bypass, which is applied through the container-azm-ms-agentconfig
+        # ConfigMap rather than NO_PROXY, so the expansion above dropped the keyword
+        # and left no_proxy empty. helm_update_agent reapplies whatever the previous
+        # release set for any value it is not given, so the empty value has to be sent
+        # explicitly or the old NO_PROXY would stay on the cluster.
+        container_insights_noproxy=proxy_skip_range_passed and not no_proxy,
     )
     arc_agentry_configurations = generate_arc_agent_configuration(
         configuration_settings, redacted_protected_values
@@ -5207,7 +5211,7 @@ def add_config_protected_settings(
     container_log_path: str | None,
     configuration_settings: dict[str, Any] | None,
     configuration_protected_settings: dict[str, Any] | None,
-    clear_no_proxy: bool = False,
+    container_insights_noproxy: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     redacted_protected_values: dict[str, Any] = {}
 
@@ -5222,16 +5226,20 @@ def add_config_protected_settings(
         configuration_settings.setdefault(
             "logging", {"container_log_path": container_log_path}
         )
-    if any([https_proxy, http_proxy, no_proxy, proxy_cert]) or clear_no_proxy:
+    if (
+        any([https_proxy, http_proxy, no_proxy, proxy_cert])
+        or container_insights_noproxy
+    ):
         configuration_protected_settings.setdefault("proxy", {})
         configuration_settings.setdefault("proxy", {})
         if https_proxy:
             configuration_protected_settings["proxy"]["https_proxy"] = https_proxy
         if http_proxy:
             configuration_protected_settings["proxy"]["http_proxy"] = http_proxy
-        # An empty no_proxy is only sent when the caller explicitly asked to clear it.
-        # Skipping it would leave the previously configured NO_PROXY on the cluster.
-        if no_proxy or clear_no_proxy:
+        # no_proxy arrives empty when --proxy-skip-range held only the Container Insights
+        # keyword, since that keyword is stripped during expansion. The empty value still has
+        # to be written, otherwise the NO_PROXY from the previous run stays on the cluster.
+        if no_proxy or container_insights_noproxy:
             configuration_protected_settings["proxy"]["no_proxy"] = no_proxy
         if proxy_cert:
             configuration_protected_settings["proxy"]["proxy_cert"] = proxy_cert
