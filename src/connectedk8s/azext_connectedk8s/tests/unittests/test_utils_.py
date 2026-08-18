@@ -557,12 +557,14 @@ def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id(
     mock_telemetry.set_user_fault.assert_called_once_with()
 
 
-def test_report_connectedk8s_warning_does_not_mark_command_failed(
+def test_report_connectedk8s_warning_logs_without_marking_command_failed(
     monkeypatch,
 ):
     cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
     mock_telemetry = MagicMock()
+    mock_logger = MagicMock()
     monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+    monkeypatch.setattr(utils_module, "logger", mock_logger)
 
     message = report_connectedk8s_warning(
         cmd,
@@ -580,6 +582,7 @@ def test_report_connectedk8s_warning_does_not_mark_command_failed(
         properties["Context.Default.AzureCLI.warningFaultType"]
         == errors_module.KUBERNETES_NAMESPACE_GET_FAILED.fault_type
     )
+    mock_logger.warning.assert_called_once_with("%s", message)
     mock_telemetry.set_exception.assert_not_called()
     mock_telemetry.set_user_fault.assert_not_called()
 
