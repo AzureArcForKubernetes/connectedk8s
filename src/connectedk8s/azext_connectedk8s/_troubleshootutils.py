@@ -12,7 +12,7 @@ import json
 import os
 import shutil
 from subprocess import PIPE, Popen
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import yaml
 from azure.cli.core import telemetry
@@ -20,10 +20,12 @@ from knack.log import get_logger
 from kubernetes import client, config, utils, watch
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._errors as errors
 import azext_connectedk8s._utils as azext_utils
 from azext_connectedk8s._utils import get_utctimestring
 
 if TYPE_CHECKING:
+    from knack.commands import CLICommand
     from kubernetes.client import AppsV1Api, BatchV1Api, CoreV1Api
 
     from .vendored_sdks.preview_2025_08_01.models import (
@@ -1067,7 +1069,7 @@ def check_diagnoser_container(
     probable_pod_security_policy_presence: str,
     kube_config: str | None,
     kube_context: str | None,
-    cmd: Any | None = None,
+    cmd: CLICommand | None = None,
 ) -> tuple[str, bool]:
     print(f"Step: {get_utctimestring()}: Check diagnoser container")
     try:
@@ -1206,12 +1208,17 @@ def executing_diagnoser_job(
     )
     if response_helm_values_get.returncode != 0:
         error = error_helm_get_values.decode("ascii")
-        if "forbidden" in error or "timed out waiting for the condition" in error:
-            telemetry.set_exception(
-                exception=error_helm_get_values.decode("ascii"),
-                fault_type=consts.Get_Helm_Values_Failed,
-                summary="Error while doing helm get values azure-arc",
-            )
+        message = azext_utils.report_connectedk8s_diagnostic(
+            None,
+            errors.HELM_VALUES_GET_FAILED,
+            exception=Exception(error),
+            user_fault=(
+                "forbidden" in error or "timed out waiting for the condition" in error
+            ),
+            details=error,
+        )
+        diagnoser_output.append(f"{message}\n")
+        return None
     helm_values_json = json.loads(output_helm_values_get)
     # Retrieving the proxy values if they are present
     try:
@@ -1641,12 +1648,18 @@ def check_probable_cluster_security_policy(
         )
         if response_helm_values_get.returncode != 0:
             error = error_helm_get_values.decode("ascii")
-            if "forbidden" in error or "timed out waiting for the condition" in error:
-                telemetry.set_exception(
-                    exception=error_helm_get_values.decode("ascii"),
-                    fault_type=consts.Get_Helm_Values_Failed,
-                    summary="Error while doing helm get values azure-arc",
-                )
+            message = azext_utils.report_connectedk8s_diagnostic(
+                None,
+                errors.HELM_VALUES_GET_FAILED,
+                exception=Exception(error),
+                user_fault=(
+                    "forbidden" in error
+                    or "timed out waiting for the condition" in error
+                ),
+                details=error,
+            )
+            diagnoser_output.append(f"{message}\n")
+            return consts.Diagnostic_Check_Incomplete
         # Converting output obtained in json format and fetching the clusterconnect-agent feature
         helm_values_json = json.loads(output_helm_values_get)
         cluster_connect_feature = helm_values_json["systemDefaultValues"][
