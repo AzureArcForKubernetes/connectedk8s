@@ -102,6 +102,28 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _get_kubernetes_client_locations(
+    cmd: CLICommand, azure_cloud: str
+) -> tuple[str, str]:
+    try:
+        kubectl_client_location = get_kubectl_client_location(
+            cmd, azure_cloud=azure_cloud
+        )
+        helm_client_location = get_helm_client_location(
+            cmd, azure_cloud=azure_cloud
+        )
+        return kubectl_client_location, helm_client_location
+    except AzCLIError:
+        raise
+    except Exception as ex:
+        raise CLIInternalError(
+            "An exception has occured while trying to perform kubectl or helm "
+            f"install: {ex}"
+        ) from ex
+    except KeyboardInterrupt as ex:
+        raise ManualInterrupt("Process terminated externally.") from ex
+
+
 def _telemetry_catch_all(func: Callable[..., Any]) -> Callable[..., Any]:
     """Catch-all that ensures unhandled exceptions are logged to telemetry
     with proper ExceptionName before reaching the CLI framework."""
@@ -333,18 +355,9 @@ def create_connectedk8s(
         azure_local_disconnected = True
 
     # Install kubectl and helm
-    try:
-        kubectl_client_location = get_kubectl_client_location(
-            cmd, azure_cloud=azure_cloud
-        )
-        helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
-    except Exception as e:
-        raise CLIInternalError(
-            f"An exception has occured while trying to perform kubectl or helm install: {e}"
-        ) from e
-    # Handling the user manual interrupt
-    except KeyboardInterrupt as exc:
-        raise ManualInterrupt("Process terminated externally.") from exc
+    kubectl_client_location, helm_client_location = (
+        _get_kubernetes_client_locations(cmd, azure_cloud)
+    )
 
     # Pre onboarding checks
     diagnostic_checks = "Failed"
@@ -413,6 +426,8 @@ def create_connectedk8s(
                     "diagnostic check logs on your device"
                 )
 
+    except AzCLIError:
+        raise
     except Exception as e:
         precheckutils.send_prediagnostic_job_execution_error_telemetry(
             reason=str(e), cmd=cmd
