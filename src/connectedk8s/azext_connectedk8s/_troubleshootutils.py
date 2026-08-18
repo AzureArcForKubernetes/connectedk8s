@@ -12,7 +12,7 @@ import json
 import os
 import shutil
 from subprocess import PIPE, Popen
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import yaml
 from azure.cli.core import telemetry
@@ -29,6 +29,7 @@ from azext_connectedk8s._logutils import (
 from azext_connectedk8s._utils import get_utctimestring
 
 if TYPE_CHECKING:
+    from knack.commands import CLICommand
     from kubernetes.client import AppsV1Api, BatchV1Api, CoreV1Api
 
     from .vendored_sdks.preview_2025_08_01.models import (
@@ -1074,7 +1075,7 @@ def check_diagnoser_container(
     probable_pod_security_policy_presence: str,
     kube_config: str | None,
     kube_context: str | None,
-    cmd: Any | None = None,
+    cmd: CLICommand | None = None,
 ) -> tuple[str, bool]:
     print(f"Step: {get_utctimestring()}: Check diagnoser container")
     try:

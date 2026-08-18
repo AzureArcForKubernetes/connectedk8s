@@ -481,6 +481,12 @@ HELM_TIMEOUT_GENERIC = _define(
     ),
     fault_type=consts.Helm_Timeout_Generic_Fault_Type,
 )
+HELM_CLIENT_ERROR = _define(
+    code="AZK8S0515",
+    name="HelmClientError",
+    description="The Helm client failed to execute.",
+    fault_type=consts.Helm_Client_Error_Type,
+)
 
 # Pre-onboarding Diagnostics (AZK8S0600-AZK8S0699)
 PREDIAGNOSTICS_FAILED = _define(
@@ -662,6 +668,7 @@ ALL_ERRORS: tuple[ArcError, ...] = (
     HELM_TIMEOUT_PENDING_OR_UNSCHEDULABLE,
     HELM_TIMEOUT_IMAGE_PULL_FAILED,
     HELM_TIMEOUT_GENERIC,
+    HELM_CLIENT_ERROR,
     PREDIAGNOSTICS_FAILED,
     PREDIAGNOSTICS_JOB_EXECUTION_FAILED,
     POST_DIAGNOSTIC_PRECHECK_FAILED,

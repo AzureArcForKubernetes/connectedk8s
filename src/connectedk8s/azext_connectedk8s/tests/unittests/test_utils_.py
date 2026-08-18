@@ -423,7 +423,7 @@ def test_error_catalog_contains_allocated_codes_and_fault_type_aliases():
         *(f"AZK8S{code:04d}" for code in range(200, 209)),
         *(f"AZK8S{code:04d}" for code in range(300, 310)),
         *(f"AZK8S{code:04d}" for code in range(400, 410)),
-        *(f"AZK8S{code:04d}" for code in range(500, 515)),
+        *(f"AZK8S{code:04d}" for code in range(500, 516)),
         *(f"AZK8S{code:04d}" for code in range(600, 608)),
         *(f"AZK8S{code:04d}" for code in range(700, 703)),
         *(f"AZK8S{code:04d}" for code in range(800, 806)),
@@ -444,6 +444,12 @@ def test_error_catalog_contains_allocated_codes_and_fault_type_aliases():
             errors_module.consts.Get_Helm_Values_Failed
         )
         is errors_module.HELM_VALUES_GET_FAILED
+    )
+    assert (
+        errors_module.get_error_by_fault_type(
+            errors_module.consts.Helm_Client_Error_Type
+        )
+        is errors_module.HELM_CLIENT_ERROR
     )
 
 
@@ -748,6 +754,26 @@ def test_validate_helm_client_accepts_supported_versions(monkeypatch, version_ou
     utils_module.validate_helm_client(MagicMock(), "/usr/bin/helm")
 
 
+def test_validate_helm_client_replaces_non_ascii_version_output(monkeypatch):
+    process = MagicMock(returncode=0)
+    process.communicate.return_value = (b"v3.20.1+\xff", b"")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+
+    utils_module.validate_helm_client(MagicMock(), "/usr/bin/helm")
+
+
+def test_validate_helm_client_replaces_non_ascii_error_output(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"helm failed: \xff")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    reported_error, report_error = _mock_reported_error(monkeypatch)
+
+    with pytest.raises(reported_error):
+        utils_module.validate_helm_client(MagicMock(), "/usr/bin/helm")
+
+    assert report_error.call_args.kwargs["details"] == "helm failed: \ufffd"
+
+
 def test_validate_helm_client_reports_old_version(monkeypatch):
     process = MagicMock(returncode=0)
     process.communicate.return_value = (b"v2.17.0+g123", b"")
@@ -772,16 +798,26 @@ def test_validate_helm_client_reports_unparseable_version(monkeypatch):
     assert report_error.call_args.args[1] is errors_module.HELM_VERSION_TOO_OLD
 
 
-def test_validate_helm_client_reports_missing_executable(monkeypatch):
+@pytest.mark.parametrize(
+    "client_error",
+    [
+        FileNotFoundError("helm not found"),
+        PermissionError("permission denied"),
+        OSError("network filesystem unavailable"),
+    ],
+)
+def test_validate_helm_client_reports_client_os_error(monkeypatch, client_error):
     monkeypatch.setattr(
-        utils_module, "Popen", MagicMock(side_effect=FileNotFoundError())
+        utils_module, "Popen", MagicMock(side_effect=client_error)
     )
     reported_error, report_error = _mock_reported_error(monkeypatch)
 
     with pytest.raises(reported_error):
         utils_module.validate_helm_client(MagicMock(), "/missing/helm")
 
-    assert report_error.call_args.args[1] is errors_module.HELM_NOT_INSTALLED
+    assert report_error.call_args.args[1] is errors_module.HELM_CLIENT_ERROR
+    assert report_error.call_args.kwargs["exception"] is client_error
+    assert report_error.call_args.kwargs["user_fault"] is True
 
 
 if __name__ == "__main__":
