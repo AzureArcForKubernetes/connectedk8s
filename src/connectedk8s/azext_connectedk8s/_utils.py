@@ -550,7 +550,7 @@ def add_connectedk8s_telemetry_event(
 
 
 def report_connectedk8s_warning(
-    cmd: Any | None,
+    cmd: CLICommand | None,
     error: errors.ArcError,
     *,
     telemetry_properties: dict[str, Any] | None = None,
@@ -571,6 +571,7 @@ def report_connectedk8s_warning(
     if error.tsg_link:
         properties[consts.Telemetry_Warning_Tsg_Link_Key] = error.tsg_link
     add_connectedk8s_telemetry_event(cmd, properties)
+    logger.warning("%s", message)
     return message
 
 
@@ -1799,7 +1800,7 @@ def kubernetes_exception_handler(
     message_for_not_found: str = "The requested kubernetes resource was not found.",
     raise_error: bool = True,
     arc_error: errors.ArcError | None = None,
-    cmd: Any | None = None,
+    cmd: CLICommand | None = None,
 ) -> None:
     details: str
     if isinstance(ex, ApiException):
