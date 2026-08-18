@@ -13,11 +13,27 @@ from kubernetes.client.models import V1Node, V1NodeList, V1NodeSpec, V1ObjectMet
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from azext_connectedk8s import custom
 from azext_connectedk8s.custom import (
+    _get_kubernetes_client_locations,
     _telemetry_catch_all,
     expand_proxy_skip_range_keywords,
     get_kubernetes_distro,
     get_kubernetes_infra,
 )
+
+
+def test_get_kubernetes_client_locations_preserves_az_cli_error(monkeypatch):
+    expected = custom.AzCLIError("[AZK8S0515] HelmClientError")
+    monkeypatch.setattr(
+        custom, "get_kubectl_client_location", MagicMock(return_value="/usr/bin/kubectl")
+    )
+    monkeypatch.setattr(
+        custom, "get_helm_client_location", MagicMock(side_effect=expected)
+    )
+
+    with pytest.raises(custom.AzCLIError) as raised:
+        _get_kubernetes_client_locations(MagicMock(), "AzureCloud")
+
+    assert raised.value is expected
 
 
 def test_telemetry_catch_all_uses_keyword_cmd(monkeypatch):
