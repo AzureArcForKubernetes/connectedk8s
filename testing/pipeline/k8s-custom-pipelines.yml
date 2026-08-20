@@ -20,66 +20,23 @@ pr:
       - 'src/connectedk8s/**'
       - 'testing/**'
 
+variables:
+  TEST_PATH: $(Agent.BuildDirectory)/s/testing
+  CLI_REPO_PATH: $(Agent.BuildDirectory)/s
+  EXTENSION_NAME: "connectedk8s"
+  EXTENSION_FILE_NAME: "connectedk8s"
+  SUBSCRIPTION_ID: "15c06b1b-01d6-407b-bb21-740b8617dea3"
+  RESOURCE_GROUP: "K8sPartnerExtensionTest"
+  BASE_CLUSTER_NAME: "connectedk8s-cluster"
+
 stages:
-- stage: BuildTestPublishExtension
-  displayName: "Build, Test, and Publish Extension"
-  variables:
-    TEST_PATH: $(Agent.BuildDirectory)/s/testing
-    CLI_REPO_PATH: $(Agent.BuildDirectory)/s
-    EXTENSION_NAME: "connectedk8s"
-    EXTENSION_FILE_NAME: "connectedk8s"
-    SUBSCRIPTION_ID: "15c06b1b-01d6-407b-bb21-740b8617dea3"
-    RESOURCE_GROUP: "K8sPartnerExtensionTest"
-    BASE_CLUSTER_NAME: "connectedk8s-cluster"
+- stage: BuildExtension
+  displayName: "Build and Publish Extension"
   jobs:
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: BasicOnboardingTest
-      path: ./test/configurations/BasicOnboarding.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: EnableDisableFeaturesTest
-      path: ./test/configurations/EnableDisableFeatures.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: AutoUpdateTest
-      path: ./test/configurations/AutoUpdate.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: ProxyTest
-      path: ./test/configurations/Proxy.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: GatewayTest
-      path: ./test/configurations/Gateway.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: WorkloadIdentityTest
-      path: ./test/configurations/WorkloadIdentity.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: TroubleshootTest
-      path: ./test/configurations/Troubleshoot.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: Connectedk8sProxyTest
-      path: ./test/configurations/ConnectProxy.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: ForcedDeleteTest
-      path: ./test/configurations/ForcedDelete.Tests.ps1
-  - template: ./templates/run-test.yml
-    parameters:
-      jobName: BasicOnboardingHelm4Test
-      path: ./test/configurations/BasicOnboarding.Tests.ps1
-      useHelm4: true
   - job: BuildPublishExtension
     pool:
       vmImage: 'ubuntu-latest'
     displayName: "Build and Publish the Extension Artifact"
-    variables:
-      CLI_REPO_PATH: $(Agent.BuildDirectory)/s
-      EXTENSION_NAME: "connectedk8s"
     steps:
     - task: UsePythonVersion@0
       displayName: 'Use Python 3.13'
@@ -164,9 +121,55 @@ stages:
         test -f "$install_dir/azext_connectedk8s/azext_metadata.json"
       workingDirectory: $(CLI_REPO_PATH)
       displayName: "Build and Validate ConnectedK8s Wheel"
-    - task: PublishBuildArtifacts@1
-      inputs:
-        pathToPublish: $(CLI_REPO_PATH)/dist
+    - publish: $(CLI_REPO_PATH)/dist
+      artifact: connectedk8s-wheel
+      displayName: "Publish ConnectedK8s Wheel"
+
+- stage: TestExtension
+  displayName: "Test Extension"
+  dependsOn: BuildExtension
+  jobs:
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: BasicOnboardingTest
+      path: ./test/configurations/BasicOnboarding.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: EnableDisableFeaturesTest
+      path: ./test/configurations/EnableDisableFeatures.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: AutoUpdateTest
+      path: ./test/configurations/AutoUpdate.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: ProxyTest
+      path: ./test/configurations/Proxy.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: GatewayTest
+      path: ./test/configurations/Gateway.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: WorkloadIdentityTest
+      path: ./test/configurations/WorkloadIdentity.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: TroubleshootTest
+      path: ./test/configurations/Troubleshoot.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: Connectedk8sProxyTest
+      path: ./test/configurations/ConnectProxy.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: ForcedDeleteTest
+      path: ./test/configurations/ForcedDelete.Tests.ps1
+  - template: ./templates/run-test.yml
+    parameters:
+      jobName: BasicOnboardingHelm4Test
+      path: ./test/configurations/BasicOnboarding.Tests.ps1
+      useHelm4: true
 
 - stage: AzureCLIOfficial
   displayName: "Azure Official CLI Code Checks"
