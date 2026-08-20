@@ -26,6 +26,7 @@ Flow:
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import shutil
@@ -71,6 +72,21 @@ prediagnostic_crd_check = consts.Diagnostic_Check_Starting
 # Log parsing helpers
 # These parse specific sections of the diagnostic job's container logs.
 # ---------------------------------------------------------------------------
+
+
+def _normalize_container_log(container_log: str | bytes) -> str:
+    if isinstance(container_log, bytes):
+        return container_log.decode("utf-8", errors="replace")
+
+    if container_log.startswith(("b'", 'b"')):
+        try:
+            byte_log = ast.literal_eval(container_log)
+        except (SyntaxError, ValueError):
+            return container_log
+        if isinstance(byte_log, bytes):
+            return byte_log.decode("utf-8", errors="replace")
+
+    return container_log
 
 
 def _parse_entra_check_result(entra_check_log: str) -> str:
@@ -393,10 +409,9 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
         if cluster_diagnostic_checks_container_log != "":
-            cluster_diagnostic_checks_container_log_list = (
-                cluster_diagnostic_checks_container_log.split("\n")
-            )
-            cluster_diagnostic_checks_container_log_list.pop(-1)
+            cluster_diagnostic_checks_container_log_list = _normalize_container_log(
+                cluster_diagnostic_checks_container_log
+            ).splitlines()
             dns_check_log = ""
             outbound_connectivity_check_log = ""
             entra_check_log = ""
