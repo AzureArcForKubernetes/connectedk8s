@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+!  id-token: write
 
 concurrency:
   group: connectedk8s-cli-testing-${{ github.event.pull_request.number || github.ref }}
@@ -24,6 +25,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    environment: ado-ci
 
     steps:
       - name: Harden Runner
@@ -31,10 +33,28 @@ jobs:
         with:
           egress-policy: audit
 
+      - name: Validate ADO identity configuration
+        env:
+          ADO_CLIENT_ID: ${{ vars.ADO_CLIENT_ID }}
+          ADO_TENANT_ID: ${{ vars.ADO_TENANT_ID }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${ADO_CLIENT_ID}" || -z "${ADO_TENANT_ID}" ]]; then
+            echo "::error::Configure ADO_CLIENT_ID and ADO_TENANT_ID in the ado-ci GitHub environment."
+            exit 1
+          fi
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ADO_CLIENT_ID }}
+          tenant-id: ${{ vars.ADO_TENANT_ID }}
+          allow-no-subscriptions: true
+
       - name: Trigger ADO pipeline and wait for completion
         uses: azure/cli@v2
         env:
-          AZURE_DEVOPS_EXT_PAT: ${{ secrets.ADO_PAT }}
           ADO_ORGANIZATION: https://dev.azure.com/ClusterConfigurationAgent
           ADO_PROJECT: Extension CLI
           ADO_PIPELINE_ID: '643'
@@ -42,11 +62,6 @@ jobs:
         with:
           inlineScript: |
             set -euo pipefail
-
-            if [[ -z "${AZURE_DEVOPS_EXT_PAT}" ]]; then
-              echo "::error::Repository secret ADO_PAT is not configured."
-              exit 1
-            fi
 
             az extension add \
               --name azure-devops \
