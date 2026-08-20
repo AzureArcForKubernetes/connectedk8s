@@ -6,11 +6,19 @@ trigger:
   branches:
     include:
       - 'main'
+  paths:
+    include:
+      - 'src/connectedk8s/**'
+      - 'testing/**'
 
 pr:
   branches:
     include:
-      - '*'
+      - 'main'
+  paths:
+    include:
+      - 'src/connectedk8s/**'
+      - 'testing/**'
 
 stages:
 - stage: BuildTestPublishExtension
