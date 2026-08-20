@@ -11,7 +11,7 @@ on:
 
 permissions:
   contents: read
-!  id-token: write
+  id-token: write
 
 concurrency:
   group: connectedk8s-cli-testing-${{ github.event.pull_request.number || github.ref }}
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   test:
-    name: Run ADO ConnectedK8s CLI tests
+    name: connectedk8s CLI Testing
     if: >-
       github.event_name != 'pull_request' ||
       github.event.pull_request.head.repo.full_name == github.repository
