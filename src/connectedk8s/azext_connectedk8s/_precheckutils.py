@@ -777,6 +777,9 @@ def executing_cluster_diagnostic_checks_job(
                         namespace="azure-arc-release",
                     )
                 )
+                cluster_diagnostic_checks_container_log = _normalize_container_log(
+                    cluster_diagnostic_checks_container_log
+                )
                 try:
                     if storage_space_available:
                         dns_check_path = os.path.join(
@@ -850,12 +853,15 @@ def executing_cluster_diagnostic_checks_job(
                             namespace="azure-arc-release",
                         )
                     )
+                    cluster_diagnostic_checks_container_log = _normalize_container_log(
+                        cluster_diagnostic_checks_container_log
+                    )
                     if storage_space_available:
                         log_path = os.path.join(
                             filepath_with_timestamp,
                             "cluster_diagnostic_checks_job_log.txt",
                         )
-                        with open(log_path, "w+") as f:
+                        with open(log_path, "w+", encoding="utf-8") as f:
                             f.write(cluster_diagnostic_checks_container_log)
                 except OSError as e:
                     if "[Errno 28]" in str(e):
