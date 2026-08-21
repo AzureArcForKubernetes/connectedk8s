@@ -430,12 +430,16 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
 # ---------------------------------------------------------------------------
 
 
-HEALTHY_PREDIAGNOSTIC_OUTPUT = """\
-Thu Aug 20 19:12:00 UTC 2026 : Performing check: 1 of 5 - DNS and outbound connectivity
-DNS Result:Server: 10.0.0.10
-Address: 10.0.0.10#53
+CONFORMANCE_PREDIAGNOSTIC_OUTPUT = """\
+Thu Aug 20 19:11:59 UTC 2026 : Performing check: 1 of 5 - DNS and outbound connectivity
+DNS Result:;; Got recursion not available from 10.89.0.10
+;; Got recursion not available from 10.89.0.10
+Server:		10.89.0.10
+Address:	10.89.0.10#53
+
 Name: kubernetes.default.svc.cluster.local
-Address: 10.0.0.1
+Address: 10.89.0.1
+;; Got recursion not available from 10.89.0.10
 Thu Aug 20 19:12:01 UTC 2026 : Performing check: 2 of 5 - Entra (Azure AD) authentication endpoint connectivity. This is a mandatory endpoint for Azure Arc authentication.
 Entra endpoint connectivity check passed. Response Code: 200
 Entra Authentication Endpoint Connectivity Check Result : https://login.microsoftonline.com : 200
@@ -508,7 +512,7 @@ def _run_completed_prediagnostic_output(monkeypatch, output):
 
 def test_completed_job_parses_healthy_1_36_1_output(monkeypatch):
     result = _run_completed_prediagnostic_output(
-        monkeypatch, HEALTHY_PREDIAGNOSTIC_OUTPUT
+        monkeypatch, CONFORMANCE_PREDIAGNOSTIC_OUTPUT
     )
 
     assert result == consts.Diagnostic_Check_Passed
@@ -521,8 +525,9 @@ def test_completed_job_parses_healthy_1_36_1_output(monkeypatch):
     assert precheckutils.prediagnostic_crd_check == consts.Diagnostic_Check_Passed
 
 
-def test_completed_job_parses_escaped_newline_output(monkeypatch):
-    escaped_output = repr(HEALTHY_PREDIAGNOSTIC_OUTPUT.encode("utf-8"))
+def test_completed_job_parses_conformance_stringified_bytes(monkeypatch):
+    escaped_output = repr(CONFORMANCE_PREDIAGNOSTIC_OUTPUT.encode("utf-8"))
+    print(f"Stringified Kubernetes log: {escaped_output}")
 
     result = _run_completed_prediagnostic_output(monkeypatch, escaped_output)
 
@@ -542,7 +547,7 @@ def test_completed_job_parses_escaped_newline_output(monkeypatch):
 
 def test_completed_job_parses_byte_output(monkeypatch):
     result = _run_completed_prediagnostic_output(
-        monkeypatch, HEALTHY_PREDIAGNOSTIC_OUTPUT.encode("utf-8")
+        monkeypatch, CONFORMANCE_PREDIAGNOSTIC_OUTPUT.encode("utf-8")
     )
 
     assert result == consts.Diagnostic_Check_Passed
