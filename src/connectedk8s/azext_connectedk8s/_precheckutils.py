@@ -75,18 +75,19 @@ prediagnostic_crd_check = consts.Diagnostic_Check_Starting
 
 
 def _normalize_container_log(container_log: str | bytes) -> str:
-    if isinstance(container_log, bytes):
-        return container_log.decode("utf-8", errors="replace")
+    stripped = container_log.strip()
+    if isinstance(stripped, bytes):
+        return stripped.decode("utf-8", errors="replace")
 
-    if container_log.startswith(("b'", 'b"')):
+    if stripped.startswith(("b'", 'b"')):
         try:
-            byte_log = ast.literal_eval(container_log)
+            byte_log = ast.literal_eval(stripped)
         except (SyntaxError, ValueError):
-            return container_log
+            return stripped
         if isinstance(byte_log, bytes):
             return byte_log.decode("utf-8", errors="replace")
 
-    return container_log
+    return stripped
 
 
 def _parse_entra_check_result(entra_check_log: str) -> str:
