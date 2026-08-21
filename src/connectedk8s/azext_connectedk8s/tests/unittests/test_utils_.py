@@ -73,6 +73,7 @@ from azext_connectedk8s._utils import (  # noqa: E402
     redact_sensitive_fields_from_string,
     remove_rsa_private_key,
     report_connectedk8s_error,
+    report_connectedk8s_warning,
     report_helm_timeout_error,
     scrub_proxy_url,
     should_use_secret_injection_flow,
@@ -115,8 +116,7 @@ def test_process_helm_error_detail():
     proxy_url = _build_test_proxy_url("proxy", "pass")
     redacted_proxy_url = _build_test_proxy_url("[REDACTED]", "[REDACTED]")
     input_text = (
-        f"Some text\n{_header}\nkey\n{_footer}\n"
-        f"with proxy URL {proxy_url} in it"
+        f"Some text\n{_header}\nkey\n{_footer}\nwith proxy URL {proxy_url} in it"
     )
     expected_output = (
         "Some text\n[RSA PRIVATE KEY REMOVED]\n"
@@ -383,9 +383,7 @@ def test_get_advanced_helm_timeout_fault_type_from_error_message():
     ],
 )
 def test_should_use_secret_injection_flow(release_train, agent_version, expected):
-    assert (
-        should_use_secret_injection_flow(release_train, agent_version) is expected
-    )
+    assert should_use_secret_injection_flow(release_train, agent_version) is expected
 
 
 def test_arc_error_requires_code_name_message_and_fault_type():
@@ -488,7 +486,6 @@ def test_error_catalog_uses_proposed_exception_classes():
         "AZK8S0105": ArgumentUsageError,
         "AZK8S0106": InvalidArgumentValueError,
         "AZK8S0200": FileOperationError,
-        "AZK8S0203": ValidationError,
         "AZK8S0403": ArgumentUsageError,
         "AZK8S0404": ArgumentUsageError,
         "AZK8S0405": ArgumentUsageError,
@@ -558,6 +555,36 @@ def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id(
     assert properties["Context.Default.AzureCLI.errorMessage"] == expected_message
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == expected_message
     mock_telemetry.set_user_fault.assert_called_once_with()
+
+
+def test_report_connectedk8s_warning_logs_without_marking_command_failed(
+    monkeypatch,
+):
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    mock_telemetry = MagicMock()
+    mock_logger = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+    monkeypatch.setattr(utils_module, "logger", mock_logger)
+
+    message = report_connectedk8s_warning(
+        cmd,
+        errors_module.KUBERNETES_NAMESPACE_GET_FAILED,
+        details="namespace lookup failed",
+    )
+
+    assert message.startswith(
+        "[AZK8S0204] KubernetesNamespaceGetFailed: "
+        "Failed to determine the Kubernetes namespace."
+    )
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.warningCode"] == "AZK8S0204"
+    assert (
+        properties["Context.Default.AzureCLI.warningFaultType"]
+        == errors_module.KUBERNETES_NAMESPACE_GET_FAILED.fault_type
+    )
+    mock_logger.warning.assert_called_once_with("%s", message)
+    mock_telemetry.set_exception.assert_not_called()
+    mock_telemetry.set_user_fault.assert_not_called()
 
 
 def test_build_helm_timeout_report_preserves_failed_diagnostics(monkeypatch):
