@@ -438,6 +438,22 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
             prediagnostic_outbound_check = outbound_connectivity_check
 
             prediagnostic_entra_check = _parse_entra_check_result(entra_check_log)
+            # If a proxy is configured, the diagnostic pod may not have HTTPS_PROXY/HTTP_PROXY
+            # injected as container env vars (chart-side gap in clusterdiagnosticchecks >=1.36.1).
+            # A failed Entra check in that scenario is a false positive: the cluster may be
+            # perfectly able to reach login.microsoftonline.com through the proxy once the Arc
+            # agent is installed. Downgrade to Not_Applicable to avoid blocking onboarding, but
+            # emit a warning so it is known that the check was skipped.
+            if (
+                prediagnostic_entra_check == consts.Diagnostic_Check_Failed
+                and (https_proxy or http_proxy)
+            ):
+                logger.warning(
+                    "Skipping Entra connectivity check: the pre-onboarding diagnostic pod does not have "
+                    "access to the configured proxy. Please verify that your cluster can reach "
+                    "login.microsoftonline.com through your proxy."
+                )
+                prediagnostic_entra_check = consts.Diagnostic_Check_Not_Applicable
             prediagnostic_crd_check = _parse_crd_check_result(crd_check_log)
         else:
             # Empty log — if job didn't complete (e.g., pod never scheduled), treat as Incomplete not Passed
