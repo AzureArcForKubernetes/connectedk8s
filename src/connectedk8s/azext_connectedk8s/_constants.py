@@ -6,6 +6,14 @@
 
 # pylint: disable=line-too-long
 
+Connected_Cluster_Arm_Id_Telemetry_Context_Key = "connectedk8s_arm_id"
+Connected_Cluster_Arm_Id_Telemetry_Property = "Context.Default.AzureCLI.resourceid"
+Telemetry_Error_Code_Key = "Context.Default.AzureCLI.errorCode"
+Telemetry_Error_Fault_Type_Key = "Context.Default.AzureCLI.errorFaultType"
+Telemetry_Error_Name_Key = "Context.Default.AzureCLI.errorName"
+Telemetry_Error_Message_Key = "Context.Default.AzureCLI.errorMessage"
+Telemetry_Error_Tsg_Link_Key = "Context.Default.AzureCLI.errorTsgLink"
+
 Distribution_Enum_Values = [
     "generic",
     "openshift",
@@ -76,6 +84,30 @@ Helm_Install_Release_Userfault_Messages = [
     "timed out waiting for the condition",
     "connection refused",
 ]
+Helm_Timeout_Messages = (
+    "timed out waiting for the condition",
+    "context deadline exceeded",
+    "deadline exceeded",
+)
+Helm_Timeout_Signal_Classifications = (
+    "ImagePullFailure",
+    "CrashLoopBackOff",
+    "ContainerCreateFailure",
+    "PendingOrUnschedulable",
+    "ClusterResourceOrSchedulingConstraint",
+    "MissingIdentityCertificateSecret",
+    "MissingKubeAadProxyCertificateSecret",
+    "KeyPairOrIdentityCertificateSync",
+)
+Helm_Timeout_Resolved_Classifications = (
+    "GenericHelmTimeout",
+    "ImagePullFailure",
+    "PendingOrUnschedulable",
+    "ClusterIdentityFailure",
+)
+Max_Helm_Timeout_Diagnostic_Evidence = 8
+Max_Helm_Timeout_Event_Evidence = 5
+Cluster_Identity_Operator_Prefix = "clusteridentityoperator"
 Custom_Locations_Provider_Namespace = "Microsoft.ExtendedLocation"
 Connected_Cluster_Provider_Namespace = "Microsoft.Kubernetes"
 Kubernetes_Configuration_Provider_Namespace = "Microsoft.KubernetesConfiguration"
@@ -109,6 +141,15 @@ Custom_Access_Token_Env_Var_Tenant_Id_Missing_Fault_Type = (
 )
 Custom_Token_Env_Var_Sub_Id_Missing_Fault_Type = "Required environment variable 'AZURE_SUBSCRIPTION_ID' is not set, when using Custom Acces Token."
 Release_Install_Namespace = "azure-arc-release"
+Helm_Release_Name = "azure-arc"
+Onboarding_PrivateKey_Secret_Name = "azure-arc-connect-privatekey"
+Onboarding_PrivateKey_Secret_Data_Key = "privateKey"
+Min_Agent_Version_For_Secret_Injection = "1.35.3"
+Min_Agent_Version_For_Secret_Injection_Preview = "1.35.3-preview"
+Stable_Release_Train = "stable"
+Preview_Release_Train = "preview"
+Inject_PrivateKey_Secret_Fault_Type = "inject-private-key-secret-error"
+Strip_Chart_PrivateKey_Secret_Fault_Type = "strip-chart-private-key-secret-error"
 Workload_Identity_Release_Name = "wiextension"
 Workload_Identity_Release_Namespace = "arc-workload-identity"
 Helm_Environment_File_Fault_Type = "helm-environment-file-error"
@@ -135,6 +176,19 @@ KeyPair_Generate_Fault_Type = "keypair-generation-error"
 PublicKey_Export_Fault_Type = "publickey-export-error"
 PrivateKey_Export_Fault_Type = "privatekey-export-error"
 Install_HelmRelease_Fault_Type = "helm-release-install-error"
+Helm_Timeout_ImagePull_Fault_Type = "helm-timeout-image-pull-failure"
+Helm_Timeout_PendingOrUnschedulable_Fault_Type = "helm-timeout-pending-or-unschedulable"
+Helm_Timeout_ClusterIdentity_Fault_Type = "helm-timeout-cluster-identity-error"
+Helm_Timeout_Generic_Fault_Type = "helm-timeout-error"
+Install_Prediagnostics_Fault_Type = "prediagnostics-failure"
+Install_Prediagnostics_Job_Execution_Error_Fault_Type = (
+    "prediagnostics-job-execution-error"
+)
+Post_Diagnostic_Precheck_Fault_Type = "post-diagnostic-precheck-failure"
+Telemetry_Onboarding_Error_Type_Key = "Context.Default.AzureCLI.onboardingErrorType"
+Telemetry_Onboarding_Error_Message_Key = (
+    "Context.Default.AzureCLI.onboardingErrorMessage"
+)
 Delete_HelmRelease_Fault_Type = "helm-release-delete-error"
 Check_PodStatus_Fault_Type = "check-pod-status-error"
 Kubernetes_Connectivity_FaultType = "kubernetes-cluster-connection-error"
@@ -213,6 +267,16 @@ Get_Kubernetes_Infra_Fault_Type = "kubernetes-get-infrastructure-error"
 No_Param_Error = "No parameters were specified with update command. Please run az connectedk8s update --help to check parameters available for update"
 Gateway_ArmId_Is_Invalid = "The provided Gateway ArmID in --gateway-resource-id  {} is invalid. Please provide a valid Gateway ArmID."
 EnableProxy_Conflict_Error = "Conflict detected: --disable-proxy can not be set with --https-proxy, --http-proxy, --proxy-skip-range and --proxy-cert at the same time. Please run az connectedk8s update --help for more information about the parameters"
+
+# --proxy-skip-range keyword that expands to the Azure Arc private-link endpoints.
+Proxy_Skip_Range_Arc_Keyword = "arc"
+# Arc private-link endpoint host suffixes the "arc" keyword expands to.
+Arc_Private_Link_Endpoints = [
+    ".his.arc.azure.{cloud_based_domain}",
+    ".dp.kubernetesconfiguration.azure.{cloud_based_domain}",
+    ".guestconfiguration.azure.{cloud_based_domain}",
+]
+
 Manual_Upgrade_Called_In_Auto_Update_Enabled = (
     "Manual Upgrade was called while in auto_Update enabled mode"
 )
@@ -387,6 +451,18 @@ Failed_To_Change_Telemetry_Push_Interval = (
 Diagnostic_Check_Passed = "Passed"
 Diagnostic_Check_Failed = "Failed"
 Diagnostic_Check_Incomplete = "Incomplete"
+Diagnostic_Check_Starting = "Starting"
+Diagnostic_Check_Not_Applicable = "NotApplicable"
+
+# Prediagnostic job execution status values
+Job_Status_Not_Started = "NotStarted"
+Job_Status_Running = "Running"
+Job_Status_Completed = "Completed"
+Job_Status_Not_Completed = "NotCompleted"
+Job_Status_Not_Scheduled = "NotScheduled"
+Job_Status_Cleanup_Failed = "CleanupFailed"
+Job_Status_Execution_Failed = "ExecutionFailed"
+
 # Name of the checks and operations
 Retrieve_Arc_Agents_Event_Logs = "retrieved_arc_agents_event_logs"
 Retrieve_Arc_Agents_Logs = "retrieved_arc_agents_logs"
@@ -461,6 +537,7 @@ Outbound_Connectivity_Check_Failed = "Outbound network connectivity check failed
 Outbound_Connectivity_Check_Failed_For_Onboarding = (
     "Outbound network connectivity check failed for onboarding"
 )
+Outbound_Connectivity_Non2xx_Response_Type = "prediagnostics-outbound-non2xx-response"
 DNS_Check_Failed = "DNS Resolution failed"
 Cluster_Diagnostic_Prechecks_Failed = "Cluster diagnostic prechecks failed"
 Cluster_Diagnostic_Prechecks_Incomplete = (
@@ -494,8 +571,50 @@ Outbound_Connectivity_Check_Failed_For_Cluster_Connect = (
     "Outbound network connectivity check failed for Cluster Connect"
 )
 DNS_Check_Result_String = "DNS Result:"
+Entra_Connectivity_Check_Result_String = (
+    "Entra Authentication Endpoint Connectivity Check Result"
+)
+CRD_Ownership_Check_Failed_String = "Check Failed: CRD"
+
+# Canonical fault-type names used by the standardized AZK8S error catalog.
+# Aliases retain the exact string values already emitted by existing call sites.
+Catch_All_Fault_Type = "unexpected-connectedk8s-error"
+Unsupported_OS_Fault_Type = Unsupported_Fault_Type
+Unsupported_Operation_Provisioned_Cluster_Fault_Type = (
+    Provisioned_Cluster_Operation_Fault_Type
+)
+Gateway_ArmId_Is_Invalid_Fault_Type = "invalid-gateway-arm-id"
+Linux_Node_Not_Exists_Fault_Type = Linux_Node_Not_Exists
+Release_Namespace_Not_Found_Fault_Type = Release_Namespace_Not_Found
+Get_Helm_Values_Failed_Fault_Type = Get_Helm_Values_Failed
+DNS_NXDomain_Fault_Type = "prediagnostics-dns-nxdomain"
+DNS_Timeout_Fault_Type = "prediagnostics-dns-timeout"
+DNS_ServFail_Fault_Type = "prediagnostics-dns-servfail"
+DNS_No_Servers_Reachable_Fault_Type = "prediagnostics-dns-no-servers-reachable"
+DNS_Communications_Error_Fault_Type = "prediagnostics-dns-communications-error"
+Outbound_Connectivity_Check_Failed_For_Onboarding_Fault_Type = (
+    Outbound_Connectivity_Check_Failed_For_Onboarding
+)
+Outbound_Connectivity_Check_Failed_For_Cluster_Connect_Fault_Type = (
+    Outbound_Connectivity_Check_Failed_For_Cluster_Connect
+)
+Prediagnostics_Outbound_Non2xx_Response_Fault_Type = (
+    Outbound_Connectivity_Non2xx_Response_Type
+)
+Cluster_Diagnostic_Prechecks_Incomplete_Fault_Type = (
+    Cluster_Diagnostic_Prechecks_Incomplete
+)
+Cluster_Diagnostic_Checks_Job_Not_Scheduled_Fault_Type = (
+    Cluster_Diagnostic_Checks_Job_Not_Scheduled
+)
+Cluster_Diagnostic_Checks_Job_Not_Complete_Fault_Type = (
+    Cluster_Diagnostic_Checks_Job_Not_Complete
+)
+Cluster_Diagnostic_Checks_Job_Log_Save_Failed_Fault_Type = (
+    Cluster_Diagnostic_Checks_Job_Log_Save_Failed
+)
 AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION = "2.30.0"
-CLIENT_PROXY_VERSION = "1.3.034631"
+CLIENT_PROXY_VERSION = "1.3.035022"
 CLIENT_PROXY_FOLDER = ".clientproxy"
 API_SERVER_PORT = 47011
 CLIENT_PROXY_PORT = 47010

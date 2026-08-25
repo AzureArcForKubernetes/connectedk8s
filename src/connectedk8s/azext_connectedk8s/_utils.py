@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 import uuid
+from dataclasses import dataclass
 from subprocess import PIPE, Popen
 from typing import TYPE_CHECKING, Any
 
@@ -38,6 +39,7 @@ from msrest.exceptions import ValidationError as MSRestValidationError
 from packaging import version
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._errors as errors
 from azext_connectedk8s._client_factory import (
     cf_resource_groups,
     resource_features_client,
@@ -46,6 +48,7 @@ from azext_connectedk8s._client_factory import (
 
 if TYPE_CHECKING:
     from azure.cli.core import AzCli
+    from azure.cli.core.azclierror import AzCLIError
     from knack.commands import CLICommand
     from kubernetes.client import CoreV1Api, V1NodeList
     from requests import Response
@@ -58,6 +61,549 @@ logger = get_logger(__name__)
 
 # pylint: disable=line-too-long
 # pylint: disable=bare-except
+# pylint: disable=consider-using-with
+# pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-statements
+# pylint: disable=too-many-lines
+# Long diagnostic and command strings are kept readable in one place for operator troubleshooting.
+# Some broad exception boundaries are retained to keep best-effort cleanup and telemetry collection.
+
+HELM_TIMEOUT_USER_FAULT_CLASSIFICATIONS = {
+    "ImagePullFailure",
+    "PendingOrUnschedulable",
+}
+
+
+@dataclass(frozen=True)
+class HelmTimeoutReport:
+    """Standardized error context collected after a Helm timeout."""
+
+    error: errors.ArcError
+    details: str
+    telemetry_properties: dict[str, str]
+    user_fault: bool
+
+
+def is_helm_timeout_error(error_message: str) -> bool:
+    error_message_lower = error_message.lower()
+    return any(
+        message in error_message_lower for message in consts.Helm_Timeout_Messages
+    )
+
+
+def _truncate_timeout_diagnostic_message(message: str, limit: int = 240) -> str:
+    message = " ".join(message.split())
+    if len(message) <= limit:
+        return message
+    return message[: limit - 3] + "..."
+
+
+def _get_object_value(obj: Any, *attrs: str) -> Any:
+    value = obj
+    for attr in attrs:
+        if value is None:
+            return None
+        value = getattr(value, attr, None)
+    return value
+
+
+def _get_event_timestamp(event: Any) -> str:
+    timestamp = (
+        _get_object_value(event, "last_timestamp")
+        or _get_object_value(event, "event_time")
+        or _get_object_value(event, "metadata", "creation_timestamp")
+    )
+    return str(timestamp or "")
+
+
+def _collect_timeout_diagnostics_from_pods(
+    pods: list[Any],
+) -> tuple[list[str], set[str]]:
+    evidence: list[str] = []
+    classifications: set[str] = set()
+
+    for pod in pods:
+        pod_name = _get_object_value(pod, "metadata", "name") or "<unknown>"
+        pod_phase = _get_object_value(pod, "status", "phase")
+        container_statuses = (
+            _get_object_value(pod, "status", "init_container_statuses") or []
+        ) + (_get_object_value(pod, "status", "container_statuses") or [])
+
+        if pod_phase == "Pending" and not container_statuses:
+            classifications.add("PendingOrUnschedulable")
+            evidence.append(
+                f"Pod {pod_name} is Pending and has no container status yet."
+            )
+
+        for container_status in container_statuses:
+            waiting_state = _get_object_value(container_status, "state", "waiting")
+            if waiting_state is None:
+                continue
+
+            reason = _get_object_value(waiting_state, "reason")
+            if not reason:
+                continue
+
+            container_name = _get_object_value(container_status, "name") or "<unknown>"
+            restart_count = _get_object_value(container_status, "restart_count")
+            message = _get_object_value(waiting_state, "message")
+            if reason in ("ImagePullBackOff", "ErrImagePull"):
+                classifications.add("ImagePullFailure")
+            elif reason == "CrashLoopBackOff":
+                classifications.add("CrashLoopBackOff")
+            elif reason in ("CreateContainerConfigError", "CreateContainerError"):
+                classifications.add("ContainerCreateFailure")
+
+            detail = f"Pod {pod_name} container {container_name} is waiting: {reason}"
+            if restart_count is not None:
+                detail += f", restarts={restart_count}"
+            if message:
+                detail += (
+                    f", message={_truncate_timeout_diagnostic_message(str(message))}"
+                )
+            evidence.append(detail)
+
+    return evidence, classifications
+
+
+def _collect_timeout_diagnostics_from_events(
+    events: list[Any],
+) -> tuple[list[str], set[str]]:
+    evidence: list[str] = []
+    classifications: set[str] = set()
+    warning_events = [
+        event for event in events if _get_object_value(event, "type") == "Warning"
+    ]
+    warning_events.sort(key=_get_event_timestamp, reverse=True)
+
+    for event in warning_events[: consts.Max_Helm_Timeout_Event_Evidence]:
+        reason = _get_object_value(event, "reason") or "<unknown>"
+        message = _get_object_value(event, "message") or ""
+        involved_name = (
+            _get_object_value(event, "involved_object", "name") or "<unknown>"
+        )
+        message_lower = str(message).lower()
+
+        if reason in ("FailedScheduling", "NotTriggerScaleUp") or any(
+            signal in message_lower
+            for signal in (
+                "insufficient",
+                "taint",
+                "didn't match",
+                "node affinity",
+                "node selector",
+                "max node group size reached",
+            )
+        ):
+            classifications.add("ClusterResourceOrSchedulingConstraint")
+        if reason in ("Failed", "BackOff", "FailedPull", "ErrImagePull") and any(
+            signal in message_lower
+            for signal in ("pull", "image", "registry", "unauthorized", "not found")
+        ):
+            classifications.add("ImagePullFailure")
+        if (
+            reason == "FailedMount"
+            and "secret" in message_lower
+            and "not found" in message_lower
+        ):
+            classifications.add("KeyPairOrIdentityCertificateSync")
+            if consts.MSI_Certificate_Secret_Name in message:
+                classifications.add("MissingIdentityCertificateSecret")
+            if consts.KAP_Certificate_Secret_Name in message:
+                classifications.add("MissingKubeAadProxyCertificateSecret")
+
+        evidence.append(
+            "Warning event for "
+            f"{involved_name}: {reason} - {_truncate_timeout_diagnostic_message(str(message))}"
+        )
+
+    return evidence, classifications
+
+
+def _collect_clusteridentityoperator_evidence(
+    pods: list[Any], secret_names: set[str] | None
+) -> tuple[list[str], set[str]]:
+    evidence: list[str] = []
+    classifications: set[str] = set()
+    cluster_identity_pods = [
+        pod
+        for pod in pods
+        if str(_get_object_value(pod, "metadata", "name") or "").startswith(
+            consts.Cluster_Identity_Operator_Prefix
+        )
+    ]
+
+    if (
+        secret_names is not None
+        and consts.MSI_Certificate_Secret_Name not in secret_names
+    ):
+        classifications.add("MissingIdentityCertificateSecret")
+        classifications.add("KeyPairOrIdentityCertificateSync")
+        evidence.append(
+            f"Secret {consts.MSI_Certificate_Secret_Name} is not present in namespace {consts.Arc_Namespace}."
+        )
+        if not cluster_identity_pods:
+            evidence.append(
+                f"No clusteridentityoperator pod was found in namespace {consts.Arc_Namespace}."
+            )
+
+    for pod in cluster_identity_pods:
+        pod_name = _get_object_value(pod, "metadata", "name")
+        container_statuses = (
+            _get_object_value(pod, "status", "container_statuses") or []
+        )
+        for container_status in container_statuses:
+            waiting_reason = _get_object_value(
+                container_status, "state", "waiting", "reason"
+            )
+            if waiting_reason:
+                evidence.append(
+                    f"clusteridentityoperator pod {pod_name} container "
+                    f"{_get_object_value(container_status, 'name') or '<unknown>'} is waiting: {waiting_reason}."
+                )
+
+    if (
+        secret_names is not None
+        and consts.MSI_Certificate_Secret_Name not in secret_names
+        and cluster_identity_pods
+        and any("clusteridentityoperator" in item for item in evidence)
+    ):
+        classifications.add("KeyPairOrIdentityCertificateSync")
+
+    return evidence, classifications
+
+
+def _list_secret_names_metadata_only(corev1_api_instance: CoreV1Api) -> set[str]:
+    secrets_metadata = corev1_api_instance.api_client.call_api(
+        f"/api/v1/namespaces/{consts.Arc_Namespace}/secrets",
+        "GET",
+        auth_settings=["BearerToken"],
+        header_params={
+            "Accept": "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1"
+        },
+        response_type="object",
+        _return_http_data_only=True,
+    )
+    return {
+        item["metadata"]["name"]
+        for item in secrets_metadata.get("items", [])
+        if item.get("metadata", {}).get("name")
+    }
+
+
+def _resolve_helm_timeout_classification(classifications: set[str]) -> str:
+    if "ImagePullFailure" in classifications:
+        return "ImagePullFailure"
+    if any(
+        classification in classifications
+        for classification in (
+            "PendingOrUnschedulable",
+            "ClusterResourceOrSchedulingConstraint",
+        )
+    ):
+        return "PendingOrUnschedulable"
+    if any(
+        classification in classifications
+        for classification in (
+            "KeyPairOrIdentityCertificateSync",
+            "MissingIdentityCertificateSecret",
+            "MissingKubeAadProxyCertificateSecret",
+        )
+    ):
+        return "ClusterIdentityFailure"
+    return "GenericHelmTimeout"
+
+
+def _build_helm_timeout_telemetry_properties(
+    classification_signals: set[str],
+    evidence_count: int,
+    diagnostics_status: str,
+    helm_operation: str | None,
+) -> dict[str, str]:
+    resolved_classification = _resolve_helm_timeout_classification(
+        classification_signals
+    )
+    properties = {
+        "Context.Default.AzureCLI.helmTimeout": "true",
+        "Context.Default.AzureCLI.helmTimeoutDiagnosticsStatus": diagnostics_status,
+        "Context.Default.AzureCLI.helmTimeoutClassification": resolved_classification,
+        "Context.Default.AzureCLI.helmTimeoutEvidenceCount": str(evidence_count),
+    }
+    if helm_operation:
+        properties["Context.Default.AzureCLI.helmOperation"] = helm_operation
+
+    for classification in consts.Helm_Timeout_Resolved_Classifications:
+        properties[f"Context.Default.AzureCLI.helmTimeout{classification}"] = str(
+            classification == resolved_classification
+        ).lower()
+
+    return properties
+
+
+def _get_helm_timeout_classification_from_properties(
+    telemetry_properties: dict[str, str],
+) -> str:
+    return telemetry_properties.get(
+        "Context.Default.AzureCLI.helmTimeoutClassification", ""
+    )
+
+
+def _build_helm_timeout_user_message(classification: str) -> str:
+    return errors.get_helm_timeout_error(classification).format()
+
+
+def is_advanced_helm_timeout_diagnostics(error_message: str) -> bool:
+    return "Read-only cluster checks after Helm timeout:" in error_message
+
+
+def get_advanced_helm_timeout_fault_type(error_message: str) -> str | None:
+    if not is_advanced_helm_timeout_diagnostics(error_message):
+        return None
+
+    for error in errors.HELM_TIMEOUT_ERRORS.values():
+        if f"[{error.code}]" in error_message:
+            return error.fault_type
+
+    return consts.Helm_Timeout_Generic_Fault_Type
+
+
+def _collect_arc_agent_timeout_diagnostics() -> tuple[str, dict[str, str]]:
+    try:
+        corev1_api_instance = kube_client.CoreV1Api()
+        evidence: list[str] = []
+        classifications: set[str] = set()
+        diagnostics_status = "Collected"
+
+        try:
+            pods = corev1_api_instance.list_namespaced_pod(consts.Arc_Namespace).items
+        except Exception as e:  # pylint: disable=broad-except
+            logger.debug(
+                "Unable to list %s pods after Helm timeout.",
+                consts.Arc_Namespace,
+                exc_info=True,
+            )
+            diagnostics_status = "Failed"
+            return (
+                f"Unable to list pods in namespace {consts.Arc_Namespace}: {e}",
+                _build_helm_timeout_telemetry_properties(
+                    classifications, 0, diagnostics_status, None
+                ),
+            )
+
+        try:
+            events = corev1_api_instance.list_namespaced_event(
+                consts.Arc_Namespace
+            ).items
+        except Exception as e:  # pylint: disable=broad-except
+            logger.debug(
+                "Unable to list %s events after Helm timeout.",
+                consts.Arc_Namespace,
+                exc_info=True,
+            )
+            diagnostics_status = "Partial"
+            evidence.append(
+                f"Unable to list events in namespace {consts.Arc_Namespace}: "
+                + _truncate_timeout_diagnostic_message(str(e))
+            )
+            events = []
+
+        try:
+            secret_names: set[str] | None = _list_secret_names_metadata_only(
+                corev1_api_instance
+            )
+        except Exception as e:  # pylint: disable=broad-except
+            logger.debug(
+                "Unable to list %s secrets after Helm timeout.",
+                consts.Arc_Namespace,
+                exc_info=True,
+            )
+            diagnostics_status = "Partial"
+            evidence.append(
+                f"Unable to list secret metadata in namespace {consts.Arc_Namespace}: "
+                + _truncate_timeout_diagnostic_message(str(e))
+            )
+            secret_names = None
+
+        pod_evidence, pod_classifications = _collect_timeout_diagnostics_from_pods(pods)
+        event_evidence, event_classifications = (
+            _collect_timeout_diagnostics_from_events(events)
+        )
+        (
+            identity_evidence,
+            identity_classifications,
+        ) = _collect_clusteridentityoperator_evidence(pods, secret_names)
+
+        evidence.extend(pod_evidence)
+        evidence.extend(event_evidence)
+        evidence.extend(identity_evidence)
+        classifications.update(pod_classifications)
+        classifications.update(event_classifications)
+        classifications.update(identity_classifications)
+
+        resolved_classification = _resolve_helm_timeout_classification(classifications)
+        if evidence:
+            evidence_summary = "\n".join(
+                evidence[: consts.Max_Helm_Timeout_Diagnostic_Evidence]
+            )
+            omitted_count = len(evidence) - consts.Max_Helm_Timeout_Diagnostic_Evidence
+            if omitted_count > 0:
+                evidence_summary += (
+                    f"\n... {omitted_count} additional signal(s) omitted."
+                )
+            logger.debug(
+                "Read-only cluster checks after Helm timeout classified as %s. Evidence:\n%s",
+                resolved_classification,
+                evidence_summary,
+            )
+        else:
+            logger.debug(
+                "Read-only cluster checks after Helm timeout classified as %s. "
+                "No pod wait reasons, warning events, or missing identity certificate "
+                f"signals were found in namespace {consts.Arc_Namespace}.",
+                resolved_classification,
+            )
+
+        result = _build_helm_timeout_user_message(resolved_classification)
+        return (
+            result,
+            _build_helm_timeout_telemetry_properties(
+                classifications, len(evidence), diagnostics_status, None
+            ),
+        )
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug("Unable to collect post-Helm-timeout diagnostics.", exc_info=True)
+        return (
+            f"Unable to collect post-Helm-timeout diagnostics: {e}",
+            _build_helm_timeout_telemetry_properties(set(), 0, "Failed", None),
+        )
+
+
+def collect_arc_agent_timeout_diagnostics() -> str:
+    diagnostics, _ = _collect_arc_agent_timeout_diagnostics()
+    return diagnostics
+
+
+def build_helm_timeout_report(
+    error_message: str,
+    helm_operation: str | None = None,
+) -> HelmTimeoutReport | None:
+    if not is_helm_timeout_error(error_message):
+        return None
+
+    diagnostics, telemetry_properties = _collect_arc_agent_timeout_diagnostics()
+    if helm_operation:
+        telemetry_properties["Context.Default.AzureCLI.helmOperation"] = helm_operation
+    classification = _get_helm_timeout_classification_from_properties(
+        telemetry_properties
+    )
+    details = f"Helm command output:\n{error_message}"
+    if (
+        telemetry_properties["Context.Default.AzureCLI.helmTimeoutDiagnosticsStatus"]
+        == "Failed"
+    ):
+        details += f"\n\nPost-timeout diagnostics:\n{diagnostics}"
+    return HelmTimeoutReport(
+        error=errors.get_helm_timeout_error(classification),
+        details=details,
+        telemetry_properties=telemetry_properties,
+        user_fault=classification in HELM_TIMEOUT_USER_FAULT_CLASSIFICATIONS,
+    )
+
+
+def build_connected_cluster_arm_id(
+    subscription_id: str, resource_group_name: str, cluster_name: str
+) -> str:
+    return (
+        f"/subscriptions/{subscription_id}"
+        f"/resourceGroups/{resource_group_name}"
+        f"/providers/Microsoft.Kubernetes/connectedClusters/{cluster_name}"
+    )
+
+
+def set_connected_cluster_arm_id_telemetry_context(
+    cmd: Any,
+    resource_group_name: str,
+    cluster_name: str,
+    subscription_id: str | None = None,
+) -> str:
+    subscription_id = subscription_id or get_subscription_id(cmd.cli_ctx)
+    arm_id = build_connected_cluster_arm_id(
+        subscription_id, resource_group_name, cluster_name
+    )
+    cmd.cli_ctx.data[consts.Connected_Cluster_Arm_Id_Telemetry_Context_Key] = arm_id
+    telemetry.set_debug_info(consts.Connected_Cluster_Arm_Id_Telemetry_Property, arm_id)
+    return arm_id
+
+
+def add_connectedk8s_telemetry_event(
+    cmd: Any | None, properties: dict[str, Any]
+) -> None:
+    event_properties = properties.copy()
+    if cmd is not None:
+        arm_id = cmd.cli_ctx.data.get(
+            consts.Connected_Cluster_Arm_Id_Telemetry_Context_Key
+        )
+        if arm_id:
+            event_properties[consts.Connected_Cluster_Arm_Id_Telemetry_Property] = (
+                arm_id
+            )
+    telemetry.add_extension_event("connectedk8s", event_properties)
+
+
+def report_connectedk8s_error(
+    cmd: Any | None,
+    error: errors.ArcError,
+    *,
+    exception: BaseException | None = None,
+    user_fault: bool = False,
+    telemetry_properties: dict[str, Any] | None = None,
+    fault_type: str | None = None,
+    **context: object,
+) -> AzCLIError:
+    """Report one standardized error to telemetry and return its console exception."""
+    message = error.format(**context)
+    properties = (telemetry_properties or {}).copy()
+    properties.update(
+        {
+            consts.Telemetry_Error_Code_Key: error.code,
+            consts.Telemetry_Error_Fault_Type_Key: fault_type or error.fault_type,
+            consts.Telemetry_Error_Name_Key: error.name,
+            consts.Telemetry_Error_Message_Key: message,
+        }
+    )
+    if error.tsg_link:
+        properties[consts.Telemetry_Error_Tsg_Link_Key] = error.tsg_link
+    add_connectedk8s_telemetry_event(cmd, properties)
+
+    if user_fault:
+        telemetry.set_user_fault()
+    telemetry.set_exception(
+        exception=exception if exception is not None else Exception(message),
+        fault_type=fault_type or error.fault_type,
+        summary=message,
+    )
+    return error.as_error(**context)
+
+
+def report_helm_timeout_error(cmd: Any | None, report: HelmTimeoutReport) -> AzCLIError:
+    """Report and build the console exception for a classified Helm timeout."""
+    message = report.error.format(details=report.details)
+    telemetry_properties = report.telemetry_properties.copy()
+    telemetry_properties.update(
+        {
+            consts.Telemetry_Onboarding_Error_Type_Key: report.error.fault_type,
+            consts.Telemetry_Onboarding_Error_Message_Key: message,
+        }
+    )
+    telemetry.set_error_type("CLIInternalError")
+    return report_connectedk8s_error(
+        cmd,
+        report.error,
+        exception=Exception(message),
+        user_fault=report.user_fault,
+        telemetry_properties=telemetry_properties,
+        details=report.details,
+    )
 
 
 def ensure_correlation_id(cmd: CLICommand, log_prefix: str = "connectedk8s") -> str:
@@ -113,7 +659,7 @@ def validate_connect_rp_location(cmd: CLICommand, location: str) -> None:
 
     try:
         providerDetails = resourceClient.get("Microsoft.Kubernetes")
-    except Exception as e:  # pylint: disable=broad-except
+    except Exception as e:  # pylint: disable=broad-exception-caught
         arm_exception_handler(
             e,
             consts.Get_ResourceProvider_Fault_Type,
@@ -174,7 +720,7 @@ def validate_custom_token(
                 )
                 rg = resource_client.get(resource_group_name)
                 location = rg.location
-            except Exception as ex:
+            except Exception as ex:  # pylint: disable=broad-exception-caught
                 telemetry.set_exception(
                     exception=ex,
                     fault_type=consts.Location_Fetch_Fault_Type,
@@ -182,7 +728,7 @@ def validate_custom_token(
                 )
                 raise ValidationError(
                     f"Unable to fetch location from resource group: '{ex}'"
-                )
+                ) from ex
         return True, location
     return False, location
 
@@ -348,7 +894,7 @@ def save_cluster_diagnostic_checks_pod_description(
                             filepath_with_timestamp,
                             "cluster_diagnostic_checks_pod_description.txt",
                         )
-                        with open(dns_check_path, "w+") as f:
+                        with open(dns_check_path, "w+", encoding="utf-8") as f:
                             f.write(pod_description)
                 else:
                     telemetry.set_exception(
@@ -377,7 +923,7 @@ def save_cluster_diagnostic_checks_pod_description(
             )
 
     # To handle any exception that may occur during the execution
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         logger.exception(
             "An exception has occured while saving the cluster diagnostic checks pod "
             "description in the local machine."
@@ -400,21 +946,42 @@ def check_cluster_DNS(
             return consts.Diagnostic_Check_Incomplete, storage_space_available
         formatted_dns_log = dns_check_log.replace("\t", "")
         # Validating if DNS is working or not and displaying proper result
-        if (
+        # These are standard error strings from DNS tools (nslookup/dig) indicating resolution failures
+        if (  # pylint: disable=too-many-boolean-expressions
             "NXDOMAIN" in formatted_dns_log
+            or "SERVFAIL" in formatted_dns_log
             or "connection timed out" in formatted_dns_log
+            or "no servers could be reached" in formatted_dns_log
+            or "communications error" in formatted_dns_log
+            or "timed out" in formatted_dns_log
         ):
+            # Determine specific DNS failure type for telemetry
+            dns_error_type = "unknown"
+            if "NXDOMAIN" in formatted_dns_log:
+                dns_error_type = "NXDOMAIN"
+            elif "SERVFAIL" in formatted_dns_log:
+                dns_error_type = "SERVFAIL"
+            elif "no servers could be reached" in formatted_dns_log:
+                dns_error_type = "no-servers-reachable"
+            elif (
+                "connection timed out" in formatted_dns_log
+                or "timed out" in formatted_dns_log
+            ):
+                dns_error_type = "timeout"
+            elif "communications error" in formatted_dns_log:
+                dns_error_type = "communications-error"
+
             logger.warning(
                 "Error: We found an issue with the DNS resolution on your cluster. For details about debugging DNS "
                 "issues visit 'https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/'.\n"
             )
             diagnoser_output.append(
-                "Error: We found an issue with the DNS resolution on your cluster. For details about debugging DNS "
-                "issues visit 'https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/'.\n"
+                f"Error: DNS resolution failed (type={dns_error_type}). "
+                "For details visit 'https://kubernetes.io/docs/tasks/administer-cluster/dns-debugging-resolution/'.\n"
             )
             if storage_space_available:
                 dns_check_path = os.path.join(filepath_with_timestamp, consts.DNS_Check)
-                with open(dns_check_path, "w+") as dns:
+                with open(dns_check_path, "w+", encoding="utf-8") as dns:
                     dns.write(
                         formatted_dns_log
                         + "\nWe found an issue with the DNS resolution on your cluster."
@@ -428,7 +995,7 @@ def check_cluster_DNS(
 
         if storage_space_available:
             dns_check_path = os.path.join(filepath_with_timestamp, consts.DNS_Check)
-            with open(dns_check_path, "w+") as dns:
+            with open(dns_check_path, "w+", encoding="utf-8") as dns:
                 dns.write(
                     formatted_dns_log + "\nCluster DNS check passed successfully."
                 )
@@ -461,7 +1028,7 @@ def check_cluster_DNS(
             )
 
     # To handle any exception that may occur during the execution
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         logger.exception(
             "An exception has occured while performing the DNS check on the cluster."
         )
@@ -478,12 +1045,15 @@ def check_cluster_DNS(
     return consts.Diagnostic_Check_Incomplete, storage_space_available
 
 
-def check_cluster_outbound_connectivity(
+# pylint: disable=too-many-return-statements
+# Outbound connectivity check returns different results based on connection state
+def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,too-many-nested-blocks
     outbound_connectivity_check_log: str,
     filepath_with_timestamp: str,
     storage_space_available: bool,
     diagnoser_output: list[str],
     outbound_connectivity_check_for: str = "pre-onboarding-inspector",
+    cmd: Any | None = None,
 ) -> tuple[str, bool]:
     try:
         if outbound_connectivity_check_for == "pre-onboarding-inspector":
@@ -506,13 +1076,30 @@ def check_cluster_outbound_connectivity(
             )
 
             if Cluster_Connect_Precheck_Endpoint_response_code != "000":
+                # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
+                if Cluster_Connect_Precheck_Endpoint_response_code.startswith(
+                    ("4", "5")
+                ):
+                    add_connectedk8s_telemetry_event(
+                        cmd,
+                        {
+                            consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
+                            consts.Telemetry_Onboarding_Error_Message_Key: (
+                                f"endpoint={Cluster_Connect_Precheck_Endpoint_Url}; "
+                                f"code={Cluster_Connect_Precheck_Endpoint_response_code}; "
+                                f"target=cluster-connect"
+                            ),
+                        },
+                    )
                 if storage_space_available:
                     cluster_connect_outbound_connectivity_check_path = os.path.join(
                         filepath_with_timestamp,
                         consts.Outbound_Network_Connectivity_Check_for_cluster_connect,
                     )
                     with open(
-                        cluster_connect_outbound_connectivity_check_path, "w+"
+                        cluster_connect_outbound_connectivity_check_path,
+                        "w+",
+                        encoding="utf-8",
                     ) as outbound:
                         outbound.write(
                             "Response code "
@@ -543,7 +1130,9 @@ def check_cluster_outbound_connectivity(
                         consts.Outbound_Network_Connectivity_Check_for_cluster_connect,
                     )
                     with open(
-                        cluster_connect_outbound_connectivity_check_path, "w+"
+                        cluster_connect_outbound_connectivity_check_path,
+                        "w+",
+                        encoding="utf-8",
                     ) as outbound:
                         outbound.write(
                             "Response code "
@@ -562,12 +1151,28 @@ def check_cluster_outbound_connectivity(
 
             # Validating if outbound connectiivty is working or not and displaying proper result
             if Onboarding_Precheck_Endpoint_outbound_connectivity_response != "000":
+                # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
+                if Onboarding_Precheck_Endpoint_outbound_connectivity_response.startswith(
+                    ("4", "5")
+                ):
+                    add_connectedk8s_telemetry_event(
+                        cmd,
+                        {
+                            consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
+                            consts.Telemetry_Onboarding_Error_Message_Key: (
+                                f"code={Onboarding_Precheck_Endpoint_outbound_connectivity_response}; "
+                                f"target=onboarding"
+                            ),
+                        },
+                    )
                 if storage_space_available:
                     outbound_connectivity_check_path = os.path.join(
                         filepath_with_timestamp,
                         consts.Outbound_Network_Connectivity_Check_for_onboarding,
                     )
-                    with open(outbound_connectivity_check_path, "w+") as outbound:
+                    with open(
+                        outbound_connectivity_check_path, "w+", encoding="utf-8"
+                    ) as outbound:
                         outbound.write(
                             "Response code "
                             + Onboarding_Precheck_Endpoint_outbound_connectivity_response
@@ -588,13 +1193,44 @@ def check_cluster_outbound_connectivity(
             )
             logger.warning(outbound_connectivity_failed_warning_message)
             telemetry.set_user_fault()
-            diagnoser_output.append(outbound_connectivity_failed_warning_message)
+
+            # Extract failed endpoint URLs for telemetry diagnostics
+            failed_endpoints: list[str] = []
+            failed_endpoint_details: list[str] = []
+            try:
+                log_parts = outbound_connectivity_check_log.split("  ")
+                for part in log_parts:
+                    if consts.Outbound_Connectivity_Check_Result_String in part:
+                        segments = part.split(" : ")
+                        if len(segments) >= 3:
+                            endpoint = segments[1].strip()
+                            code = segments[2].strip()
+                            if code == "000":
+                                failed_endpoints.append(endpoint)
+                                failed_endpoint_details.append(
+                                    f"{endpoint} (code=000, no HTTP response - "
+                                    "likely firewall drop, proxy block, or network timeout)"
+                                )
+                            # Non-2xx (4xx/5xx) responses are treated as reachable and should not be labeled as failures here.
+            except (IndexError, ValueError):
+                pass
+
+            # Include endpoint details in diagnoser_output for telemetry capture
+            if failed_endpoint_details:
+                details_str = "; ".join(failed_endpoint_details)
+                diagnoser_output.append(
+                    f"Error: Outbound connectivity failed for: {details_str}"
+                )
+            else:
+                diagnoser_output.append(outbound_connectivity_failed_warning_message)
             if storage_space_available:
                 outbound_connectivity_check_path = os.path.join(
                     filepath_with_timestamp,
                     consts.Outbound_Network_Connectivity_Check_for_onboarding,
                 )
-                with open(outbound_connectivity_check_path, "w+") as outbound:
+                with open(
+                    outbound_connectivity_check_path, "w+", encoding="utf-8"
+                ) as outbound:
                     outbound.write(
                         "Response code "
                         + Onboarding_Precheck_Endpoint_outbound_connectivity_response
@@ -620,12 +1256,26 @@ def check_cluster_outbound_connectivity(
                 return consts.Diagnostic_Check_Incomplete, storage_space_available
 
             if outbound_connectivity_response != "000":
+                # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
+                if outbound_connectivity_response.startswith(("4", "5")):
+                    add_connectedk8s_telemetry_event(
+                        cmd,
+                        {
+                            consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
+                            consts.Telemetry_Onboarding_Error_Message_Key: (
+                                f"code={outbound_connectivity_response}; "
+                                f"target=troubleshoot"
+                            ),
+                        },
+                    )
                 if storage_space_available:
                     outbound_connectivity_check_path = os.path.join(
                         filepath_with_timestamp,
                         consts.Outbound_Network_Connectivity_Check,
                     )
-                    with open(outbound_connectivity_check_path, "w+") as outbound:
+                    with open(
+                        outbound_connectivity_check_path, "w+", encoding="utf-8"
+                    ) as outbound:
                         outbound.write(
                             "Response code "
                             + outbound_connectivity_response
@@ -648,7 +1298,9 @@ def check_cluster_outbound_connectivity(
                 outbound_connectivity_check_path = os.path.join(
                     filepath_with_timestamp, consts.Outbound_Network_Connectivity_Check
                 )
-                with open(outbound_connectivity_check_path, "w+") as outbound:
+                with open(
+                    outbound_connectivity_check_path, "w+", encoding="utf-8"
+                ) as outbound:
                     outbound.write(
                         "Response code "
                         + outbound_connectivity_response
@@ -687,7 +1339,7 @@ def check_cluster_outbound_connectivity(
             )
 
     # To handle any exception that may occur during the execution
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         logger.exception(
             "An exception has occured while performing the outbound connectivity check "
             "on the cluster."
@@ -749,7 +1401,7 @@ def create_folder_diagnosticlogs(time_stamp: str, folder_name: str) -> tuple[str
         return "", False
 
     # To handle any exception that may occur during the execution
-    except Exception as e:
+    except (ValueError, TypeError) as e:
         logger.exception(
             "An exception has occured while creating the diagnostic logs folder in "
             "your local machine."
@@ -802,7 +1454,7 @@ def get_helm_registry(
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     headers = None
     if os.getenv("AZURE_ACCESS_TOKEN"):
-        headers = ["Authorization=Bearer {}".format(os.getenv("AZURE_ACCESS_TOKEN"))]
+        headers = [f"Authorization=Bearer {os.getenv('AZURE_ACCESS_TOKEN')}"]
     # Sending request with retries
     r = send_request_with_retries(
         cmd.cli_ctx,
@@ -818,7 +1470,7 @@ def get_helm_registry(
         try:
             repository_path: str = r.json().get("repositoryPath")
             return repository_path
-        except Exception as e:
+        except (ValueError, KeyError, AttributeError) as e:
             telemetry.set_exception(
                 exception=e,
                 fault_type=consts.Get_HelmRegistery_Path_Fault_Type,
@@ -826,7 +1478,7 @@ def get_helm_registry(
             )
             raise CLIInternalError(
                 f"Error while fetching helm chart registry path from JSON response: {e}"
-            )
+            ) from e
     else:
         telemetry.set_exception(
             exception=Exception("No content in response"),
@@ -862,7 +1514,7 @@ def get_helm_values(
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     headers = None
     if os.getenv("AZURE_ACCESS_TOKEN"):
-        headers = ["Authorization=Bearer {}".format(os.getenv("AZURE_ACCESS_TOKEN"))]
+        headers = [f"Authorization=Bearer {os.getenv('AZURE_ACCESS_TOKEN')}"]
     # Sending request with retries
     r = send_request_with_retries(
         cmd.cli_ctx,
@@ -879,7 +1531,7 @@ def get_helm_values(
         try:
             content: dict[str, Any] = r.json()
             return content
-        except Exception as e:
+        except (ValueError, KeyError) as e:
             telemetry.set_exception(
                 exception=e,
                 fault_type=consts.Get_HelmRegistery_Path_Fault_Type,
@@ -887,7 +1539,7 @@ def get_helm_values(
             )
             raise CLIInternalError(
                 f"Error while fetching helm values from DP from JSON response: {e}"
-            )
+            ) from e
     else:
         telemetry.set_exception(
             exception=Exception("No content in response"),
@@ -908,7 +1560,7 @@ def health_check_dp(cmd: CLICommand, config_dp_endpoint: str) -> bool:
     resource = cmd.cli_ctx.cloud.endpoints.active_directory_resource_id
     headers = None
     if os.getenv("AZURE_ACCESS_TOKEN"):
-        headers = ["Authorization=Bearer {}".format(os.getenv("AZURE_ACCESS_TOKEN"))]
+        headers = [f"Authorization=Bearer {os.getenv('AZURE_ACCESS_TOKEN')}"]
     # Sending request with retries
     r = send_request_with_retries(
         cmd.cli_ctx,
@@ -980,8 +1632,12 @@ def update_gateway_cluster_link(
     )
 
     if response.status_code == 200:
+        # Use lazy interpolation to satisfy pylint W1203 and avoid eager string formatting.
         logger.info(
-            f"Gateway {operation_type} succeeded for cluster '{cluster_name}' in resource group '{resource_group}'."
+            "Gateway %s succeeded for cluster '%s' in resource group '%s'.",
+            operation_type,
+            cluster_name,
+            resource_group,
         )
         return True
 
@@ -1021,14 +1677,14 @@ def send_request_with_retries(
                 body=request_body,
             )
             return response
-        except Exception as e:
+        except Exception as e:  # pylint: disable=broad-exception-caught
             if i == retry_count - 1:
                 telemetry.set_exception(
                     exception=e, fault_type=fault_type, summary=summary
                 )
                 raise CLIInternalError(
                     f"Error while fetching helm chart registry path: {e}"
-                )
+                ) from e
             time.sleep(retry_delay)
 
     assert False
@@ -1186,7 +1842,7 @@ def ensure_namespace_cleanup() -> None:
             if not api_response.items:
                 return
             time.sleep(5)
-        except Exception as e:  # pylint: disable=broad-except
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.exception("Error while retrieving namespace information.")
             kubernetes_exception_handler(
                 e,
@@ -1290,7 +1946,395 @@ def cleanup_release_install_namespace_if_exists() -> None:
         )
 
 
-# DO NOT use this method for re-put scenarios. This method involves new NS creation for helm release. For re-put scenarios, brownfield scenario needs to be handled where helm release still stays in default NS
+def should_use_secret_injection_flow(
+    release_train: str | None, agent_version: str | None
+) -> bool:
+    """
+    Determine whether to use the secure onboarding flow that pre-creates the
+    onboarding private key as a Kubernetes Secret (instead of passing it through
+    helm values).
+
+    Older agents whose helm chart unconditionally renders the privatekey secret
+    from ``global.onboardingPrivateKey`` must keep using the legacy flow,
+    otherwise the helm release would re-render the secret with an empty
+    ``privateKey`` and leave the cluster stuck in a disconnected state. The
+    chart change that gates the privatekey secret on the helm value being set
+    ships in:
+
+    * ``stable``  release train: agent version ``1.35.3`` and above.
+    * ``preview`` release train: agent version ``1.35.3-preview`` and above.
+    * any other release train (e.g. ``dev``): keep the legacy flow for safety.
+    * any agent version ending in ``-dev`` (e.g. ``0.2.5738-dev``) is treated
+      as a dev build and always uses the secure flow, regardless of the train
+      DP attributed it to. This handles the case where a developer overrides
+      ``HELMREGISTRY`` to a dev chart while DP still reports the original
+      ``stable``/``preview`` train.
+
+    From those versions onward the chart only renders the privatekey secret
+    when ``global.onboardingPrivateKey`` is provided, so simply omitting the
+    helm value is sufficient to hand secret ownership to the kubectl-injected
+    resource.
+    """
+    # Dev-suffixed agent versions always use the secure flow, regardless of the
+    # release train DP attributed them to.
+    if agent_version and agent_version.lower().endswith("-dev"):
+        return True
+
+    effective_train = (release_train or consts.Stable_Release_Train).lower()
+    if effective_train == consts.Stable_Release_Train:
+        cutoff = consts.Min_Agent_Version_For_Secret_Injection
+    elif effective_train == consts.Preview_Release_Train:
+        cutoff = consts.Min_Agent_Version_For_Secret_Injection_Preview
+    else:
+        # Unknown trains (neither stable nor preview) keep the legacy
+        # helm-values flow for safety.
+        return False
+
+    if not agent_version:
+        # Cannot determine version on a gated train. Be safe and use the legacy
+        # flow so that older agents aren't broken.
+        return False
+    try:
+        return version.parse(agent_version) >= version.parse(cutoff)
+    except Exception:  # pylint: disable=broad-except
+        # If we can't parse the version, fall back to the legacy flow.
+        return False
+
+
+def ensure_arc_namespace_with_helm_metadata() -> None:
+    """
+    Ensure the ``azure-arc`` namespace exists and is annotated/labeled so that
+    the subsequent ``helm install`` can adopt it without erroring out with
+    "exists and cannot be imported into the current release".
+    """
+    api_instance = kube_client.CoreV1Api()
+    helm_labels = {"app.kubernetes.io/managed-by": "Helm"}
+    helm_annotations = {
+        "meta.helm.sh/release-name": consts.Helm_Release_Name,
+        "meta.helm.sh/release-namespace": consts.Release_Install_Namespace,
+    }
+
+    try:
+        existing_ns = api_instance.read_namespace(consts.Arc_Namespace)
+    except ApiException as ex:
+        if ex.status != 404:
+            kubernetes_exception_handler(
+                ex,
+                consts.Get_Kubernetes_Namespace_Fault_Type,
+                error_message=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
+                summary=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
+            )
+            return
+        # Namespace does not exist, create it with the required metadata.
+        ns_body = kube_client.V1Namespace(
+            metadata=kube_client.V1ObjectMeta(
+                name=consts.Arc_Namespace,
+                labels=helm_labels,
+                annotations=helm_annotations,
+            )
+        )
+        try:
+            api_instance.create_namespace(ns_body)
+        except ApiException as create_ex:
+            kubernetes_exception_handler(
+                create_ex,
+                consts.Inject_PrivateKey_Secret_Fault_Type,
+                error_message=f"Unable to create namespace '{consts.Arc_Namespace}'",
+                summary=f"Unable to create namespace '{consts.Arc_Namespace}'",
+            )
+        return
+
+    # Namespace exists; merge in the Helm adoption metadata so helm can manage it.
+    metadata = existing_ns.metadata or kube_client.V1ObjectMeta()
+    labels = dict(metadata.labels or {})
+    annotations = dict(metadata.annotations or {})
+    labels.update(helm_labels)
+    annotations.update(helm_annotations)
+    patch_body = {"metadata": {"labels": labels, "annotations": annotations}}
+    try:
+        api_instance.patch_namespace(consts.Arc_Namespace, patch_body)
+    except ApiException as patch_ex:
+        kubernetes_exception_handler(
+            patch_ex,
+            consts.Inject_PrivateKey_Secret_Fault_Type,
+            error_message=(
+                f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
+                "ownership metadata"
+            ),
+            summary=(
+                f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
+                "ownership metadata"
+            ),
+        )
+
+
+def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
+    """
+    Pre-create the onboarding private key as a Kubernetes Secret so the agents
+    can consume it without ever exposing it through helm values. The namespace
+    and secret are annotated/labeled for Helm adoption so the chart can manage
+    them on subsequent upgrades.
+
+    This MUST be called before ``helm install`` so that the cluster never sits
+    in a state where the private key is missing (which would leave it stuck in
+    a disconnected state since the Cluster Identity Operator depends on this
+    secret to fetch identity certificates from HIS).
+    """
+    print(
+        f"Step: {get_utctimestring()}: Pre-creating onboarding private key "
+        f"secret '{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
+        f"'{consts.Arc_Namespace}'."
+    )
+    ensure_arc_namespace_with_helm_metadata()
+
+    api_instance = kube_client.CoreV1Api()
+    secret_body = kube_client.V1Secret(
+        metadata=kube_client.V1ObjectMeta(
+            name=consts.Onboarding_PrivateKey_Secret_Name,
+            namespace=consts.Arc_Namespace,
+            labels={"app.kubernetes.io/managed-by": "Helm"},
+            annotations={
+                "meta.helm.sh/release-name": consts.Helm_Release_Name,
+                "meta.helm.sh/release-namespace": consts.Release_Install_Namespace,
+            },
+        ),
+        type="Opaque",
+        string_data={consts.Onboarding_PrivateKey_Secret_Data_Key: private_key_pem},
+    )
+
+    try:
+        api_instance.create_namespaced_secret(consts.Arc_Namespace, secret_body)
+    except ApiException as ex:
+        if ex.status != 409:
+            kubernetes_exception_handler(
+                ex,
+                consts.Inject_PrivateKey_Secret_Fault_Type,
+                error_message=(
+                    "Unable to create onboarding private key secret "
+                    f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
+                    f"'{consts.Arc_Namespace}'"
+                ),
+                summary="Unable to create onboarding private key secret",
+            )
+            return
+        # Secret already exists - replace its contents
+        # so the cluster always uses a private key matching the public key in ARM
+        try:
+            api_instance.replace_namespaced_secret(
+                consts.Onboarding_PrivateKey_Secret_Name,
+                consts.Arc_Namespace,
+                secret_body,
+            )
+        except ApiException as replace_ex:
+            kubernetes_exception_handler(
+                replace_ex,
+                consts.Inject_PrivateKey_Secret_Fault_Type,
+                error_message=(
+                    "Unable to update existing onboarding private key secret "
+                    f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
+                    f"'{consts.Arc_Namespace}'"
+                ),
+                summary="Unable to update onboarding private key secret",
+            )
+
+
+def should_use_secret_injection_flow(
+    release_train: str | None, agent_version: str | None
+) -> bool:
+    """
+    Determine whether to use the secure onboarding flow that pre-creates the
+    onboarding private key as a Kubernetes Secret (instead of passing it through
+    helm values).
+
+    Older agents whose helm chart unconditionally renders the privatekey secret
+    from ``global.onboardingPrivateKey`` must keep using the legacy flow,
+    otherwise the helm release would re-render the secret with an empty
+    ``privateKey`` and leave the cluster stuck in a disconnected state. The
+    chart change that gates the privatekey secret on the helm value being set
+    ships in:
+
+    * ``stable``  release train: agent version ``1.35.3`` and above.
+    * ``preview`` release train: agent version ``1.35.3-preview`` and above.
+    * any other release train (e.g. ``dev``): keep the legacy flow for safety.
+    * any agent version ending in ``-dev`` (e.g. ``0.2.5738-dev``) is treated
+      as a dev build and always uses the secure flow, regardless of the train
+      DP attributed it to. This handles the case where a developer overrides
+      ``HELMREGISTRY`` to a dev chart while DP still reports the original
+      ``stable``/``preview`` train.
+
+    From those versions onward the chart only renders the privatekey secret
+    when ``global.onboardingPrivateKey`` is provided, so simply omitting the
+    helm value is sufficient to hand secret ownership to the kubectl-injected
+    resource.
+    """
+    # Dev-suffixed agent versions always use the secure flow, regardless of the
+    # release train DP attributed them to.
+    if agent_version and agent_version.lower().endswith("-dev"):
+        return True
+
+    effective_train = (release_train or consts.Stable_Release_Train).lower()
+    if effective_train == consts.Stable_Release_Train:
+        cutoff = consts.Min_Agent_Version_For_Secret_Injection
+    elif effective_train == consts.Preview_Release_Train:
+        cutoff = consts.Min_Agent_Version_For_Secret_Injection_Preview
+    else:
+        # Unknown trains (neither stable nor preview) keep the legacy
+        # helm-values flow for safety.
+        return False
+
+    if not agent_version:
+        # Cannot determine version on a gated train. Be safe and use the legacy
+        # flow so that older agents aren't broken.
+        return False
+    try:
+        return version.parse(agent_version) >= version.parse(cutoff)
+    except Exception:  # pylint: disable=broad-except
+        # If we can't parse the version, fall back to the legacy flow.
+        return False
+
+
+def ensure_arc_namespace_with_helm_metadata() -> None:
+    """
+    Ensure the ``azure-arc`` namespace exists and is annotated/labeled so that
+    the subsequent ``helm install`` can adopt it without erroring out with
+    "exists and cannot be imported into the current release".
+    """
+    api_instance = kube_client.CoreV1Api()
+    helm_labels = {"app.kubernetes.io/managed-by": "Helm"}
+    helm_annotations = {
+        "meta.helm.sh/release-name": consts.Helm_Release_Name,
+        "meta.helm.sh/release-namespace": consts.Release_Install_Namespace,
+    }
+
+    try:
+        existing_ns = api_instance.read_namespace(consts.Arc_Namespace)
+    except ApiException as ex:
+        if ex.status != 404:
+            kubernetes_exception_handler(
+                ex,
+                consts.Get_Kubernetes_Namespace_Fault_Type,
+                error_message=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
+                summary=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
+            )
+            return
+        # Namespace does not exist, create it with the required metadata.
+        ns_body = kube_client.V1Namespace(
+            metadata=kube_client.V1ObjectMeta(
+                name=consts.Arc_Namespace,
+                labels=helm_labels,
+                annotations=helm_annotations,
+            )
+        )
+        try:
+            api_instance.create_namespace(ns_body)
+        except ApiException as create_ex:
+            kubernetes_exception_handler(
+                create_ex,
+                consts.Inject_PrivateKey_Secret_Fault_Type,
+                error_message=f"Unable to create namespace '{consts.Arc_Namespace}'",
+                summary=f"Unable to create namespace '{consts.Arc_Namespace}'",
+            )
+        return
+
+    # Namespace exists; merge in the Helm adoption metadata so helm can manage it.
+    metadata = existing_ns.metadata or kube_client.V1ObjectMeta()
+    labels = dict(metadata.labels or {})
+    annotations = dict(metadata.annotations or {})
+    labels.update(helm_labels)
+    annotations.update(helm_annotations)
+    patch_body = {"metadata": {"labels": labels, "annotations": annotations}}
+    try:
+        api_instance.patch_namespace(consts.Arc_Namespace, patch_body)
+    except ApiException as patch_ex:
+        kubernetes_exception_handler(
+            patch_ex,
+            consts.Inject_PrivateKey_Secret_Fault_Type,
+            error_message=(
+                f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
+                "ownership metadata"
+            ),
+            summary=(
+                f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
+                "ownership metadata"
+            ),
+        )
+
+
+def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
+    """
+    Pre-create the onboarding private key as a Kubernetes Secret so the agents
+    can consume it without ever exposing it through helm values. The namespace
+    and secret are annotated/labeled for Helm adoption so the chart can manage
+    them on subsequent upgrades.
+
+    This MUST be called before ``helm install`` so that the cluster never sits
+    in a state where the private key is missing (which would leave it stuck in
+    a disconnected state since the Cluster Identity Operator depends on this
+    secret to fetch identity certificates from HIS).
+    """
+    print(
+        f"Step: {get_utctimestring()}: Pre-creating onboarding private key "
+        f"secret '{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
+        f"'{consts.Arc_Namespace}'."
+    )
+    ensure_arc_namespace_with_helm_metadata()
+
+    api_instance = kube_client.CoreV1Api()
+    secret_body = kube_client.V1Secret(
+        metadata=kube_client.V1ObjectMeta(
+            name=consts.Onboarding_PrivateKey_Secret_Name,
+            namespace=consts.Arc_Namespace,
+            labels={"app.kubernetes.io/managed-by": "Helm"},
+            annotations={
+                "meta.helm.sh/release-name": consts.Helm_Release_Name,
+                "meta.helm.sh/release-namespace": consts.Release_Install_Namespace,
+            },
+        ),
+        type="Opaque",
+        string_data={consts.Onboarding_PrivateKey_Secret_Data_Key: private_key_pem},
+    )
+
+    try:
+        api_instance.create_namespaced_secret(consts.Arc_Namespace, secret_body)
+    except ApiException as ex:
+        if ex.status != 409:
+            kubernetes_exception_handler(
+                ex,
+                consts.Inject_PrivateKey_Secret_Fault_Type,
+                error_message=(
+                    "Unable to create onboarding private key secret "
+                    f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
+                    f"'{consts.Arc_Namespace}'"
+                ),
+                summary="Unable to create onboarding private key secret",
+            )
+            return
+        # Secret already exists - replace its contents
+        # so the cluster always uses a private key matching the public key in ARM
+        try:
+            api_instance.replace_namespaced_secret(
+                consts.Onboarding_PrivateKey_Secret_Name,
+                consts.Arc_Namespace,
+                secret_body,
+            )
+        except ApiException as replace_ex:
+            kubernetes_exception_handler(
+                replace_ex,
+                consts.Inject_PrivateKey_Secret_Fault_Type,
+                error_message=(
+                    "Unable to update existing onboarding private key secret "
+                    f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
+                    f"'{consts.Arc_Namespace}'"
+                ),
+                summary="Unable to update onboarding private key secret",
+            )
+
+
+# DO NOT use this method for re-put scenarios. This method involves new NS creation for helm
+# release. For re-put scenarios, brownfield scenario needs to be handled where helm release
+# still stays in default NS
+# pylint: disable=too-many-locals
+# Multiple local variables needed for helm release configuration and installation
 def helm_install_release(
     resource_manager: str,
     chart_path: str,
@@ -1313,6 +2357,8 @@ def helm_install_release(
     aad_identity_principal_id: str | None,
     onboarding_timeout: str = consts.DEFAULT_MAX_ONBOARDING_TIMEOUT_HELMVALUE_SECONDS,
     config_dp_endpoint_override: str | None = None,
+    inject_private_key_via_helm: bool = True,
+    cmd: Any | None = None,
 ) -> None:
     cmd_helm_install = [
         helm_client_location,
@@ -1324,20 +2370,29 @@ def helm_install_release(
         f"global.kubernetesDistro={kubernetes_distro}",
         "--set",
         f"global.kubernetesInfra={kubernetes_infra}",
-        "--set",
-        f"global.onboardingPrivateKey={private_key_pem}",
-        "--set",
-        "systemDefaultValues.spnOnboarding=false",
-        "--set",
-        f"global.azureEnvironment={cloud_name}",
-        "--set",
-        "systemDefaultValues.clusterconnect-agent.enabled=true",
-        "--namespace",
-        f"{consts.Release_Install_Namespace}",
-        "--create-namespace",
-        "--output",
-        "json",
     ]
+    # Pass the onboarding private key through helm values only for older
+    # (stable < 1.35.3) agents. Newer agents have already received the key via
+    # a pre-created Kubernetes Secret so it never appears in helm values.
+    if inject_private_key_via_helm:
+        cmd_helm_install.extend(
+            ["--set", f"global.onboardingPrivateKey={private_key_pem}"]
+        )
+    cmd_helm_install.extend(
+        [
+            "--set",
+            "systemDefaultValues.spnOnboarding=false",
+            "--set",
+            f"global.azureEnvironment={cloud_name}",
+            "--set",
+            "systemDefaultValues.clusterconnect-agent.enabled=true",
+            "--namespace",
+            f"{consts.Release_Install_Namespace}",
+            "--create-namespace",
+            "--output",
+            "json",
+        ]
+    )
 
     # Special configurations from 2022-09-01 ARM metadata.
     # "dataplaneEndpoints" does not appear in arm_metadata for public and AGC
@@ -1380,9 +2435,8 @@ def helm_install_release(
                     "--set",
                     f"systemDefaultValues.activeDirectoryEndpoint={active_directory}",
                     "--set",
-                    "systemDefaultValues.image.repository={}".format(
-                        registry_path.split("/")[0]
-                    ),
+                    "systemDefaultValues.image.repository="
+                    f"{registry_path.split('/')[0]}",
                 ]
             )
         else:
@@ -1443,32 +2497,27 @@ def helm_install_release(
         helm_install_error_message = process_helm_error_detail(
             helm_install_error_message
         )
+        timeout_report = build_helm_timeout_report(
+            helm_install_error_message, helm_operation="install"
+        )
+        if timeout_report:
+            raise report_helm_timeout_error(cmd, timeout_report)
         helm_error_detail = {
-            "Context.Default.AzureCLI.onboardingErrorType": consts.Install_HelmRelease_Fault_Type,
-            "Context.Default.AzureCLI.onboardingErrorMessage": helm_install_error_message,
+            consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_HelmRelease_Fault_Type,
+            consts.Telemetry_Onboarding_Error_Message_Key: helm_install_error_message,
         }
-        # Replace the existing calls with the new function
-
-        telemetry.add_extension_event("connectedk8s", helm_error_detail)
-        if any(
+        is_user_fault = any(
             message in helm_install_error_message
             for message in consts.Helm_Install_Release_Userfault_Messages
-        ):
-            telemetry.set_user_fault()
-        telemetry.set_exception(
+        )
+        raise report_connectedk8s_error(
+            cmd,
+            errors.HELM_RELEASE_OPERATION_FAILED,
             exception=Exception(helm_install_error_message),
-            fault_type=consts.Install_HelmRelease_Fault_Type,
-            summary="Unable to install helm release",
-        )
-        warn_msg = (
-            "Please check if the azure-arc namespace was deployed and run 'kubectl get pods -n azure-arc' "
-            "to check if all the pods are in running state. A possible cause for pods stuck in pending "
-            "state could be insufficient resources on the kubernetes cluster to onboard to arc."
-            "Also pod logs can be checked using kubectl logs <pod-name> -n azure-arc.\n"
-        )
-        logger.warning(warn_msg)
-        raise CLIInternalError(
-            f"Unable to install helm release: {helm_install_error_message}"
+            user_fault=is_user_fault,
+            telemetry_properties=helm_error_detail,
+            operation="install",
+            details=helm_install_error_message,
         )
 
 
@@ -1477,6 +2526,10 @@ def process_helm_error_detail(helm_error_detail: str) -> str:
     helm_error_detail = scrub_proxy_url(helm_error_detail)
     helm_error_detail = redact_base64_strings(helm_error_detail)
     helm_error_detail = redact_sensitive_fields_from_string(helm_error_detail)
+    # Remove apostrophes/single quotes to prevent CLI telemetry client parse failures.
+    # The telemetry client's _parse_in_json does data.replace("'", '"') which corrupts
+    # JSON payloads containing apostrophes (e.g. "Couldn't" becomes invalid JSON).
+    helm_error_detail = helm_error_detail.replace("'", "")
 
     return helm_error_detail
 
@@ -1599,7 +2652,7 @@ def flatten(dd: Any, separator: str = ".", prefix: str = "") -> dict[str, Any]:
 
         return {prefix: dd}
 
-    except Exception as e:
+    except (TypeError, AttributeError, RecursionError) as e:
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Error_Flattening_User_Supplied_Value_Dict,
@@ -1607,7 +2660,7 @@ def flatten(dd: Any, separator: str = ".", prefix: str = "") -> dict[str, Any]:
         )
         raise CLIInternalError(
             "Error while flattening the user supplied helm values dict"
-        )
+        ) from e
 
 
 def check_features_to_update(features_to_update: list[str]) -> tuple[bool, bool, bool]:
@@ -1628,10 +2681,10 @@ def user_confirmation(message: str, yes: bool = False) -> None:
     try:
         if not prompt_y_n(message):
             raise ManualInterrupt("Operation cancelled.")
-    except NoTTYException:
+    except NoTTYException as exc:
         raise CLIInternalError(
             "Unable to prompt for confirmation as no tty available. Use --yes."
-        )
+        ) from exc
 
 
 def is_guid(guid: str) -> bool:
@@ -1733,9 +2786,9 @@ def check_provider_registrations(
                     "HybridCompute' before running the connect command."
                 )
                 raise ValidationError(err_msg)
-    except ValidationError as e:
-        raise e
-    except Exception:
+    except ValidationError:
+        raise
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("Couldn't check the required provider's registration status")
 
 
@@ -1754,7 +2807,7 @@ def can_create_clusterrolebindings() -> bool | str:
         response = api_instance.create_self_subject_access_review(access_review)
         allowed: bool = response.status.allowed
         return allowed
-    except Exception as ex:
+    except Exception as ex:  # pylint: disable=broad-exception-caught
         warn_msg = (
             "Couldn't check for the permission to create clusterrolebindings on this k8s cluster. "
             f"Error: {ex}"
@@ -1767,7 +2820,7 @@ def validate_node_api_response(api_instance: CoreV1Api) -> V1NodeList | None:
     try:
         node_api_response = api_instance.list_node()
         return node_api_response
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logger.debug(
             "Error occcured while listing nodes on this kubernetes cluster:",
             exc_info=True,
@@ -1778,7 +2831,7 @@ def validate_node_api_response(api_instance: CoreV1Api) -> V1NodeList | None:
 def az_cli(args_str: str) -> Any:
     args = args_str.split()
     cli: AzCli = get_default_cli()
-    with open(os.devnull, "w") as devnull:
+    with open(os.devnull, "w", encoding="utf-8") as devnull:
         cli.invoke(args, out_file=devnull)
     if cli.result.result:
         return cli.result.result
@@ -1791,8 +2844,10 @@ def is_cli_using_msal_auth() -> bool:
     response_cli_version = az_cli("version --output json")
     try:
         cli_version = response_cli_version["azure-cli"]
-    except Exception as ex:
-        raise CLIInternalError(f"Unable to decode the az cli version installed: {ex}")
+    except (KeyError, TypeError) as ex:
+        raise CLIInternalError(
+            f"Unable to decode the az cli version installed: {ex}"
+        ) from ex
     v1 = cli_version
     v2 = consts.AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION
     for i, j in zip(map(int, v1.split(".")), map(int, v2.split("."))):
@@ -1818,7 +2873,7 @@ def get_metadata(arm_endpoint: str, api_version: str = "2022-09-01") -> dict[str
         msg = f"ARM metadata endpoint '{metadata_endpoint}' returned status code {response.status_code}."
         raise HttpResponseError(msg)
 
-    except Exception as err:
+    except Exception as err:  # pylint: disable=broad-exception-caught
         msg = f"Failed to request ARM metadata {metadata_endpoint}."
         print(msg, file=sys.stderr)
         print(
@@ -1855,6 +2910,7 @@ def helm_update_agent(
     cluster_name: str,
     release_namespace: str,
     chart_path: str,
+    cmd: Any | None = None,
 ) -> None:
     cmd_helm_values = [
         helm_client_location,
@@ -1872,7 +2928,7 @@ def helm_update_agent(
     user_values_location = os.path.join(
         os.path.expanduser("~"), ".azure", "userValues.txt"
     )
-    with open(user_values_location, "w+") as existing_user_values:
+    with open(user_values_location, "w+", encoding="utf-8") as existing_user_values:
         response_helm_values_get = Popen(
             cmd_helm_values, stdout=existing_user_values, stderr=PIPE
         )
@@ -1881,13 +2937,13 @@ def helm_update_agent(
     if response_helm_values_get.returncode != 0:
         error = error_helm_get_values.decode("ascii")
         if "forbidden" in error or "timed out waiting for the condition" in error:
-            telemetry.set_user_fault()
-            telemetry.set_exception(
+            raise report_connectedk8s_error(
+                cmd,
+                errors.HELM_VALUES_GET_FAILED,
                 exception=Exception(error),
-                fault_type=consts.Get_Helm_Values_Failed,
-                summary="Error while doing helm get values azure-arc",
+                user_fault=True,
+                details=error,
             )
-            raise CLIInternalError(str.format(consts.Update_Agent_Failure, error))
 
     cmd_helm_upgrade = [
         helm_client_location,
@@ -1913,21 +2969,29 @@ def helm_update_agent(
     response_helm_upgrade = Popen(cmd_helm_upgrade, stdout=PIPE, stderr=PIPE)
     _, error_helm_upgrade = response_helm_upgrade.communicate()
     if response_helm_upgrade.returncode != 0:
-        helm_upgrade_error_message = error_helm_upgrade.decode("ascii")
-        if any(
+        helm_upgrade_error_message = process_helm_error_detail(
+            error_helm_upgrade.decode("ascii")
+        )
+        timeout_report = build_helm_timeout_report(
+            helm_upgrade_error_message, helm_operation="update"
+        )
+        if timeout_report:
+            with contextlib.suppress(OSError):
+                os.remove(user_values_location)
+            raise report_helm_timeout_error(cmd, timeout_report)
+        is_user_fault = any(
             message in helm_upgrade_error_message
             for message in consts.Helm_Install_Release_Userfault_Messages
-        ):
-            telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(helm_upgrade_error_message),
-            fault_type=consts.Install_HelmRelease_Fault_Type,
-            summary="Unable to install helm release",
         )
         with contextlib.suppress(OSError):
             os.remove(user_values_location)
-        raise CLIInternalError(
-            str.format(consts.Update_Agent_Failure, helm_upgrade_error_message)
+        raise report_connectedk8s_error(
+            cmd,
+            errors.HELM_RELEASE_OPERATION_FAILED,
+            exception=Exception(helm_upgrade_error_message),
+            user_fault=is_user_fault,
+            operation="update",
+            details=helm_upgrade_error_message,
         )
 
     logger.info(str.format(consts.Update_Agent_Success, cluster_name))

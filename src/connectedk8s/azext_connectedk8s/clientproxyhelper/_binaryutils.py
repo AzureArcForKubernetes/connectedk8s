@@ -107,7 +107,7 @@ def _download_proxy_from_MCR(
         "Context.Default.AzureCLI.ArcProxyDownloadTime": time_elapsed,
         "Context.Default.AzureCLI.ArcProxyVersion": consts.CLIENT_PROXY_VERSION,
     }
-    telemetry.add_extension_event("connectedk8s", proxy_data)
+    utils.add_connectedk8s_telemetry_event(cmd, proxy_data)
 
     proxy_package_path = _get_proxy_package_path_from_oras_response(response)
     _extract_proxy_tar_files(proxy_package_path, dest_dir, proxy_name)
@@ -227,7 +227,10 @@ def _check_proxy_installation(
 def _get_proxy_filename(operating_system: str, architecture: str) -> str:
     if operating_system.lower() == "darwin" and architecture == "386":
         raise azclierror.BadRequestError("Unsupported Darwin OS with 386 architecture.")
-    proxy_filename = f"arcProxy_{operating_system.lower()}_{architecture}_{consts.CLIENT_PROXY_VERSION.replace('.', '_')}"
+    proxy_filename = (
+        f"arcProxy_{operating_system.lower()}_{architecture}_"
+        f"{consts.CLIENT_PROXY_VERSION.replace('.', '_')}"
+    )
     if operating_system.lower() == "windows":
         proxy_filename += ".exe"
     return proxy_filename
