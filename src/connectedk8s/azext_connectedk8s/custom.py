@@ -150,6 +150,29 @@ def _telemetry_catch_all(func: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
+def _generate_key_pair(cmd: CLICommand) -> Any:
+    try:
+        return RSA.generate(4096)
+    except Exception as ex:
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.KEY_PAIR_GENERATION_FAILED,
+            exception=ex,
+            details=str(ex),
+        ) from ex
+
+
+def _raise_agent_state_timeout(cmd: CLICommand, operation: str) -> None:
+    raise utils.report_connectedk8s_error(
+        cmd,
+        errors.AGENT_STATE_TIMEOUT,
+        exception=Exception(
+            "Timed out waiting for Agent State to reach terminal state"
+        ),
+        operation=operation,
+    )
+
+
 # pylint: disable=unused-argument,too-many-locals,too-many-branches
 # cmd is required by Azure CLI command signature but may not be used in all command handlers
 # Too many locals and branches are due to complex onboarding logic with multiple branches for
@@ -915,16 +938,7 @@ def create_connectedk8s(
 
     print(f"Step: {utils.get_utctimestring()}: Generating Public-Private Key pair")
 
-    # Generate public-private key pair
-    try:
-        key_pair = RSA.generate(4096)
-    except Exception as e:
-        raise utils.report_connectedk8s_error(
-            cmd,
-            errors.KEY_PAIR_GENERATION_FAILED,
-            exception=e,
-            details=str(e),
-        )
+    key_pair = _generate_key_pair(cmd)
     try:
         public_key = get_public_key(key_pair)
     except Exception as e:
@@ -1198,14 +1212,7 @@ def create_connectedk8s(
             )
             return connected_cluster
 
-        raise utils.report_connectedk8s_error(
-            cmd,
-            errors.AGENT_STATE_TIMEOUT,
-            exception=Exception(
-                "Timed out waiting for Agent State to reach terminal state"
-            ),
-            operation="create",
-        )
+        _raise_agent_state_timeout(cmd, "create")
     if cl_oid and enable_custom_locations and cl_oid == custom_locations_oid:
         logger.warning(consts.Manual_Custom_Location_Oid_Warning)
     return put_cc_response
@@ -2922,14 +2929,7 @@ def update_connected_cluster(
 
     # If we didn't see a terminal agent state, now's the time to throw an error.
     if not terminal_agent_state:
-        raise utils.report_connectedk8s_error(
-            cmd,
-            errors.AGENT_STATE_TIMEOUT,
-            exception=Exception(
-                "Timed out waiting for Agent State to reach terminal state"
-            ),
-            operation="update",
-        )
+        _raise_agent_state_timeout(cmd, "update")
 
     return connected_cluster
 

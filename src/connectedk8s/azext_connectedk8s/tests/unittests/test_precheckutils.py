@@ -15,6 +15,19 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+sys.path.insert(0, os.path.dirname(__file__))
+
+from _dependency_stubs import (
+    ArgumentUsageError,
+    AzCLIError,
+    ClientRequestError,
+    CLIInternalError,
+    FileOperationError,
+    InvalidArgumentValueError,
+    MutuallyExclusiveArgumentError,
+    RequiredArgumentMissingError,
+    ValidationError,
+)
 
 # Stub out heavy dependencies before importing the module under test.
 # The _precheckutils module imports kubernetes, azure.cli.core, knack, etc. at module level.
@@ -22,42 +35,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 # sys.modules so the import succeeds. In full azdev CI, the real modules are already loaded
 # and setdefault() leaves them untouched.
 azclierror_stub = ModuleType("azure.cli.core.azclierror")
-
-
-class AzCLIError(Exception):
-    pass
-
-
-class CLIInternalError(AzCLIError):
-    pass
-
-
-class ArgumentUsageError(AzCLIError):
-    pass
-
-
-class ClientRequestError(AzCLIError):
-    pass
-
-
-class FileOperationError(AzCLIError):
-    pass
-
-
-class InvalidArgumentValueError(AzCLIError):
-    pass
-
-
-class MutuallyExclusiveArgumentError(AzCLIError):
-    pass
-
-
-class RequiredArgumentMissingError(AzCLIError):
-    pass
-
-
-class ValidationError(AzCLIError):
-    pass
 
 
 azclierror_stub.AzCLIError = AzCLIError
