@@ -7,10 +7,19 @@ import sys
 from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+sys.path.insert(0, os.path.dirname(__file__))
 
-from azext_connectedk8s import _troubleshootutils as troubleshootutils
-from azext_connectedk8s import _constants as consts
-from azext_connectedk8s import _errors as errors
+from _dependency_stubs import (
+    install_dependency_stubs,
+    restore_dependency_modules,
+)
+
+_ORIGINAL_MODULES = install_dependency_stubs()
+
+from azext_connectedk8s import _constants as consts  # noqa: E402
+from azext_connectedk8s import _troubleshootutils as troubleshootutils  # noqa: E402
+
+restore_dependency_modules(_ORIGINAL_MODULES)
 
 
 def _failed_helm_process(error: bytes) -> MagicMock:
@@ -26,12 +35,8 @@ def test_executing_diagnoser_job_records_helm_failure_without_raising(monkeypatc
         "Popen",
         MagicMock(return_value=_failed_helm_process(b"Error: forbidden")),
     )
-    report_diagnostic = MagicMock(return_value="[AZK8S0509] Helm failure")
-    monkeypatch.setattr(
-        troubleshootutils.azext_utils,
-        "report_connectedk8s_diagnostic",
-        report_diagnostic,
-    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(troubleshootutils.azext_utils, "telemetry", mock_telemetry)
     troubleshootutils.diagnoser_output.clear()
 
     result = troubleshootutils.executing_diagnoser_job(
@@ -49,11 +54,16 @@ def test_executing_diagnoser_job_records_helm_failure_without_raising(monkeypatc
     )
 
     assert result is None
-    assert troubleshootutils.diagnoser_output == [
-        "[AZK8S0509] Helm failure\n"
-    ]
-    assert report_diagnostic.call_args.args[1] is errors.HELM_VALUES_GET_FAILED
-    assert report_diagnostic.call_args.kwargs["user_fault"] is True
+    assert len(troubleshootutils.diagnoser_output) == 1
+    message = troubleshootutils.diagnoser_output[0]
+    assert message.startswith("[AZK8S0509] HelmValuesGetFailed:")
+    assert "Error: forbidden" in message
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0509"
+    assert properties["Context.Default.AzureCLI.errorName"] == "HelmValuesGetFailed"
+    assert properties["Context.Default.AzureCLI.errorMessage"] == message.rstrip()
+    assert mock_telemetry.set_exception.call_args.kwargs["summary"] == message.rstrip()
+    mock_telemetry.set_user_fault.assert_called_once_with()
 
 
 def test_security_policy_check_records_helm_failure_without_overwriting(
@@ -68,16 +78,8 @@ def test_security_policy_check_records_helm_failure_without_overwriting(
             )
         ),
     )
-    report_diagnostic = MagicMock(return_value="[AZK8S0509] Helm failure")
-    monkeypatch.setattr(
-        troubleshootutils.azext_utils,
-        "report_connectedk8s_diagnostic",
-        report_diagnostic,
-    )
-    telemetry_exception = MagicMock()
-    monkeypatch.setattr(
-        troubleshootutils.telemetry, "set_exception", telemetry_exception
-    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(troubleshootutils.azext_utils, "telemetry", mock_telemetry)
     troubleshootutils.diagnoser_output.clear()
 
     result = troubleshootutils.check_probable_cluster_security_policy(
@@ -89,9 +91,12 @@ def test_security_policy_check_records_helm_failure_without_overwriting(
     )
 
     assert result == consts.Diagnostic_Check_Incomplete
-    assert troubleshootutils.diagnoser_output == [
-        "[AZK8S0509] Helm failure\n"
-    ]
-    assert report_diagnostic.call_args.args[1] is errors.HELM_VALUES_GET_FAILED
-    assert report_diagnostic.call_args.kwargs["user_fault"] is True
-    telemetry_exception.assert_not_called()
+    assert len(troubleshootutils.diagnoser_output) == 1
+    message = troubleshootutils.diagnoser_output[0]
+    assert message.startswith("[AZK8S0509] HelmValuesGetFailed:")
+    assert "timed out waiting for the condition" in message
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0509"
+    assert properties["Context.Default.AzureCLI.errorMessage"] == message.rstrip()
+    assert mock_telemetry.set_exception.call_args.kwargs["summary"] == message.rstrip()
+    mock_telemetry.set_user_fault.assert_called_once_with()
