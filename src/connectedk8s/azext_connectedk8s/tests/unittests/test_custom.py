@@ -165,7 +165,9 @@ def test_get_staging_config_dp_endpoint_override_wrong_region(monkeypatch):
         custom.utils, "is_staging_feature_registered", lambda cli_ctx, sub: True
     )
     cmd = _FakeCmd()
-    assert custom.get_staging_config_dp_endpoint_override(cmd, "eastus", "sub-id") is None
+    assert (
+        custom.get_staging_config_dp_endpoint_override(cmd, "eastus", "sub-id") is None
+    )
 
 
 def test_get_staging_config_dp_endpoint_override_not_registered(monkeypatch):
@@ -175,7 +177,9 @@ def test_get_staging_config_dp_endpoint_override_not_registered(monkeypatch):
         custom.utils, "is_staging_feature_registered", lambda cli_ctx, sub: False
     )
     cmd = _FakeCmd()
-    assert custom.get_staging_config_dp_endpoint_override(cmd, "westus2", "sub-id") is None
+    assert (
+        custom.get_staging_config_dp_endpoint_override(cmd, "westus2", "sub-id") is None
+    )
 
 
 # --------------------- Tests for expand_proxy_skip_range_keywords ---------------------
