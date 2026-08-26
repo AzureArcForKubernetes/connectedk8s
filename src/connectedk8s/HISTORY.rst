@@ -2,6 +2,10 @@
 
 Release History
 ===============
+1.11.3
++++++++
+* Route the config agent data-plane endpoint to the regional staging extension DP (e.g. ``westus2stg``) during ``az connectedk8s connect`` when the subscription has the ``Microsoft.KubernetesConfiguration/Staging`` AFEC feature registered and the cluster is onboarded in ``westus2``.
+
 1.11.2
 +++++++
 * Fix telemetry `Unknown` errors: wrap string exceptions, add missing instrumentation, and catch-all decorator for unhandled exceptions.
