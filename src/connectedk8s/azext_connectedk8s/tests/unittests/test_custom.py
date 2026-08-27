@@ -120,6 +120,37 @@ def test_key_pair_generation_reports_real_standardized_error(monkeypatch):
     )
 
 
+def test_cleanup_stale_arc_agents_passes_aligned_arguments(monkeypatch):
+    cmd = _cmd_without_arm_id()
+    cleanup_crds = MagicMock()
+    delete_agents = MagicMock()
+    monkeypatch.setattr(custom, "crd_cleanup_force_delete", cleanup_crds)
+    monkeypatch.setattr(custom.utils, "delete_arc_agents", delete_agents)
+
+    custom._cleanup_stale_arc_agents(
+        cmd,
+        "/usr/bin/kubectl",
+        "/tmp/kubeconfig",
+        "context",
+        "azure-arc",
+        "/usr/bin/helm",
+        True,
+    )
+
+    cleanup_crds.assert_called_once_with(
+        cmd, "/usr/bin/kubectl", "/tmp/kubeconfig", "context"
+    )
+    delete_agents.assert_called_once_with(
+        "azure-arc",
+        "/tmp/kubeconfig",
+        "context",
+        "/usr/bin/helm",
+        True,
+        True,
+        cmd=cmd,
+    )
+
+
 def test_validate_release_namespace_reports_real_standardized_error(monkeypatch):
     monkeypatch.setattr(
         custom.utils, "get_release_namespace", MagicMock(return_value=None)
