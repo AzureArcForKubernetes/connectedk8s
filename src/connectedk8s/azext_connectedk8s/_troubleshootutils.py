@@ -1106,6 +1106,7 @@ def check_diagnoser_container(
             probable_pod_security_policy_presence,
             kube_config,
             kube_context,
+            cmd,
         )
         # If diagnoser_container_log is not empty then only we will check for the results
         if diagnoser_container_log is not None and diagnoser_container_log != "":
@@ -1189,6 +1190,7 @@ def executing_diagnoser_job(
     probable_pod_security_policy_presence: str,
     kube_config: str | None,
     kube_context: str | None,
+    cmd: CLICommand | None = None,
 ) -> str | None:
     job_name = "azure-arc-diagnoser-job"
     # CMD command to get helm values in azure arc and converting it to json format
@@ -1216,7 +1218,7 @@ def executing_diagnoser_job(
             error_helm_get_values.decode("ascii", errors="replace")
         )
         message = azext_utils.report_connectedk8s_diagnostic(
-            None,
+            cmd,
             errors.HELM_VALUES_GET_FAILED,
             exception=Exception(error),
             user_fault=(
@@ -1632,6 +1634,7 @@ def check_probable_cluster_security_policy(
     release_namespace: str,
     kube_config: str | None,
     kube_context: str | None,
+    cmd: CLICommand | None = None,
 ) -> str:
     print(f"Step: {get_utctimestring()}: Check probable cluster security policy")
     try:
@@ -1663,7 +1666,7 @@ def check_probable_cluster_security_policy(
                 error_helm_get_values.decode("ascii", errors="replace")
             )
             message = azext_utils.report_connectedk8s_diagnostic(
-                None,
+                cmd,
                 errors.HELM_VALUES_GET_FAILED,
                 exception=Exception(error),
                 user_fault=(

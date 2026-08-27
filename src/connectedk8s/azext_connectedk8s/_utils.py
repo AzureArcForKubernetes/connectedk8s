@@ -1471,9 +1471,7 @@ def add_helm_repo(
         error = process_helm_error_detail(
             error_helm_repo.decode("ascii", errors="replace")
         )
-        details = process_helm_error_detail(
-            f"Repository '{repo_url}' could not be added: {error}"
-        )
+        details = f"Helm repository could not be added: {error}"
         raise report_connectedk8s_error(
             cmd,
             errors.HELM_REPO_ADD_FAILED,

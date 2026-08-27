@@ -757,6 +757,7 @@ def executing_cluster_diagnostic_checks_job(
             kube_context,
             helm_client_location,
             mcr_url,
+            cmd=cmd,
         )
 
         # Watch the Job for up to 180s waiting for it to reach Complete or Failed (3 retries) state
@@ -1024,6 +1025,7 @@ def helm_install_release_cluster_diagnostic_checks(
     helm_client_location: str,
     mcr_url: str,
     onboarding_timeout: str = "60",
+    cmd: CLICommand | None = None,
 ) -> None:
     cmd_helm_install = [
         helm_client_location,
@@ -1069,7 +1071,7 @@ def helm_install_release_cluster_diagnostic_checks(
             telemetry.set_user_fault()
 
         raise azext_utils.report_connectedk8s_error(
-            None,
+            cmd,
             errors.PREDIAGNOSTICS_HELM_INSTALL_FAILED,
             exception=Exception(error),
             user_fault=(

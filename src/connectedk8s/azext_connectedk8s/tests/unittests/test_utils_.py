@@ -1021,14 +1021,16 @@ def test_add_helm_repo_reports_real_standardized_error(monkeypatch):
     assert str(raised.value).startswith("[AZK8S0504] HelmRepositoryAddFailed:")
     assert "repo-user" not in str(raised.value)
     assert "repo-password" not in str(raised.value)
-    assert "http://[REDACTED]:[REDACTED]@example.com:8080" in str(raised.value)
+    assert "example.com" not in str(raised.value)
     assert "Error: repo failed \ufffd" in str(raised.value)
     _, properties = mock_telemetry.add_extension_event.call_args.args
     assert "repo-user" not in properties["Context.Default.AzureCLI.errorMessage"]
     assert "repo-password" not in properties["Context.Default.AzureCLI.errorMessage"]
+    assert "example.com" not in properties["Context.Default.AzureCLI.errorMessage"]
     telemetry_exception = mock_telemetry.set_exception.call_args.kwargs["exception"]
     assert "repo-user" not in str(telemetry_exception)
     assert "repo-password" not in str(telemetry_exception)
+    assert "example.com" not in str(telemetry_exception)
     _assert_standardized_telemetry(
         mock_telemetry, errors_module.HELM_REPO_ADD_FAILED, False
     )
