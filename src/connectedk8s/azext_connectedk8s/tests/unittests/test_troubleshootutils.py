@@ -4,6 +4,7 @@
 # --------------------------------------------------------------------------------------------
 import os
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
@@ -19,6 +20,16 @@ def _failed_helm_process(error: bytes) -> MagicMock:
     return process
 
 
+def _cmd_with_arm_id():
+    arm_id = (
+        "/subscriptions/sub/resourceGroups/rg/providers/"
+        "Microsoft.Kubernetes/connectedClusters/cluster"
+    )
+    return SimpleNamespace(
+        cli_ctx=SimpleNamespace(data={"connectedk8s_arm_id": arm_id})
+    ), arm_id
+
+
 def test_executing_diagnoser_job_records_helm_failure_without_raising(monkeypatch):
     monkeypatch.setattr(
         troubleshootutils,
@@ -28,6 +39,7 @@ def test_executing_diagnoser_job_records_helm_failure_without_raising(monkeypatc
     mock_telemetry = MagicMock()
     monkeypatch.setattr(troubleshootutils.azext_utils, "telemetry", mock_telemetry)
     troubleshootutils.diagnoser_output.clear()
+    cmd, arm_id = _cmd_with_arm_id()
 
     result = troubleshootutils.executing_diagnoser_job(
         MagicMock(),
@@ -41,6 +53,7 @@ def test_executing_diagnoser_job_records_helm_failure_without_raising(monkeypatc
         consts.Diagnostic_Check_Passed,
         None,
         None,
+        cmd,
     )
 
     assert result is None
@@ -52,6 +65,7 @@ def test_executing_diagnoser_job_records_helm_failure_without_raising(monkeypatc
     assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0509"
     assert properties["Context.Default.AzureCLI.errorName"] == "HelmValuesGetFailed"
     assert properties["Context.Default.AzureCLI.errorMessage"] == message.rstrip()
+    assert properties["Context.Default.AzureCLI.resourceid"] == arm_id
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == message.rstrip()
     mock_telemetry.set_user_fault.assert_called_once_with()
 
@@ -71,6 +85,7 @@ def test_security_policy_check_records_helm_failure_without_overwriting(
     mock_telemetry = MagicMock()
     monkeypatch.setattr(troubleshootutils.azext_utils, "telemetry", mock_telemetry)
     troubleshootutils.diagnoser_output.clear()
+    cmd, arm_id = _cmd_with_arm_id()
 
     result = troubleshootutils.check_probable_cluster_security_policy(
         MagicMock(),
@@ -78,6 +93,7 @@ def test_security_policy_check_records_helm_failure_without_overwriting(
         "azure-arc",
         None,
         None,
+        cmd,
     )
 
     assert result == consts.Diagnostic_Check_Incomplete
@@ -88,5 +104,6 @@ def test_security_policy_check_records_helm_failure_without_overwriting(
     _, properties = mock_telemetry.add_extension_event.call_args.args
     assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0509"
     assert properties["Context.Default.AzureCLI.errorMessage"] == message.rstrip()
+    assert properties["Context.Default.AzureCLI.resourceid"] == arm_id
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == message.rstrip()
     mock_telemetry.set_user_fault.assert_called_once_with()

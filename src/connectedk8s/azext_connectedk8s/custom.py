@@ -883,6 +883,7 @@ def create_connectedk8s(
             release_namespace,
             kube_config,
             kube_context,
+            cmd,
             helm_client_location,
             is_arm64_cluster,
             True,
@@ -3400,6 +3401,43 @@ def get_all_helm_values(
         raise CLIInternalError(f"Problem loading the helm existing values: {e}") from e
 
 
+def _validate_cluster_connect_disable(
+    cmd: CLICommand,
+    release_namespace: str,
+    kube_config: str | None,
+    kube_context: str | None,
+    helm_client_location: str,
+    disable_cl: bool,
+) -> None:
+    helm_values = get_all_helm_values(
+        cmd,
+        release_namespace,
+        kube_config,
+        kube_context,
+        helm_client_location,
+    )
+    try:
+        cl_enabled = (
+            helm_values.get("systemDefaultValues")  # type: ignore[union-attr]
+            .get("customLocations")
+            .get("enabled")
+        )
+        cl_oid = (
+            helm_values.get("systemDefaultValues")  # type: ignore[union-attr]
+            .get("customLocations")
+            .get("oid")
+        )
+        if not disable_cl and cl_enabled is True and cl_oid != "":
+            raise ClientRequestError(
+                "Disabling 'cluster-connect' feature is not allowed when "
+                "'custom-locations' feature is enabled"
+            )
+    except AttributeError:
+        pass
+    except Exception as ex:
+        raise ArgumentUsageError(str(ex)) from ex
+
+
 def enable_features(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -3760,30 +3798,14 @@ def disable_features(
     utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     if disable_clstr_connect:
-        try:
-            helm_values = get_all_helm_values(
-                cmd,
-                release_namespace,
-                kube_config,
-                kube_context,
-                helm_client_location,
-            )
-            cl_enabled = (
-                helm_values.get("systemDefaultValues")  # type: ignore[union-attr]
-                .get("customLocations")
-                .get("enabled")
-            )
-            cl_oid = (
-                helm_values.get("systemDefaultValues").get("customLocations").get("oid")  # type: ignore[union-attr]
-            )
-            if not disable_cl and cl_enabled is True and cl_oid != "":
-                raise ClientRequestError(
-                    "Disabling 'cluster-connect' feature is not allowed when 'custom-locations' feature is enabled"
-                )
-        except AttributeError:
-            pass
-        except Exception as ex:
-            raise ArgumentUsageError(str(ex)) from ex
+        _validate_cluster_connect_disable(
+            cmd,
+            release_namespace,
+            kube_config,
+            kube_context,
+            helm_client_location,
+            disable_cl,
+        )
 
     if disable_cl:
         logger.warning(

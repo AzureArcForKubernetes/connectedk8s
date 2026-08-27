@@ -172,6 +172,25 @@ def test_get_all_helm_values_reports_real_standardized_error(
     )
 
 
+def test_validate_cluster_connect_disable_preserves_helm_values_error(monkeypatch):
+    expected = custom.CLIInternalError("[AZK8S0509] HelmValuesGetFailed")
+    monkeypatch.setattr(
+        custom, "get_all_helm_values", MagicMock(side_effect=expected)
+    )
+
+    with pytest.raises(custom.CLIInternalError) as raised:
+        custom._validate_cluster_connect_disable(
+            _cmd_without_arm_id(),
+            "azure-arc",
+            None,
+            None,
+            "/usr/bin/helm",
+            False,
+        )
+
+    assert raised.value is expected
+
+
 def test_get_helm_client_location_reports_real_agc_not_installed_error(
     monkeypatch,
 ):

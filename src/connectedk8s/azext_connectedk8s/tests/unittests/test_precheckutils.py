@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +18,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 import azext_connectedk8s._constants as consts
 import azext_connectedk8s._precheckutils as precheckutils
+
+_REAL_ADD_CONNECTEDK8S_TELEMETRY_EVENT = (
+    precheckutils.azext_utils.add_connectedk8s_telemetry_event
+)
 
 
 @pytest.fixture(autouse=True)
@@ -146,12 +151,20 @@ def test_prediagnostics_helm_install_uses_standardized_error(monkeypatch):
         b"Error: injected Helm install failure",
     )
     monkeypatch.setattr(precheckutils, "Popen", MagicMock(return_value=process))
-    expected = precheckutils.AzCLIError(
-        "[AZK8S0607] PrediagnosticsHelmInstallFailed"
+    arm_id = (
+        "/subscriptions/sub/resourceGroups/rg/providers/"
+        "Microsoft.Kubernetes/connectedClusters/cluster"
     )
-    report_error = MagicMock(return_value=expected)
+    cmd = SimpleNamespace(
+        cli_ctx=SimpleNamespace(data={"connectedk8s_arm_id": arm_id})
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(precheckutils.azext_utils, "telemetry", mock_telemetry)
+    monkeypatch.setattr(precheckutils, "telemetry", mock_telemetry)
     monkeypatch.setattr(
-        precheckutils.azext_utils, "report_connectedk8s_error", report_error
+        precheckutils.azext_utils,
+        "add_connectedk8s_telemetry_event",
+        _REAL_ADD_CONNECTEDK8S_TELEMETRY_EVENT,
     )
 
     with pytest.raises(precheckutils.AzCLIError) as raised:
@@ -167,13 +180,19 @@ def test_prediagnostics_helm_install_uses_standardized_error(monkeypatch):
             None,
             "/usr/bin/helm",
             "mcr.microsoft.com",
+            cmd=cmd,
         )
 
-    assert raised.value is expected
-    assert report_error.call_args.args[1] is precheckutils.errors.PREDIAGNOSTICS_HELM_INSTALL_FAILED
+    assert str(raised.value).startswith(
+        "[AZK8S0607] PrediagnosticsHelmInstallFailed:"
+    )
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0607"
+    assert properties["Context.Default.AzureCLI.resourceid"] == arm_id
+    assert properties["Context.Default.AzureCLI.errorMessage"] == str(raised.value)
     assert (
-        report_error.call_args.kwargs["details"]
-        == "Error: injected Helm install failure"
+        mock_telemetry.set_exception.call_args.kwargs["summary"]
+        == str(raised.value)
     )
 
 
