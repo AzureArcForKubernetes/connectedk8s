@@ -173,6 +173,29 @@ def _raise_agent_state_timeout(cmd: CLICommand, operation: str) -> None:
     )
 
 
+def _cleanup_stale_arc_agents(
+    cmd: CLICommand,
+    kubectl_client_location: str,
+    kube_config: str | None,
+    kube_context: str | None,
+    release_namespace: str,
+    helm_client_location: str,
+    is_arm64_cluster: bool,
+) -> None:
+    crd_cleanup_force_delete(
+        cmd, kubectl_client_location, kube_config, kube_context
+    )
+    utils.delete_arc_agents(
+        release_namespace,
+        kube_config,
+        kube_context,
+        helm_client_location,
+        is_arm64_cluster,
+        True,
+        cmd=cmd,
+    )
+
+
 # pylint: disable=unused-argument,too-many-locals,too-many-branches
 # cmd is required by Azure CLI command signature but may not be used in all command handlers
 # Too many locals and branches are due to complex onboarding logic with multiple branches for
@@ -874,20 +897,14 @@ def create_connectedk8s(
         logger.warning(
             "Cleaning up the stale arc agents present on the cluster before starting new onboarding."
         )
-        # Explicit CRD Deletion
-        crd_cleanup_force_delete(
-            cmd, kubectl_client_location, kube_config, kube_context
-        )
-        # Cleaning up the cluster
-        utils.delete_arc_agents(
-            release_namespace,
+        _cleanup_stale_arc_agents(
+            cmd,
+            kubectl_client_location,
             kube_config,
             kube_context,
-            cmd,
+            release_namespace,
             helm_client_location,
             is_arm64_cluster,
-            True,
-            cmd=cmd,
         )
 
     else:
