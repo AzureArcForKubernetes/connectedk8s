@@ -3165,7 +3165,9 @@ def upgrade_agents(
     response_helm_values_get = Popen(cmd_helm_values, stdout=PIPE, stderr=PIPE)
     output_helm_values, error_helm_get_values = response_helm_values_get.communicate()
     if response_helm_values_get.returncode != 0:
-        error = error_helm_get_values.decode("ascii")
+        error = utils.process_helm_error_detail(
+            error_helm_get_values.decode("ascii", errors="replace")
+        )
         is_user_fault = (
             "forbidden" in error or "timed out waiting for the condition" in error
         )
@@ -3177,7 +3179,7 @@ def upgrade_agents(
             details=error,
         )
 
-    output_helm_values_str = output_helm_values.decode("ascii")
+    output_helm_values_str = output_helm_values.decode("ascii", errors="replace")
 
     try:
         existing_user_values = yaml.safe_load(output_helm_values_str)
@@ -3242,7 +3244,7 @@ def upgrade_agents(
 
     if response_helm_upgrade.returncode != 0:
         helm_upgrade_error_message = utils.process_helm_error_detail(
-            error_helm_upgrade.decode("ascii")
+            error_helm_upgrade.decode("ascii", errors="replace")
         )
         timeout_report = utils.build_helm_timeout_report(
             helm_upgrade_error_message, helm_operation="upgrade"
@@ -3373,7 +3375,9 @@ def get_all_helm_values(
     response_helm_values_get = Popen(cmd_helm_values, stdout=PIPE, stderr=PIPE)
     output_helm_values, error_helm_get_values = response_helm_values_get.communicate()
     if response_helm_values_get.returncode != 0:
-        error = error_helm_get_values.decode("ascii")
+        error = utils.process_helm_error_detail(
+            error_helm_get_values.decode("ascii", errors="replace")
+        )
         raise utils.report_connectedk8s_error(
             cmd,
             errors.HELM_VALUES_GET_FAILED,
@@ -3382,7 +3386,7 @@ def get_all_helm_values(
             details=error,
         )
 
-    output_helm_values_str = output_helm_values.decode("ascii")
+    output_helm_values_str = output_helm_values.decode("ascii", errors="replace")
 
     try:
         existing_values: dict[str, Any] = yaml.safe_load(output_helm_values_str)
@@ -3631,7 +3635,7 @@ def enable_features(
     _, error_helm_upgrade = response_helm_upgrade.communicate()
     if response_helm_upgrade.returncode != 0:
         helm_upgrade_error_message = utils.process_helm_error_detail(
-            error_helm_upgrade.decode("ascii")
+            error_helm_upgrade.decode("ascii", errors="replace")
         )
         timeout_report = utils.build_helm_timeout_report(
             helm_upgrade_error_message, helm_operation="enable features"
@@ -3887,7 +3891,7 @@ def get_chart_and_disable_features(
     _, error_helm_upgrade = response_helm_upgrade.communicate()
     if response_helm_upgrade.returncode != 0:
         helm_upgrade_error_message = utils.process_helm_error_detail(
-            error_helm_upgrade.decode("ascii")
+            error_helm_upgrade.decode("ascii", errors="replace")
         )
         timeout_report = utils.build_helm_timeout_report(
             helm_upgrade_error_message, helm_operation="disable features"

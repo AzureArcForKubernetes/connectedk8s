@@ -11,19 +11,8 @@ from urllib.parse import urlunsplit
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-sys.path.insert(0, os.path.dirname(__file__))
 
-if isinstance(sys.modules.get("azext_connectedk8s._utils"), MagicMock):
-    sys.modules.pop("azext_connectedk8s._utils", None)
-
-from _dependency_stubs import (
-    install_dependency_stubs,
-    restore_dependency_modules,
-)
-
-_ORIGINAL_MODULES = install_dependency_stubs()
-
-from azure.cli.core.azclierror import (  # noqa: E402
+from azure.cli.core.azclierror import (
     ArgumentUsageError,
     ClientRequestError,
     CLIInternalError,
@@ -34,10 +23,10 @@ from azure.cli.core.azclierror import (  # noqa: E402
     ValidationError,
 )
 
-import azext_connectedk8s._errors as errors_module  # noqa: E402
-import azext_connectedk8s._utils as utils_module  # noqa: E402
-from azext_connectedk8s._errors import ArcError  # noqa: E402
-from azext_connectedk8s._utils import (  # noqa: E402
+import azext_connectedk8s._errors as errors_module
+import azext_connectedk8s._utils as utils_module
+from azext_connectedk8s._errors import ArcError
+from azext_connectedk8s._utils import (
     HelmTimeoutReport,
     _build_helm_timeout_telemetry_properties,
     _collect_timeout_diagnostics_from_events,
@@ -57,8 +46,6 @@ from azext_connectedk8s._utils import (  # noqa: E402
     scrub_proxy_url,
     should_use_secret_injection_flow,
 )
-
-restore_dependency_modules(_ORIGINAL_MODULES)
 
 
 def _build_test_proxy_url(username, password):
@@ -819,6 +806,7 @@ def test_validate_helm_client_replaces_non_ascii_error_output(monkeypatch):
     with pytest.raises(reported_error):
         utils_module.validate_helm_client(MagicMock(), "/usr/bin/helm")
 
+    assert report_error.call_args.args[1] is errors_module.HELM_CLIENT_ERROR
     assert report_error.call_args.kwargs["details"] == "helm failed: \ufffd"
 
 
@@ -1017,10 +1005,11 @@ def test_get_chart_path_reports_real_standardized_error(monkeypatch, tmp_path):
 
 def test_add_helm_repo_reports_real_standardized_error(monkeypatch):
     process = MagicMock(returncode=1)
-    process.communicate.return_value = (b"", b"Error: repo failed")
+    process.communicate.return_value = (b"", b"Error: repo failed \xff")
     monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
     monkeypatch.setenv("HELMREPONAME", "arc")
-    monkeypatch.setenv("HELMREPOURL", "https://example.test/helm")
+    repo_url = _build_test_proxy_url("repo-user", "repo-password")
+    monkeypatch.setenv("HELMREPOURL", repo_url)
     mock_telemetry = MagicMock()
     monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
 
@@ -1030,8 +1019,16 @@ def test_add_helm_repo_reports_real_standardized_error(monkeypatch):
         )
 
     assert str(raised.value).startswith("[AZK8S0504] HelmRepositoryAddFailed:")
-    assert "https://example.test/helm" in str(raised.value)
-    assert "Error: repo failed" in str(raised.value)
+    assert "repo-user" not in str(raised.value)
+    assert "repo-password" not in str(raised.value)
+    assert "http://[REDACTED]:[REDACTED]@example.com:8080" in str(raised.value)
+    assert "Error: repo failed \ufffd" in str(raised.value)
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert "repo-user" not in properties["Context.Default.AzureCLI.errorMessage"]
+    assert "repo-password" not in properties["Context.Default.AzureCLI.errorMessage"]
+    telemetry_exception = mock_telemetry.set_exception.call_args.kwargs["exception"]
+    assert "repo-user" not in str(telemetry_exception)
+    assert "repo-password" not in str(telemetry_exception)
     _assert_standardized_telemetry(
         mock_telemetry, errors_module.HELM_REPO_ADD_FAILED, False
     )
@@ -1101,7 +1098,7 @@ def test_helm_update_agent_reports_real_values_error(
     )
 
 
-def test_validate_helm_client_reports_real_not_installed_error(monkeypatch):
+def test_validate_helm_client_reports_real_client_execution_error(monkeypatch):
     process = MagicMock(returncode=1)
     process.communicate.return_value = (b"", b"Error: Helm is unavailable")
     monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
@@ -1111,10 +1108,10 @@ def test_validate_helm_client_reports_real_not_installed_error(monkeypatch):
     with pytest.raises(CLIInternalError) as raised:
         utils_module.validate_helm_client(_cmd_without_arm_id(), "/usr/bin/helm")
 
-    assert str(raised.value).startswith("[AZK8S0510] HelmNotInstalled:")
+    assert str(raised.value).startswith("[AZK8S0515] HelmClientError:")
     assert "Error: Helm is unavailable" in str(raised.value)
     _assert_standardized_telemetry(
-        mock_telemetry, errors_module.HELM_NOT_INSTALLED, True
+        mock_telemetry, errors_module.HELM_CLIENT_ERROR, True
     )
 
 

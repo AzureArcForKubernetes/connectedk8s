@@ -9,100 +9,14 @@ from __future__ import annotations
 import json
 import os
 import sys
-from types import ModuleType
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-sys.path.insert(0, os.path.dirname(__file__))
 
-from _dependency_stubs import (
-    ArgumentUsageError,
-    AzCLIError,
-    ClientRequestError,
-    CLIInternalError,
-    FileOperationError,
-    InvalidArgumentValueError,
-    MutuallyExclusiveArgumentError,
-    RequiredArgumentMissingError,
-    ValidationError,
-)
-
-# Stub out heavy dependencies before importing the module under test.
-# The _precheckutils module imports kubernetes, azure.cli.core, knack, etc. at module level.
-# In lightweight test environments (no full CLI installed), we inject MagicMock stubs into
-# sys.modules so the import succeeds. In full azdev CI, the real modules are already loaded
-# and setdefault() leaves them untouched.
-azclierror_stub = ModuleType("azure.cli.core.azclierror")
-
-
-azclierror_stub.AzCLIError = AzCLIError
-azclierror_stub.CLIInternalError = CLIInternalError
-azclierror_stub.ArgumentUsageError = ArgumentUsageError
-azclierror_stub.ClientRequestError = ClientRequestError
-azclierror_stub.FileOperationError = FileOperationError
-azclierror_stub.InvalidArgumentValueError = InvalidArgumentValueError
-azclierror_stub.MutuallyExclusiveArgumentError = MutuallyExclusiveArgumentError
-azclierror_stub.RequiredArgumentMissingError = RequiredArgumentMissingError
-azclierror_stub.ValidationError = ValidationError
-
-
-_STUBS = {
-    "kubernetes": MagicMock(),
-    "kubernetes.config": MagicMock(),
-    "kubernetes.watch": MagicMock(),
-    "kubernetes.client": MagicMock(),
-    "kubernetes.client.models": MagicMock(),
-    "azure": MagicMock(),
-    "azure.cli": MagicMock(),
-    "azure.cli.core": MagicMock(),
-    "azure.cli.core.telemetry": MagicMock(),
-    "azure.cli.core.azclierror": azclierror_stub,
-    "azure.cli.core.commands": MagicMock(),
-    "azure.cli.core.commands.client_factory": MagicMock(),
-    "azure.cli.core.util": MagicMock(),
-    "azure.cli.core._config": MagicMock(),
-    "azure.core": MagicMock(),
-    "azure.core.exceptions": MagicMock(),
-    "azure.mgmt": MagicMock(),
-    "azure.mgmt.core": MagicMock(),
-    "azure.mgmt.core.tools": MagicMock(),
-    "msrest": MagicMock(),
-    "msrestazure": MagicMock(),
-    "knack": MagicMock(),
-    "knack.log": MagicMock(),
-    "knack.help_files": MagicMock(),
-    "knack.util": MagicMock(),
-    "knack.cli": MagicMock(),
-    "knack.config": MagicMock(),
-    "knack.prompting": MagicMock(),
-    "knack.commands": MagicMock(),
-    "knack.arguments": MagicMock(),
-    "knack.events": MagicMock(),
-    # Stub the sibling module to avoid its transitive imports
-    "azext_connectedk8s._utils": MagicMock(),
-}
-_ORIGINAL_MODULES = {mod: sys.modules.get(mod) for mod in _STUBS}
-for mod, stub in _STUBS.items():
-    sys.modules.setdefault(mod, stub)
-
-# Make process_helm_error_detail a transparent passthrough so telemetry message assertions work.
-# Only patch if this is our MagicMock stub — if the real module is already loaded (e.g. in full
-# azdev CI), patching it here would permanently mutate its attribute on the shared module object.
-_utils_stub = sys.modules.get("azext_connectedk8s._utils")
-if isinstance(_utils_stub, MagicMock):
-    _utils_stub.process_helm_error_detail = lambda x: x
-
-import azext_connectedk8s._constants as consts  # noqa: E402, I001, RUF100
-import azext_connectedk8s._precheckutils as precheckutils  # noqa: E402, RUF100
-
-
-for mod, original_module in _ORIGINAL_MODULES.items():
-    if original_module is None:
-        sys.modules.pop(mod, None)
-    else:
-        sys.modules[mod] = original_module
+import azext_connectedk8s._constants as consts
+import azext_connectedk8s._precheckutils as precheckutils
 
 
 @pytest.fixture(autouse=True)

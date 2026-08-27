@@ -11,32 +11,22 @@ from unittest.mock import MagicMock
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-sys.path.insert(0, os.path.dirname(__file__))
 
-from _dependency_stubs import (
-    install_dependency_stubs,
-    restore_dependency_modules,
-)
-
-_ORIGINAL_MODULES = install_dependency_stubs()
-
-from kubernetes.client.models import (  # noqa: E402
+from kubernetes.client.models import (
     V1Node,
     V1NodeList,
     V1NodeSpec,
     V1ObjectMeta,
 )
 
-from azext_connectedk8s import custom  # noqa: E402
-from azext_connectedk8s.custom import (  # noqa: E402
+from azext_connectedk8s import custom
+from azext_connectedk8s.custom import (
     _get_kubernetes_client_locations,
     _telemetry_catch_all,
     expand_proxy_skip_range_keywords,
     get_kubernetes_distro,
     get_kubernetes_infra,
 )
-
-restore_dependency_modules(_ORIGINAL_MODULES)
 
 
 def test_get_kubernetes_client_locations_preserves_az_cli_error(monkeypatch):

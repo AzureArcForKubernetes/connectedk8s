@@ -1212,7 +1212,9 @@ def executing_diagnoser_job(
         response_helm_values_get.communicate()
     )
     if response_helm_values_get.returncode != 0:
-        error = error_helm_get_values.decode("ascii")
+        error = azext_utils.process_helm_error_detail(
+            error_helm_get_values.decode("ascii", errors="replace")
+        )
         message = azext_utils.report_connectedk8s_diagnostic(
             None,
             errors.HELM_VALUES_GET_FAILED,
@@ -1362,7 +1364,9 @@ def executing_diagnoser_job(
                     "An error occured while deploying the diagnoser job in the cluster. Exception:"
                 )
                 telemetry.set_exception(
-                    exception=error_helm_get_values.decode("ascii"),
+                    exception=error_helm_get_values.decode(
+                        "ascii", errors="replace"
+                    ),
                     fault_type=consts.Diagnoser_Job_Failed_Fault_Type,
                     summary="Error while executing Diagnoser Job",
                 )
@@ -1387,7 +1391,7 @@ def executing_diagnoser_job(
             )
             diagnoser_output.append(str(e))
             telemetry.set_exception(
-                exception=error_helm_get_values.decode("ascii"),
+                exception=error_helm_get_values.decode("ascii", errors="replace"),
                 fault_type=consts.Diagnoser_Job_Failed_Fault_Type,
                 summary="Error while executing Diagnoser Job",
             )
@@ -1655,7 +1659,9 @@ def check_probable_cluster_security_policy(
             response_helm_values_get.communicate()
         )
         if response_helm_values_get.returncode != 0:
-            error = error_helm_get_values.decode("ascii")
+            error = azext_utils.process_helm_error_detail(
+                error_helm_get_values.decode("ascii", errors="replace")
+            )
             message = azext_utils.report_connectedk8s_diagnostic(
                 None,
                 errors.HELM_VALUES_GET_FAILED,
