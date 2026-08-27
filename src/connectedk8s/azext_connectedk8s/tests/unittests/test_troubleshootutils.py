@@ -7,19 +7,9 @@ import sys
 from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-sys.path.insert(0, os.path.dirname(__file__))
 
-from _dependency_stubs import (
-    install_dependency_stubs,
-    restore_dependency_modules,
-)
-
-_ORIGINAL_MODULES = install_dependency_stubs()
-
-from azext_connectedk8s import _constants as consts  # noqa: E402
-from azext_connectedk8s import _troubleshootutils as troubleshootutils  # noqa: E402
-
-restore_dependency_modules(_ORIGINAL_MODULES)
+from azext_connectedk8s import _constants as consts
+from azext_connectedk8s import _troubleshootutils as troubleshootutils
 
 
 def _failed_helm_process(error: bytes) -> MagicMock:

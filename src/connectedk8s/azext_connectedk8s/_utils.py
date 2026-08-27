@@ -872,7 +872,9 @@ def pull_helm_chart(
         )
         _, error_helm_chart_pull = response_helm_chart_pull.communicate()
         if response_helm_chart_pull.returncode != 0:
-            error = error_helm_chart_pull.decode("ascii")
+            error = process_helm_error_detail(
+                error_helm_chart_pull.decode("ascii", errors="replace")
+            )
             if i == retry_count - 1:
                 raise report_connectedk8s_error(
                     cmd,
@@ -1466,12 +1468,17 @@ def add_helm_repo(
     response_helm_repo = Popen(cmd_helm_repo, stdout=PIPE, stderr=PIPE)
     _, error_helm_repo = response_helm_repo.communicate()
     if response_helm_repo.returncode != 0:
-        error = error_helm_repo.decode("ascii")
+        error = process_helm_error_detail(
+            error_helm_repo.decode("ascii", errors="replace")
+        )
+        details = process_helm_error_detail(
+            f"Repository '{repo_url}' could not be added: {error}"
+        )
         raise report_connectedk8s_error(
             cmd,
             errors.HELM_REPO_ADD_FAILED,
-            exception=Exception(error),
-            details=f"Repository '{repo_url}' could not be added: {error}",
+            exception=Exception(details),
+            details=details,
         )
 
 
@@ -1926,7 +1933,9 @@ def delete_arc_agents(
     response_helm_delete = Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
     _, error_helm_delete = response_helm_delete.communicate()
     if response_helm_delete.returncode != 0:
-        error = process_helm_error_detail(error_helm_delete.decode("ascii"))
+        error = process_helm_error_detail(
+            error_helm_delete.decode("ascii", errors="replace")
+        )
         if (
             "forbidden" in error
             or "Error: warning: Hook pre-delete" in error
@@ -2327,7 +2336,9 @@ def helm_install_release(
     response_helm_install = Popen(cmd_helm_install, stdout=PIPE, stderr=PIPE)
     _, error_helm_install = response_helm_install.communicate()
     if response_helm_install.returncode != 0:
-        helm_install_error_message = error_helm_install.decode("ascii")
+        helm_install_error_message = error_helm_install.decode(
+            "ascii", errors="replace"
+        )
         helm_install_error_message = process_helm_error_detail(
             helm_install_error_message
         )
@@ -2450,7 +2461,7 @@ def validate_helm_client(cmd: CLICommand, helm_client_location: str) -> None:
         details = process_helm_error_detail(error.decode("ascii", errors="replace"))
         raise report_connectedk8s_error(
             cmd,
-            errors.HELM_NOT_INSTALLED,
+            errors.HELM_CLIENT_ERROR,
             exception=Exception(details),
             user_fault=True,
             details=details,
@@ -2508,7 +2519,9 @@ def get_release_namespace(
     response_helm_release = Popen(cmd_helm_release, stdout=PIPE, stderr=PIPE)
     output_helm_release, error_helm_release = response_helm_release.communicate()
     if response_helm_release.returncode != 0:
-        error = error_helm_release.decode("ascii")
+        error = process_helm_error_detail(
+            error_helm_release.decode("ascii", errors="replace")
+        )
         raise report_connectedk8s_error(
             cmd,
             errors.HELM_RELEASE_LIST_FAILED,
@@ -2519,7 +2532,7 @@ def get_release_namespace(
             details=error,
         )
 
-    output_helm_release_str = output_helm_release.decode("ascii")
+    output_helm_release_str = output_helm_release.decode("ascii", errors="replace")
     try:
         output_helm_release_dict = json.loads(output_helm_release_str)
     except json.decoder.JSONDecodeError:
@@ -2799,7 +2812,9 @@ def helm_update_agent(
         _, error_helm_get_values = response_helm_values_get.communicate()
 
     if response_helm_values_get.returncode != 0:
-        error = error_helm_get_values.decode("ascii")
+        error = process_helm_error_detail(
+            error_helm_get_values.decode("ascii", errors="replace")
+        )
         if "forbidden" in error or "timed out waiting for the condition" in error:
             raise report_connectedk8s_error(
                 cmd,
@@ -2834,7 +2849,7 @@ def helm_update_agent(
     _, error_helm_upgrade = response_helm_upgrade.communicate()
     if response_helm_upgrade.returncode != 0:
         helm_upgrade_error_message = process_helm_error_detail(
-            error_helm_upgrade.decode("ascii")
+            error_helm_upgrade.decode("ascii", errors="replace")
         )
         timeout_report = build_helm_timeout_report(
             helm_upgrade_error_message, helm_operation="update"
