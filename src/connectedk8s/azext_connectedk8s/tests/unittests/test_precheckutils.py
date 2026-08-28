@@ -118,6 +118,7 @@ def test_executing_cluster_diagnostic_checks_job_preserves_chart_pull_error(
         "get_chart_path",
         MagicMock(side_effect=expected),
     )
+    monkeypatch.setattr(precheckutils.config, "load_kube_config", MagicMock())
     cleanup_process = MagicMock()
     monkeypatch.setattr(precheckutils, "Popen", cleanup_process)
 
