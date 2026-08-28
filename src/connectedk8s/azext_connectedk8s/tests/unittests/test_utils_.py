@@ -843,9 +843,7 @@ def test_validate_helm_client_reports_unparseable_version(monkeypatch):
     ],
 )
 def test_validate_helm_client_reports_client_os_error(monkeypatch, client_error):
-    monkeypatch.setattr(
-        utils_module, "Popen", MagicMock(side_effect=client_error)
-    )
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(side_effect=client_error))
     reported_error, report_error = _mock_reported_error(monkeypatch)
 
     with pytest.raises(reported_error):
@@ -908,9 +906,7 @@ def test_helm_install_release_reports_real_standardized_error(monkeypatch):
             cmd=_cmd_without_arm_id(),
         )
 
-    assert str(raised.value).startswith(
-        "[AZK8S0500] HelmReleaseInstallFailed:"
-    )
+    assert str(raised.value).startswith("[AZK8S0500] HelmReleaseInstallFailed:")
     assert "install" in str(raised.value)
     assert "Error: install failed" in str(raised.value)
     _assert_standardized_telemetry(
@@ -940,9 +936,7 @@ def test_delete_arc_agents_reports_real_standardized_error(
             "azure-arc", None, None, "/usr/bin/helm", cmd=_cmd_without_arm_id()
         )
 
-    assert str(raised.value).startswith(
-        "[AZK8S0501] HelmReleaseDeleteFailed:"
-    )
+    assert str(raised.value).startswith("[AZK8S0501] HelmReleaseDeleteFailed:")
     assert helm_error in str(raised.value)
     _assert_standardized_telemetry(
         mock_telemetry,
@@ -1068,9 +1062,7 @@ def test_get_release_namespace_reports_real_standardized_error(
     )
 
 
-def test_helm_update_agent_reports_real_values_error(
-    monkeypatch, tmp_path
-):
+def test_helm_update_agent_reports_real_values_error(monkeypatch, tmp_path):
     azure_dir = tmp_path / ".azure"
     azure_dir.mkdir()
     monkeypatch.setattr(utils_module.os.path, "expanduser", lambda _path: str(tmp_path))
@@ -1118,9 +1110,7 @@ def test_validate_helm_client_reports_real_client_execution_error(monkeypatch):
 
 
 @pytest.mark.parametrize("version_output", ["v2.17.0+g123", "unexpected output"])
-def test_validate_helm_client_reports_real_version_error(
-    monkeypatch, version_output
-):
+def test_validate_helm_client_reports_real_version_error(monkeypatch, version_output):
     process = MagicMock(returncode=0)
     process.communicate.return_value = (version_output.encode("ascii"), b"")
     monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
@@ -1178,9 +1168,7 @@ def test_helm_timeout_classifications_report_real_standardized_errors(
     assert isinstance(raised, CLIInternalError)
     assert str(raised).startswith(f"[{expected_error.code}] {expected_error.name}:")
     assert "context deadline exceeded" in str(raised)
-    _assert_standardized_telemetry(
-        mock_telemetry, expected_error, expected_user_fault
-    )
+    _assert_standardized_telemetry(mock_telemetry, expected_error, expected_user_fault)
 
 
 @pytest.mark.parametrize(
@@ -1191,9 +1179,7 @@ def test_helm_timeout_classifications_report_real_standardized_errors(
         OSError("filesystem unavailable"),
     ],
 )
-def test_validate_helm_client_reports_real_client_error(
-    monkeypatch, client_error
-):
+def test_validate_helm_client_reports_real_client_error(monkeypatch, client_error):
     monkeypatch.setattr(utils_module, "Popen", MagicMock(side_effect=client_error))
     mock_telemetry = MagicMock()
     monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)

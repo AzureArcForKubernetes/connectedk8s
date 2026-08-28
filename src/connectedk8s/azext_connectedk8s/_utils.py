@@ -1934,14 +1934,11 @@ def delete_arc_agents(
         error = process_helm_error_detail(
             error_helm_delete.decode("ascii", errors="replace")
         )
-        if (
+        user_fault = bool(
             "forbidden" in error
             or "Error: warning: Hook pre-delete" in error
             or "Error: timed out waiting for the condition" in error
-        ):
-            user_fault = True
-        else:
-            user_fault = False
+        )
         raise report_connectedk8s_error(
             cmd,
             errors.HELM_RELEASE_DELETE_FAILED,

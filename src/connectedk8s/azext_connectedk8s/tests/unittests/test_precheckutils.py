@@ -155,9 +155,7 @@ def test_prediagnostics_helm_install_uses_standardized_error(monkeypatch):
         "/subscriptions/sub/resourceGroups/rg/providers/"
         "Microsoft.Kubernetes/connectedClusters/cluster"
     )
-    cmd = SimpleNamespace(
-        cli_ctx=SimpleNamespace(data={"connectedk8s_arm_id": arm_id})
-    )
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={"connectedk8s_arm_id": arm_id}))
     mock_telemetry = MagicMock()
     monkeypatch.setattr(precheckutils.azext_utils, "telemetry", mock_telemetry)
     monkeypatch.setattr(precheckutils, "telemetry", mock_telemetry)
@@ -183,17 +181,12 @@ def test_prediagnostics_helm_install_uses_standardized_error(monkeypatch):
             cmd=cmd,
         )
 
-    assert str(raised.value).startswith(
-        "[AZK8S0607] PrediagnosticsHelmInstallFailed:"
-    )
+    assert str(raised.value).startswith("[AZK8S0607] PrediagnosticsHelmInstallFailed:")
     _, properties = mock_telemetry.add_extension_event.call_args.args
     assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0607"
     assert properties["Context.Default.AzureCLI.resourceid"] == arm_id
     assert properties["Context.Default.AzureCLI.errorMessage"] == str(raised.value)
-    assert (
-        mock_telemetry.set_exception.call_args.kwargs["summary"]
-        == str(raised.value)
-    )
+    assert mock_telemetry.set_exception.call_args.kwargs["summary"] == str(raised.value)
 
 
 def test_log_save_failure_reports_azk8s0606_with_command_context(monkeypatch):

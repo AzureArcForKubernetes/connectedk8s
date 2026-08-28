@@ -32,7 +32,9 @@ from azext_connectedk8s.custom import (
 def test_get_kubernetes_client_locations_preserves_az_cli_error(monkeypatch):
     expected = custom.AzCLIError("[AZK8S0515] HelmClientError")
     monkeypatch.setattr(
-        custom, "get_kubectl_client_location", MagicMock(return_value="/usr/bin/kubectl")
+        custom,
+        "get_kubectl_client_location",
+        MagicMock(return_value="/usr/bin/kubectl"),
     )
     monkeypatch.setattr(
         custom, "get_helm_client_location", MagicMock(side_effect=expected)
@@ -85,9 +87,7 @@ def _assert_standardized_telemetry(mock_telemetry, error, user_fault):
 
 
 @pytest.mark.parametrize("operation", ["create", "update"])
-def test_agent_state_timeout_reports_real_standardized_error(
-    monkeypatch, operation
-):
+def test_agent_state_timeout_reports_real_standardized_error(monkeypatch, operation):
     mock_telemetry = MagicMock()
     monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
 
@@ -205,9 +205,7 @@ def test_get_all_helm_values_reports_real_standardized_error(
 
 def test_validate_cluster_connect_disable_preserves_helm_values_error(monkeypatch):
     expected = custom.CLIInternalError("[AZK8S0509] HelmValuesGetFailed")
-    monkeypatch.setattr(
-        custom, "get_all_helm_values", MagicMock(side_effect=expected)
-    )
+    monkeypatch.setattr(custom, "get_all_helm_values", MagicMock(side_effect=expected))
 
     with pytest.raises(custom.CLIInternalError) as raised:
         custom._validate_cluster_connect_disable(
