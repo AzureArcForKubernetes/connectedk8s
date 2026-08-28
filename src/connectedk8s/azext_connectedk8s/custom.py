@@ -109,9 +109,7 @@ def _get_kubernetes_client_locations(
         kubectl_client_location = get_kubectl_client_location(
             cmd, azure_cloud=azure_cloud
         )
-        helm_client_location = get_helm_client_location(
-            cmd, azure_cloud=azure_cloud
-        )
+        helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
         return kubectl_client_location, helm_client_location
     except AzCLIError:
         raise
@@ -182,9 +180,7 @@ def _cleanup_stale_arc_agents(
     helm_client_location: str,
     is_arm64_cluster: bool,
 ) -> None:
-    crd_cleanup_force_delete(
-        cmd, kubectl_client_location, kube_config, kube_context
-    )
+    crd_cleanup_force_delete(cmd, kubectl_client_location, kube_config, kube_context)
     utils.delete_arc_agents(
         release_namespace,
         kube_config,
@@ -401,8 +397,8 @@ def create_connectedk8s(
         azure_local_disconnected = True
 
     # Install kubectl and helm
-    kubectl_client_location, helm_client_location = (
-        _get_kubernetes_client_locations(cmd, azure_cloud)
+    kubectl_client_location, helm_client_location = _get_kubernetes_client_locations(
+        cmd, azure_cloud
     )
 
     # Pre onboarding checks
