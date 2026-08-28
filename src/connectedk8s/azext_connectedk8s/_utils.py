@@ -2133,6 +2133,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
             arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
         )
 
+
 def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
     """
     Pre-create the onboarding private key as a Kubernetes Secret so the agents
