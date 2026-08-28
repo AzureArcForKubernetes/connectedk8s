@@ -1929,14 +1929,23 @@ def get_values_file() -> str | None:
     return None
 
 
-def ensure_namespace_cleanup() -> None:
+def ensure_namespace_cleanup(cmd: CLICommand | None = None) -> None:
     print(
         f"Step: {get_utctimestring()}: Confirming '{consts.Arc_Namespace}' namespace got deleted."
     )
     api_instance = kube_client.CoreV1Api()
     timeout = time.time() + 180
+    last_lookup_error: Exception | None = None
     while True:
         if time.time() > timeout:
+            if last_lookup_error is not None:
+                kubernetes_exception_handler(
+                    last_lookup_error,
+                    consts.Get_Kubernetes_Namespace_Fault_Type,
+                    "Unable to fetch kubernetes namespace",
+                    arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
+                    cmd=cmd,
+                )
             telemetry.set_user_fault()
             logger.warning(
                 "Namespace 'azure-arc' still in terminating state. Please ensure that you delete the "
@@ -1947,18 +1956,17 @@ def ensure_namespace_cleanup() -> None:
             api_response = api_instance.list_namespace(
                 field_selector="metadata.name=azure-arc"
             )
+            last_lookup_error = None
             if not api_response.items:
                 return
             time.sleep(5)
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.exception("Error while retrieving namespace information.")
-            kubernetes_exception_handler(
-                e,
-                consts.Get_Kubernetes_Namespace_Fault_Type,
-                "Unable to fetch kubernetes namespace",
-                raise_error=False,
-                arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
+            last_lookup_error = e
+            logger.debug(
+                "Error while retrieving namespace information; retrying.",
+                exc_info=True,
             )
+            time.sleep(5)
 
 
 def delete_arc_agents(
@@ -2015,7 +2023,7 @@ def delete_arc_agents(
                 f"{release_namespace}' to ensure the release is deleted."
             ),
         )
-    ensure_namespace_cleanup()
+    ensure_namespace_cleanup(cmd)
     # Cleanup azure-arc-release NS if present (created during helm installation)
     cleanup_release_install_namespace_if_exists()
 
@@ -2110,7 +2118,9 @@ def should_use_secret_injection_flow(
         return False
 
 
-def ensure_arc_namespace_with_helm_metadata() -> None:
+def ensure_arc_namespace_with_helm_metadata(
+    cmd: CLICommand | None = None,
+) -> None:
     """
     Ensure the ``azure-arc`` namespace exists and is annotated/labeled so that
     the subsequent ``helm install`` can adopt it without erroring out with
@@ -2133,6 +2143,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 error_message=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
                 arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
+                cmd=cmd,
             )
             return
         # Namespace does not exist, create it with the required metadata.
@@ -2152,6 +2163,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 error_message=f"Unable to create namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to create namespace '{consts.Arc_Namespace}'",
                 arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                cmd=cmd,
             )
         return
 
@@ -2177,10 +2189,14 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 "ownership metadata"
             ),
             arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+            cmd=cmd,
         )
 
 
-def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
+def inject_onboarding_private_key_secret(
+    private_key_pem: str,
+    cmd: CLICommand | None = None,
+) -> None:
     """
     Pre-create the onboarding private key as a Kubernetes Secret so the agents
     can consume it without ever exposing it through helm values. The namespace
@@ -2197,7 +2213,7 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         f"secret '{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
         f"'{consts.Arc_Namespace}'."
     )
-    ensure_arc_namespace_with_helm_metadata()
+    ensure_arc_namespace_with_helm_metadata(cmd)
 
     api_instance = kube_client.CoreV1Api()
     secret_body = kube_client.V1Secret(
@@ -2228,6 +2244,7 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
                 ),
                 summary="Unable to create onboarding private key secret",
                 arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                cmd=cmd,
             )
             return
         # Secret already exists - replace its contents
@@ -2249,6 +2266,7 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
                 ),
                 summary="Unable to update onboarding private key secret",
                 arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                cmd=cmd,
             )
 
 
