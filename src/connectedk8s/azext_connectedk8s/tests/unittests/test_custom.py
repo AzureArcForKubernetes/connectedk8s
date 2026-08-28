@@ -8,6 +8,8 @@ from typing import Dict, Optional
 from unittest.mock import MagicMock
 
 import pytest
+from azure.cli.core.azclierror import ValidationError
+from kubernetes.client.exceptions import ApiException
 from kubernetes.client.models import V1Node, V1NodeList, V1NodeSpec, V1ObjectMeta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
@@ -37,6 +39,113 @@ def test_telemetry_catch_all_uses_keyword_cmd(monkeypatch):
         command(cmd=cmd)
 
     assert report_error.call_args.args[0] is cmd
+
+
+def test_load_kube_config_forwards_command_context(monkeypatch):
+    cmd = MagicMock()
+    expected = ValidationError("reported")
+    report_error = MagicMock(return_value=expected)
+    monkeypatch.setattr(
+        custom.config,
+        "load_kube_config",
+        MagicMock(side_effect=RuntimeError("invalid kubeconfig")),
+    )
+    monkeypatch.setattr(custom.utils, "report_connectedk8s_error", report_error)
+
+    with pytest.raises(ValidationError) as raised:
+        custom.load_kube_config(None, None, False, cmd=cmd)
+
+    assert raised.value is expected
+    assert report_error.call_args.args[0] is cmd
+
+
+def test_check_kube_connection_forwards_command_context(monkeypatch):
+    cmd = MagicMock()
+    api_instance = MagicMock()
+    api_instance.get_code.side_effect = RuntimeError("cluster unreachable")
+    exception_handler = MagicMock(side_effect=ValidationError("reported"))
+    monkeypatch.setattr(
+        custom.kube_client, "VersionApi", MagicMock(return_value=api_instance)
+    )
+    monkeypatch.setattr(custom.utils, "kubernetes_exception_handler", exception_handler)
+
+    with pytest.raises(ValidationError):
+        custom.check_kube_connection(cmd=cmd)
+
+    assert exception_handler.call_args.kwargs["cmd"] is cmd
+
+
+def test_private_key_injection_forwards_command_context(monkeypatch):
+    cmd = MagicMock()
+    api_instance = MagicMock()
+    api_instance.create_namespaced_secret.side_effect = ApiException(status=403)
+    exception_handler = MagicMock(side_effect=ValidationError("reported"))
+    monkeypatch.setattr(
+        custom.utils,
+        "ensure_arc_namespace_with_helm_metadata",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        custom.utils.kube_client,
+        "CoreV1Api",
+        MagicMock(return_value=api_instance),
+    )
+    monkeypatch.setattr(custom.utils, "kubernetes_exception_handler", exception_handler)
+
+    with pytest.raises(ValidationError):
+        custom.utils.inject_onboarding_private_key_secret("private-key", cmd=cmd)
+
+    assert exception_handler.call_args.kwargs["cmd"] is cmd
+
+
+def test_namespace_cleanup_transient_lookup_failure_is_not_reported(monkeypatch):
+    cmd = MagicMock()
+    api_instance = MagicMock()
+    api_instance.list_namespace.side_effect = [
+        RuntimeError("cluster unreachable"),
+        MagicMock(items=[]),
+    ]
+    exception_handler = MagicMock()
+    sleep = MagicMock()
+    monkeypatch.setattr(
+        custom.utils.kube_client,
+        "CoreV1Api",
+        MagicMock(return_value=api_instance),
+    )
+    monkeypatch.setattr(custom.utils, "kubernetes_exception_handler", exception_handler)
+    monkeypatch.setattr(custom.utils.time, "sleep", sleep)
+
+    custom.utils.ensure_namespace_cleanup(cmd)
+
+    exception_handler.assert_not_called()
+    sleep.assert_called_once_with(5)
+
+
+def test_namespace_cleanup_reports_persistent_lookup_failure_once(monkeypatch):
+    cmd = MagicMock()
+    lookup_error = RuntimeError("cluster unreachable")
+    api_instance = MagicMock()
+    api_instance.list_namespace.side_effect = lookup_error
+    exception_handler = MagicMock(side_effect=ValidationError("reported"))
+    monkeypatch.setattr(
+        custom.utils.kube_client,
+        "CoreV1Api",
+        MagicMock(return_value=api_instance),
+    )
+    monkeypatch.setattr(custom.utils, "kubernetes_exception_handler", exception_handler)
+    monkeypatch.setattr(custom.utils.time, "sleep", MagicMock())
+    monkeypatch.setattr(
+        custom.utils.time,
+        "time",
+        MagicMock(side_effect=[0, 0, 181]),
+    )
+
+    with pytest.raises(ValidationError):
+        custom.utils.ensure_namespace_cleanup(cmd)
+
+    exception_handler.assert_called_once()
+    assert exception_handler.call_args.args[0] is lookup_error
+    assert exception_handler.call_args.kwargs["cmd"] is cmd
 
 
 def create_node(

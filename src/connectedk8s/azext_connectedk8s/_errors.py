@@ -219,6 +219,7 @@ CLUSTER_ROLE_BINDING_CREATE_FORBIDDEN = _define(
     name="ClusterRoleBindingCreateForbidden",
     description="The current identity cannot create Kubernetes ClusterRoleBindings.",
     fault_type=consts.Cannot_Create_ClusterRoleBindings_Fault_Type,
+    az_error_cls=ValidationError,
 )
 KUBERNETES_CONFIGURATION_LOAD_FAILED = _define(
     code="AZK8S0207",

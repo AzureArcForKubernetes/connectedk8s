@@ -486,6 +486,7 @@ def test_error_catalog_uses_proposed_exception_classes():
         "AZK8S0105": ArgumentUsageError,
         "AZK8S0106": InvalidArgumentValueError,
         "AZK8S0200": FileOperationError,
+        "AZK8S0206": ValidationError,
         "AZK8S0403": ArgumentUsageError,
         "AZK8S0404": ArgumentUsageError,
         "AZK8S0405": ArgumentUsageError,
