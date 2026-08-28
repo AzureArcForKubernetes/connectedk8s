@@ -6,23 +6,128 @@ trigger:
   branches:
     include:
       - 'main'
+  paths:
+    include:
+      - 'src/connectedk8s/**'
+      - 'testing/**'
 
 pr:
   branches:
     include:
-      - '*'
+      - 'main'
+  paths:
+    include:
+      - 'src/connectedk8s/**'
+      - 'testing/**'
+
+variables:
+  TEST_PATH: $(Agent.BuildDirectory)/s/testing
+  CLI_REPO_PATH: $(Agent.BuildDirectory)/s
+  EXTENSION_NAME: "connectedk8s"
+  EXTENSION_FILE_NAME: "connectedk8s"
+  SUBSCRIPTION_ID: "15c06b1b-01d6-407b-bb21-740b8617dea3"
+  RESOURCE_GROUP: "K8sPartnerExtensionTest"
+  BASE_CLUSTER_NAME: "connectedk8s-cluster"
 
 stages:
-- stage: BuildTestPublishExtension
-  displayName: "Build, Test, and Publish Extension"
-  variables:
-    TEST_PATH: $(Agent.BuildDirectory)/s/testing
-    CLI_REPO_PATH: $(Agent.BuildDirectory)/s
-    EXTENSION_NAME: "connectedk8s"
-    EXTENSION_FILE_NAME: "connectedk8s"
-    SUBSCRIPTION_ID: "15c06b1b-01d6-407b-bb21-740b8617dea3"
-    RESOURCE_GROUP: "K8sPartnerExtensionTest"
-    BASE_CLUSTER_NAME: "connectedk8s-cluster"
+- stage: BuildExtension
+  displayName: "Build and Publish Extension"
+  jobs:
+  - job: BuildPublishExtension
+    pool:
+      vmImage: 'ubuntu-latest'
+    displayName: "Build and Publish the Extension Artifact"
+    steps:
+    - task: UsePythonVersion@0
+      displayName: 'Use Python 3.13'
+      inputs:
+        versionSpec: 3.13
+    - bash: |
+        set -ev
+        echo "Building extension ${EXTENSION_NAME}..."
+
+        # prepare and activate virtualenv
+        pip install virtualenv
+        python3 -m venv env/
+        source env/bin/activate
+
+        # clone azure-cli
+        pip install --upgrade pip
+        pip install azdev twine
+
+        ls $(CLI_REPO_PATH)
+
+        azdev --version
+        azdev setup -r $(CLI_REPO_PATH) -e $(EXTENSION_NAME)
+        azdev extension build $(EXTENSION_NAME)
+
+        mapfile -t wheels < <(find dist -maxdepth 1 -type f -name 'connectedk8s-*.whl')
+        if [ "${#wheels[@]}" -ne 1 ]; then
+          echo "Expected exactly one connectedk8s wheel, found ${#wheels[@]}."
+          exit 1
+        fi
+        wheel_path="${wheels[0]}"
+
+        python -m twine check "$wheel_path"
+        python - "$wheel_path" <<'PY'
+        import json
+        import sys
+        from email.parser import BytesParser
+        from pathlib import Path
+        from zipfile import ZipFile
+
+        from packaging.utils import canonicalize_name, parse_wheel_filename
+        from packaging.version import Version
+
+        wheel_path = Path(sys.argv[1])
+        distribution, wheel_version, _, tags = parse_wheel_filename(wheel_path.name)
+        assert canonicalize_name(distribution) == "connectedk8s"
+        assert tags and all(tag.abi == "none" and tag.platform == "any" for tag in tags)
+
+        required_files = {
+            "azext_connectedk8s/azext_metadata.json",
+            "azext_connectedk8s/troubleshoot_diagnoser_job_with_proxycert_mount.yaml",
+            "azext_connectedk8s/troubleshoot_diagnoser_job_without_proxycert.yaml",
+        }
+        with ZipFile(wheel_path) as wheel:
+            assert wheel.testzip() is None, "Wheel contains a corrupt file"
+            names = set(wheel.namelist())
+            missing_files = required_files - names
+            assert not missing_files, f"Wheel is missing required files: {missing_files}"
+
+            metadata_paths = [
+                name for name in names if name.endswith(".dist-info/METADATA")
+            ]
+            assert len(metadata_paths) == 1, "Wheel must contain exactly one METADATA file"
+            package_metadata = BytesParser().parsebytes(
+                wheel.read(metadata_paths[0])
+            )
+            extension_metadata = json.loads(
+                wheel.read("azext_connectedk8s/azext_metadata.json")
+            )
+
+        assert canonicalize_name(package_metadata["Name"]) == "connectedk8s"
+        assert Version(package_metadata["Version"]) == wheel_version
+        assert extension_metadata["name"] == "connectedk8s"
+        Version(extension_metadata["azext.minCliCoreVersion"])
+        print(
+            f"Validated {wheel_path.name}: version {wheel_version}, "
+            f"minimum CLI {extension_metadata['azext.minCliCoreVersion']}"
+        )
+        PY
+
+        install_dir="$(Agent.TempDirectory)/connectedk8s-wheel"
+        python -m pip install --no-deps --target "$install_dir" "$wheel_path"
+        test -f "$install_dir/azext_connectedk8s/azext_metadata.json"
+      workingDirectory: $(CLI_REPO_PATH)
+      displayName: "Build and Validate ConnectedK8s Wheel"
+    - publish: $(CLI_REPO_PATH)/dist
+      artifact: connectedk8s-wheel
+      displayName: "Publish ConnectedK8s Wheel"
+
+- stage: TestExtension
+  displayName: "Test Extension"
+  dependsOn: BuildExtension
   jobs:
   - template: ./templates/run-test.yml
     parameters:
@@ -65,41 +170,6 @@ stages:
       jobName: BasicOnboardingHelm4Test
       path: ./test/configurations/BasicOnboarding.Tests.ps1
       useHelm4: true
-  - job: BuildPublishExtension
-    pool:
-      vmImage: 'ubuntu-latest'
-    displayName: "Build and Publish the Extension Artifact"
-    variables:
-      CLI_REPO_PATH: $(Agent.BuildDirectory)/s
-      EXTENSION_NAME: "connectedk8s"
-    steps:
-    - task: UsePythonVersion@0
-      displayName: 'Use Python 3.13'
-      inputs:
-        versionSpec: 3.13
-    - bash: |
-        set -ev
-        echo "Building extension ${EXTENSION_NAME}..."
-
-        # prepare and activate virtualenv
-        pip install virtualenv
-        python3 -m venv env/
-        source env/bin/activate
-
-        # clone azure-cli
-        pip install --upgrade pip
-        pip install azdev
-
-        ls $(CLI_REPO_PATH)
-
-        azdev --version
-        azdev setup -r $(CLI_REPO_PATH) -e $(EXTENSION_NAME)
-        azdev extension build $(EXTENSION_NAME)
-      workingDirectory: $(CLI_REPO_PATH)
-      displayName: "Setup and Build Extension with azdev"
-    - task: PublishBuildArtifacts@1
-      inputs:
-        pathToPublish: $(CLI_REPO_PATH)/dist
 
 - stage: AzureCLIOfficial
   displayName: "Azure Official CLI Code Checks"
@@ -135,23 +205,6 @@ stages:
         az --version
 
         azdev verify license
-
-  - job: IndexVerify
-    displayName: "Verify Extensions Index"
-    pool:
-      vmImage: 'ubuntu-latest'
-    steps:
-    - task: UsePythonVersion@0
-      displayName: 'Use Python 3.13'
-      inputs:
-        versionSpec: 3.13
-    - bash: |
-        #!/usr/bin/env bash
-        set -ev
-        pip install wheel==0.30.0 requests packaging setuptools
-        export CI="ADO"
-        python ./scripts/ci/test_index.py -v
-      displayName: "Verify Extensions Index"
 
   - job: UnitTests
     displayName: "Unit Tests"

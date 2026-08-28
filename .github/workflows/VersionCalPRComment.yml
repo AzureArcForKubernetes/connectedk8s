@@ -116,8 +116,9 @@ jobs:
            source ./env/bin/activate
            pip install azdev
            azdev --version
-           cd ../
-           azdev setup -c azure-cli -r azure-cli-extensions --debug
+           extensions_repo="$(basename "$GITHUB_WORKSPACE")"
+           cd "$(dirname "$GITHUB_WORKSPACE")"
+           azdev setup -c azure-cli -r "$extensions_repo" --debug
            az --version
            pip list -v
       - name: Gen Base and Diff Metadata
