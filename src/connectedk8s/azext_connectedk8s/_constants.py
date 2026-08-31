@@ -314,6 +314,10 @@ CI_ConfigMap_Removal_Failed_Warning = (
     f"ConfigMap in the '{CI_ConfigMap_Namespace}' namespace, so Container Insights may continue "
     "to bypass the proxy."
 )
+# Names the rollback, so undoing the bypass is not mistaken for a requested change.
+CI_ConfigMap_Rollback_Warning = (
+    "Reverting the Container Insights proxy bypass applied by this command."
+)
 
 Manual_Upgrade_Called_In_Auto_Update_Enabled = (
     "Manual Upgrade was called while in auto_Update enabled mode"

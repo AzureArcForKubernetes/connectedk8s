@@ -57,6 +57,7 @@ from kubernetes.config.kube_config import KubeConfigMerger
 from packaging import version
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._containerinsightsutils as containerinsightsutils
 import azext_connectedk8s._errors as errors
 import azext_connectedk8s._precheckutils as precheckutils
 import azext_connectedk8s._troubleshootutils as troubleshootutils
@@ -144,6 +145,7 @@ def create_connectedk8s(
     http_proxy: str = "",
     no_proxy: str = "",
     proxy_cert: str = "",
+    proxy_bypass: str = "",
     location: str | None = None,
     kube_config: str | None = None,
     kube_context: str | None = None,
@@ -735,6 +737,13 @@ def create_connectedk8s(
             )
             dp_request_payload = cc_poller.result()
             cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(cc_poller)
+
+            # Only touch the ConfigMap when the flag was passed on this run.
+            if proxy_bypass:
+                containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
+                    api_instance, True
+                )
+
             # Disabling cluster-connect if private link is getting enabled
             if enable_private_link is True:
                 disable_cluster_connect(
@@ -963,203 +972,222 @@ def create_connectedk8s(
         arc_agent_profile,
     )
 
-    print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
-    # Create connected cluster resource
-    put_cc_poller = create_cc_resource(
-        client, resource_group_name, cluster_name, cc, no_wait
-    )
-    dp_request_payload = put_cc_poller.result()
-    put_cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(put_cc_poller)
-
-    # Checking if custom locations rp is registered and fetching oid if it is registered
-    enable_custom_locations, custom_locations_oid = check_cl_registration_and_get_oid(
-        cmd, cl_oid, subscription_id
-    )
-
-    # Associate gateway with connected cluster if enabled
-    if gateway is not None:
-        print(
-            f"Step: {utils.get_utctimestring()}: Associating Gateway with the Connected Cluster"
+    # Sync the ConfigMap before the cluster resource exists, so a failure leaves nothing
+    # behind in Azure. Only touch it when the flag was passed on this run.
+    if proxy_bypass:
+        containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
+            kube_client.CoreV1Api(), True
         )
 
-        try:
-            # Create the gateway-cluster association
-            utils.update_gateway_cluster_link(
-                cmd,
-                subscription_id,
-                resource_group_name,
-                cluster_name,
-                gateway_resource_id,
-            )
-            logger.info("Gateway-cluster link updated successfully")
+    print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
+    # Create connected cluster resource
+    try:
+        put_cc_poller = create_cc_resource(
+            client, resource_group_name, cluster_name, cc, no_wait
+        )
+        dp_request_payload = put_cc_poller.result()
+        put_cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(
+            put_cc_poller
+        )
 
-        except Exception as e:
-            error_msg = f"Failed to create gateway-cluster association: {e!s}"
-            logger.error(error_msg)
-            telemetry.set_exception(
-                exception=e,
-                fault_type=consts.GATEWAY_LINK_FAULT_TYPE,
-                summary="Failed to associate gateway with connected cluster",
-            )
-            raise ValidationError(
-                "Failed to associate gateway with connected cluster. "
-                "Please ensure that the gateway resource is valid and accessible, then try again."
-            ) from e
+        # Checking if custom locations rp is registered and fetching oid if it is registered
+        enable_custom_locations, custom_locations_oid = check_cl_registration_and_get_oid(
+            cmd, cl_oid, subscription_id
+        )
 
-        try:
-            # Retrieve current connected cluster configuration
+        # Associate gateway with connected cluster if enabled
+        if gateway is not None:
             print(
-                f"Step: {utils.get_utctimestring()}: Updating Connected Cluster resource with Gateway configuration"
-            )
-            connected_cluster = client.get(resource_group_name, cluster_name)
-
-            # Generate updated payload with gateway configuration
-            cc = generate_reput_request_payload(
-                connected_cluster,
-                oidc_profile,
-                security_profile,
-                gateway,
-                arc_agentry_configurations,
-                arc_agent_profile,
+                f"Step: {utils.get_utctimestring()}: Associating Gateway with the Connected Cluster"
             )
 
-            # Update the connected cluster resource
-            reput_cc_poller = create_cc_resource(
-                client, resource_group_name, cluster_name, cc, False
+            try:
+                # Create the gateway-cluster association
+                utils.update_gateway_cluster_link(
+                    cmd,
+                    subscription_id,
+                    resource_group_name,
+                    cluster_name,
+                    gateway_resource_id,
+                )
+                logger.info("Gateway-cluster link updated successfully")
+
+            except Exception as e:
+                error_msg = f"Failed to create gateway-cluster association: {e!s}"
+                logger.error(error_msg)
+                telemetry.set_exception(
+                    exception=e,
+                    fault_type=consts.GATEWAY_LINK_FAULT_TYPE,
+                    summary="Failed to associate gateway with connected cluster",
+                )
+                raise ValidationError(
+                    "Failed to associate gateway with connected cluster. "
+                    "Please ensure that the gateway resource is valid and accessible, then try again."
+                ) from e
+
+            try:
+                # Retrieve current connected cluster configuration
+                print(
+                    f"Step: {utils.get_utctimestring()}: Updating Connected Cluster resource with Gateway configuration"
+                )
+                connected_cluster = client.get(resource_group_name, cluster_name)
+
+                # Generate updated payload with gateway configuration
+                cc = generate_reput_request_payload(
+                    connected_cluster,
+                    oidc_profile,
+                    security_profile,
+                    gateway,
+                    arc_agentry_configurations,
+                    arc_agent_profile,
+                )
+
+                # Update the connected cluster resource
+                reput_cc_poller = create_cc_resource(
+                    client, resource_group_name, cluster_name, cc, False
+                )
+                dp_request_payload = reput_cc_poller.result()
+                put_cc_response = LongRunningOperation(cmd.cli_ctx)(reput_cc_poller)
+
+                logger.info(
+                    "Connected cluster resource updated successfully with gateway configuration"
+                )
+
+            except Exception as e:
+                error_msg = f"Failed to update connected cluster resource with gateway configuration: {e!s}"
+                logger.error(error_msg)
+                telemetry.set_exception(
+                    exception=e,
+                    fault_type=consts.Gateway_Cluster_Resource_Update_Failed_Fault_Type,
+                    summary="Failed to update connected cluster resource with gateway configuration",
+                )
+                raise CLIInternalError(
+                    "Failed to update the connected cluster resource with gateway configuration. "
+                    "The gateway association may have been created, but the cluster resource update failed. "
+                    "Please check the resource status and try again."
+                ) from e
+
+        print(
+            f"Step: {utils.get_utctimestring()}: Azure resource provisioning has finished."
+        )
+
+        # Update arc agent configuration to include protected parameters in dp call
+        arc_agentry_configurations = generate_arc_agent_configuration(
+            configuration_settings, redacted_protected_values, is_dp_call=True
+        )
+        dp_request_payload.arc_agentry_configurations = arc_agentry_configurations
+
+        # Perform DP health check
+        _ = utils.health_check_dp(cmd, config_dp_endpoint)
+
+        # Retrieving Helm chart OCI Artifact location
+        helm_values_dp = utils.get_helm_values(
+            cmd, config_dp_endpoint, release_train, connected_cluster=dp_request_payload
+        )
+
+        registry_path = os.getenv("HELMREGISTRY") or helm_values_dp["repositoryPath"]
+
+        if registry_path == "":
+            registry_path = utils.get_helm_registry(cmd, config_dp_endpoint, release_train)
+
+        # Get azure-arc agent version for telemetry
+        azure_arc_agent_version = registry_path.split(":")[1]
+        utils.add_connectedk8s_telemetry_event(
+            cmd,
+            {"Context.Default.AzureCLI.AgentVersion": azure_arc_agent_version},
+        )
+
+        # Get helm chart path
+        chart_path = utils.get_chart_path(
+            registry_path, kube_config, kube_context, helm_client_location
+        )
+
+        helm_content_values = helm_values_dp["helmValuesContent"]
+        aad_identity_principal_id = put_cc_response.identity.principal_id
+
+        # Substitute any protected helm values as the value for that will be 'redacted-<feature>-<protectedSetting>'
+        for helm_parameter, helm_value in helm_content_values.items():
+            if "redacted" in helm_value:
+                _, feature, protectedSetting = helm_value.split(":")
+                helm_content_values[helm_parameter] = configuration_protected_settings[
+                    feature
+                ][protectedSetting]
+
+        print(
+            f"Step: {utils.get_utctimestring()}: Starting to install Azure arc agents on the Kubernetes cluster."
+        )
+
+        # Decide which onboarding flow to use. Stable agents below 1.35.3 still need
+        # the legacy flow (private key in helm values), because their helm chart
+        # always renders the privatekey secret from helm values and would zero it
+        # out on install otherwise. Newer agents (and any non-stable build) get the
+        # secure flow: we pre-create the namespace + secret directly via the
+        # Kubernetes API so the private key never appears in helm values.
+        use_secret_injection_flow = utils.should_use_secret_injection_flow(
+            release_train, azure_arc_agent_version
+        )
+        telemetry.add_extension_event(
+            "connectedk8s",
+            {
+                "Context.Default.AzureCLI.OnboardingFlow": (
+                    "secret-injection"
+                    if use_secret_injection_flow
+                    else "helm-values-legacy"
+                )
+            },
+        )
+
+        if use_secret_injection_flow:
+            # Inject the private key BEFORE running helm so that the cluster always
+            # has the onboarding secret available - even if the subsequent helm
+            # install/CLI is interrupted - preventing a stuck-disconnected state.
+            try:
+                utils.inject_onboarding_private_key_secret(private_key_pem)
+            except Exception as e:
+                telemetry.set_exception(
+                    exception=e,
+                    fault_type=consts.Inject_PrivateKey_Secret_Fault_Type,
+                    summary="Failed to pre-create onboarding private key secret",
+                )
+                raise CLIInternalError(
+                    "Failed to pre-create onboarding private key secret on the "
+                    f"Kubernetes cluster: {e}"
+                )
+
+        # Install azure-arc agents
+        utils.helm_install_release(
+            cmd.cli_ctx.cloud.endpoints.resource_manager,
+            chart_path,
+            kubernetes_distro,
+            kubernetes_infra,
+            location,
+            private_key_pem,
+            kube_config,
+            kube_context,
+            no_wait,
+            values_file,
+            azure_cloud,
+            enable_custom_locations,
+            custom_locations_oid,
+            helm_client_location,
+            enable_private_link,
+            arm_metadata,
+            helm_content_values,
+            registry_path,
+            aad_identity_principal_id,
+            onboarding_timeout,
+            inject_private_key_via_helm=not use_secret_injection_flow,
+            cmd=cmd,
+        )
+    except Exception:  # pylint: disable=broad-except
+        # Undo the bypass so a failed onboarding does not leave the cluster changed.
+        # raise_on_failure=False keeps the original error as the one the user sees.
+        if proxy_bypass:
+            logger.warning(consts.CI_ConfigMap_Rollback_Warning)
+            containerinsightsutils.remove_container_insights_proxy_bypass_configmap(
+                kube_client.CoreV1Api(), raise_on_failure=False
             )
-            dp_request_payload = reput_cc_poller.result()
-            put_cc_response = LongRunningOperation(cmd.cli_ctx)(reput_cc_poller)
-
-            logger.info(
-                "Connected cluster resource updated successfully with gateway configuration"
-            )
-
-        except Exception as e:
-            error_msg = f"Failed to update connected cluster resource with gateway configuration: {e!s}"
-            logger.error(error_msg)
-            telemetry.set_exception(
-                exception=e,
-                fault_type=consts.Gateway_Cluster_Resource_Update_Failed_Fault_Type,
-                summary="Failed to update connected cluster resource with gateway configuration",
-            )
-            raise CLIInternalError(
-                "Failed to update the connected cluster resource with gateway configuration. "
-                "The gateway association may have been created, but the cluster resource update failed. "
-                "Please check the resource status and try again."
-            ) from e
-
-    print(
-        f"Step: {utils.get_utctimestring()}: Azure resource provisioning has finished."
-    )
-
-    # Update arc agent configuration to include protected parameters in dp call
-    arc_agentry_configurations = generate_arc_agent_configuration(
-        configuration_settings, redacted_protected_values, is_dp_call=True
-    )
-    dp_request_payload.arc_agentry_configurations = arc_agentry_configurations
-
-    # Perform DP health check
-    _ = utils.health_check_dp(cmd, config_dp_endpoint)
-
-    # Retrieving Helm chart OCI Artifact location
-    helm_values_dp = utils.get_helm_values(
-        cmd, config_dp_endpoint, release_train, connected_cluster=dp_request_payload
-    )
-
-    registry_path = os.getenv("HELMREGISTRY") or helm_values_dp["repositoryPath"]
-
-    if registry_path == "":
-        registry_path = utils.get_helm_registry(cmd, config_dp_endpoint, release_train)
-
-    # Get azure-arc agent version for telemetry
-    azure_arc_agent_version = registry_path.split(":")[1]
-    utils.add_connectedk8s_telemetry_event(
-        cmd,
-        {"Context.Default.AzureCLI.AgentVersion": azure_arc_agent_version},
-    )
-
-    # Get helm chart path
-    chart_path = utils.get_chart_path(
-        registry_path, kube_config, kube_context, helm_client_location
-    )
-
-    helm_content_values = helm_values_dp["helmValuesContent"]
-    aad_identity_principal_id = put_cc_response.identity.principal_id
-
-    # Substitute any protected helm values as the value for that will be 'redacted-<feature>-<protectedSetting>'
-    for helm_parameter, helm_value in helm_content_values.items():
-        if "redacted" in helm_value:
-            _, feature, protectedSetting = helm_value.split(":")
-            helm_content_values[helm_parameter] = configuration_protected_settings[
-                feature
-            ][protectedSetting]
-
-    print(
-        f"Step: {utils.get_utctimestring()}: Starting to install Azure arc agents on the Kubernetes cluster."
-    )
-
-    # Decide which onboarding flow to use. Stable agents below 1.35.3 still need
-    # the legacy flow (private key in helm values), because their helm chart
-    # always renders the privatekey secret from helm values and would zero it
-    # out on install otherwise. Newer agents (and any non-stable build) get the
-    # secure flow: we pre-create the namespace + secret directly via the
-    # Kubernetes API so the private key never appears in helm values.
-    use_secret_injection_flow = utils.should_use_secret_injection_flow(
-        release_train, azure_arc_agent_version
-    )
-    telemetry.add_extension_event(
-        "connectedk8s",
-        {
-            "Context.Default.AzureCLI.OnboardingFlow": (
-                "secret-injection"
-                if use_secret_injection_flow
-                else "helm-values-legacy"
-            )
-        },
-    )
-
-    if use_secret_injection_flow:
-        # Inject the private key BEFORE running helm so that the cluster always
-        # has the onboarding secret available - even if the subsequent helm
-        # install/CLI is interrupted - preventing a stuck-disconnected state.
-        try:
-            utils.inject_onboarding_private_key_secret(private_key_pem)
-        except Exception as e:
-            telemetry.set_exception(
-                exception=e,
-                fault_type=consts.Inject_PrivateKey_Secret_Fault_Type,
-                summary="Failed to pre-create onboarding private key secret",
-            )
-            raise CLIInternalError(
-                "Failed to pre-create onboarding private key secret on the "
-                f"Kubernetes cluster: {e}"
-            )
-
-    # Install azure-arc agents
-    utils.helm_install_release(
-        cmd.cli_ctx.cloud.endpoints.resource_manager,
-        chart_path,
-        kubernetes_distro,
-        kubernetes_infra,
-        location,
-        private_key_pem,
-        kube_config,
-        kube_context,
-        no_wait,
-        values_file,
-        azure_cloud,
-        enable_custom_locations,
-        custom_locations_oid,
-        helm_client_location,
-        enable_private_link,
-        arm_metadata,
-        helm_content_values,
-        registry_path,
-        aad_identity_principal_id,
-        onboarding_timeout,
-        inject_private_key_via_helm=not use_secret_injection_flow,
-        cmd=cmd,
-    )
+        raise
 
     # Long Running Operation for Agent State
     # Agent state is used for feedback of workload identity extension installation
