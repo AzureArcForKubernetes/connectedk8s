@@ -545,6 +545,19 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
 # ---------------------------------------------------------------------------
 
 
+def _is_job_complete(job: Any) -> bool:
+    """Return whether the Kubernetes Job status reports successful completion."""
+    status = getattr(job, "status", None)
+    if status is None:
+        return False
+
+    if getattr(status, "succeeded", 0):
+        return True
+
+    conditions = getattr(status, "conditions", None) or []
+    return any(condition.type == "Complete" for condition in conditions)
+
+
 def executing_cluster_diagnostic_checks_job(
     cmd: CLICommand,
     corev1_api_instance: CoreV1Api,
@@ -693,14 +706,7 @@ def executing_cluster_diagnostic_checks_job(
                         w.stop()
                         break
 
-                    if job["object"].status.conditions is None:
-                        continue
-
-                    is_complete = any(
-                        condition.type == "Complete"
-                        for condition in job["object"].status.conditions
-                    )
-                    if is_complete:
+                    if _is_job_complete(job["object"]):
                         is_job_complete = True
                         logger.debug(
                             "Cluster Diagnostic Checks Job reached completed state"
@@ -712,6 +718,28 @@ def executing_cluster_diagnostic_checks_job(
                     exc_info=True,
                 )
                 continue
+
+        # The watch can expire while the Job controller is publishing its final status,
+        # causing the Complete event to be missed. Reconcile once with the current Job
+        # state before reporting a timeout.
+        if not is_job_complete:
+            try:
+                current_job = batchv1_api_instance.read_namespaced_job(
+                    name=job_name,
+                    namespace="azure-arc-release",
+                )
+                is_job_scheduled = True
+                is_job_complete = _is_job_complete(current_job)
+                if is_job_complete:
+                    logger.debug(
+                        "Cluster Diagnostic Checks Job reached completed state "
+                        "after the watch ended"
+                    )
+            except Exception:  # pylint: disable=broad-exception-caught
+                logger.debug(
+                    "Unable to reconcile Cluster Diagnostic Checks Job after the watch ended",
+                    exc_info=True,
+                )
 
         # --- Post-watch: handle the three possible outcomes ---
         # 1. Job not completed → save pod description for debugging
