@@ -33,13 +33,11 @@ from subprocess import PIPE, Popen
 from typing import TYPE_CHECKING, Any
 
 from azure.cli.core import telemetry
-from azure.cli.core.azclierror import (
-    CLIInternalError,
-)
 from knack.log import get_logger
 from kubernetes import config, watch
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._errors as errors
 import azext_connectedk8s._utils as azext_utils
 from azext_connectedk8s._logutils import (
     normalize_container_log,
@@ -653,6 +651,7 @@ def executing_cluster_diagnostic_checks_job(
             azext_utils.get_utctimestring(),
         )
         helm_install_release_cluster_diagnostic_checks(
+            cmd,
             chart_path,
             location,
             http_proxy,
@@ -732,16 +731,26 @@ def executing_cluster_diagnostic_checks_job(
         # 2. Job never scheduled (pod couldn't be created) → cleanup and return None
         if is_job_scheduled is False:
             prediagnostic_job_execution_status = consts.Job_Status_Not_Scheduled
+            details = (
+                "Possible causes include a security policy, SecurityContextConstraint (SCC), or "
+                "ResourceQuota blocking pod creation in the 'azure-arc-release' namespace."
+            )
+            message = errors.PREDIAGNOSTICS_JOB_NOT_SCHEDULED.format(details=details)
+            azext_utils.add_connectedk8s_telemetry_event(
+                cmd,
+                {
+                    consts.Telemetry_Error_Code_Key: errors.PREDIAGNOSTICS_JOB_NOT_SCHEDULED.code,
+                    consts.Telemetry_Error_Fault_Type_Key: consts.Cluster_Diagnostic_Checks_Job_Not_Scheduled,
+                    consts.Telemetry_Error_Name_Key: errors.PREDIAGNOSTICS_JOB_NOT_SCHEDULED.name,
+                    consts.Telemetry_Error_Message_Key: message,
+                },
+            )
             telemetry.set_exception(
-                exception="Could not schedule Cluster Diagnostic Checks Job in the cluster",
+                exception=Exception(message),
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Scheduled,
-                summary="Could not schedule Cluster Diagnostic Checks Job in the cluster",
+                summary=message,
             )
-            logger.warning(
-                "Unable to schedule the Cluster Diagnostic Checks Job in the kubernetes cluster. The "
-                "possible reasons can be presence of a security policy or security context constraint "
-                "(SCC) or it may happen becuase of lack of ResourceQuota.\n"
-            )
+            logger.warning(message)
             logger.debug(
                 "Cluster diagnostic Job couldn't be scheduled.  Deleting the helm release in the cluster"
             )
@@ -799,39 +808,63 @@ def executing_cluster_diagnostic_checks_job(
                         )
                         shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
                     else:
-                        logger.exception(
-                            "An exception has occured while saving the Cluster "
-                            "Diagnostic Checks Job logs in the local machine."
+                        message = errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.format(
+                            details=str(e)
+                        )
+                        azext_utils.add_connectedk8s_telemetry_event(
+                            cmd,
+                            {
+                                consts.Telemetry_Error_Code_Key: errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.code,
+                                consts.Telemetry_Error_Fault_Type_Key: consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
+                                consts.Telemetry_Error_Name_Key: errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.name,
+                                consts.Telemetry_Error_Message_Key: message,
+                            },
                         )
                         telemetry.set_exception(
                             exception=e,
                             fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-                            summary="Error occured while saving the cluster diagnostic "
-                            "checks job logs in the local machine",
+                            summary=message,
                         )
+                        logger.warning(message)
 
                 # To handle any exception that may occur during the execution
                 except (ValueError, TypeError) as e:
-                    logger.exception(
-                        "An exception has occured while saving the Cluster "
-                        "Diagnostic Checks Job logs in the local machine."
+                    message = errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.format(
+                        details=str(e)
+                    )
+                    azext_utils.add_connectedk8s_telemetry_event(
+                        cmd,
+                        {
+                            consts.Telemetry_Error_Code_Key: errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.code,
+                            consts.Telemetry_Error_Fault_Type_Key: consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
+                            consts.Telemetry_Error_Name_Key: errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.name,
+                            consts.Telemetry_Error_Message_Key: message,
+                        },
                     )
                     telemetry.set_exception(
                         exception=e,
                         fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-                        summary="Error occured while saving the cluster diagnostic checks "
-                        "job logs in the local machine",
+                        summary=message,
                     )
+                    logger.warning(message)
 
+            details = "Possible causes include resource constraints on the cluster."
+            message = errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.format(details=details)
+            azext_utils.add_connectedk8s_telemetry_event(
+                cmd,
+                {
+                    consts.Telemetry_Error_Code_Key: errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.code,
+                    consts.Telemetry_Error_Fault_Type_Key: consts.Cluster_Diagnostic_Checks_Job_Not_Complete,
+                    consts.Telemetry_Error_Name_Key: errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.name,
+                    consts.Telemetry_Error_Message_Key: message,
+                },
+            )
             telemetry.set_exception(
-                exception="Could not complete Cluster Diagnostic Checks Job after scheduling in the cluster",
+                exception=Exception(message),
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Complete,
-                summary="Could not complete Cluster Diagnostic Checks Job after scheduling in the cluster",
+                summary=message,
             )
-            logger.warning(
-                "Cluster diagnostics job didn't reach completed state in the kubernetes cluster. The "
-                "possible reasons can be resource constraints on the cluster.\n"
-            )
+            logger.warning(message)
 
         # 4. Job completed successfully → fetch logs for result parsing
         if is_job_complete:
@@ -891,8 +924,11 @@ def executing_cluster_diagnostic_checks_job(
     except Exception as e:  # pylint: disable=broad-exception-caught
         prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
-        raise CLIInternalError(
-            f"Failed to execute Cluster Diagnostic Checks Job: {e}"
+        raise azext_utils.report_connectedk8s_error(
+            cmd,
+            errors.PREDIAGNOSTICS_JOB_EXECUTION_FAILED,
+            exception=e,
+            details=str(e),
         ) from e
     if is_job_complete:
         prediagnostic_job_execution_status = consts.Job_Status_Completed
@@ -901,6 +937,7 @@ def executing_cluster_diagnostic_checks_job(
 
 
 def helm_install_release_cluster_diagnostic_checks(
+    cmd: CLICommand,
     chart_path: str,
     location: str | None,
     http_proxy: str,
@@ -954,16 +991,15 @@ def helm_install_release_cluster_diagnostic_checks(
     if response_helm_install.returncode != 0:
         error = error_helm_install.decode("ascii")
         error = azext_utils.process_helm_error_detail(error)
-        if "forbidden" in error or "timed out waiting for the condition" in error:
-            telemetry.set_user_fault()
-
-        telemetry.set_exception(
-            exception=Exception(error),
-            fault_type=consts.Cluster_Diagnostic_Checks_Helm_Install_Failed_Fault_Type,
-            summary="Unable to install cluster diagnostic checks helm release",
+        user_fault = (
+            "forbidden" in error or "timed out waiting for the condition" in error
         )
-        raise CLIInternalError(
-            f"Unable to install cluster diagnostic checks helm release: {error}"
+        raise azext_utils.report_connectedk8s_error(
+            cmd,
+            errors.PREDIAGNOSTICS_HELM_INSTALL_FAILED,
+            exception=Exception(error),
+            user_fault=user_fault,
+            details=error,
         )
 
 
