@@ -270,6 +270,7 @@ Arc_Private_Link_Endpoints = [
 
 # Extension type accepted by --proxy-bypass, which makes that agent bypass the proxy.
 Proxy_Bypass_ContainerInsights_Extension_Type = "Microsoft.AzureMonitor.Containers"
+Proxy_Bypass_Enum_Values = [Proxy_Bypass_ContainerInsights_Extension_Type]
 
 # ConfigMap the Container Insights agent reads; ignore_proxy_settings here drives the proxy bypass.
 CI_ConfigMap_Name = "container-azm-ms-agentconfig"

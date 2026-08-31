@@ -24,6 +24,7 @@ from azext_connectedk8s._constants import (
     Distribution_Enum_Values,
     Feature_Values,
     Infrastructure_Enum_Values,
+    Proxy_Bypass_Enum_Values,
 )
 
 from ._validators import (
@@ -99,6 +100,14 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             arg_group="Proxy",
             help="List of URLs/CIDRs for which proxy should not be used. Pass the "
             "keyword 'Arc' to bypass the proxy for the linked Azure Arc private-link endpoints.",
+        )
+        c.argument(
+            "proxy_bypass",
+            options_list=["--proxy-bypass"],
+            arg_group="Proxy",
+            arg_type=get_enum_type(Proxy_Bypass_Enum_Values),
+            help="Extension type whose agent should bypass the proxy. Configures that "
+            "extension's agent directly, not the Arc agent proxy settings.",
         )
         c.argument(
             "proxy_cert",
@@ -263,6 +272,22 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             arg_group="Proxy",
             help="List of URLs/CIDRs for which proxy should not be used. Pass the "
             "keyword 'Arc' to bypass the proxy for the linked Azure Arc private-link endpoints.",
+        )
+        c.argument(
+            "proxy_bypass",
+            options_list=["--proxy-bypass"],
+            arg_group="Proxy",
+            arg_type=get_enum_type(Proxy_Bypass_Enum_Values),
+            help="Extension type whose agent should bypass the proxy. Configures that "
+            "extension's agent directly, not the Arc agent proxy settings.",
+        )
+        c.argument(
+            "clear_proxy_bypass",
+            options_list=["--clear-proxy-bypass"],
+            arg_group="Proxy",
+            arg_type=get_enum_type(Proxy_Bypass_Enum_Values),
+            help="Extension type whose agent should stop bypassing the proxy. Only a bypass "
+            "added by this CLI is removed.",
         )
         c.argument(
             "distribution",
