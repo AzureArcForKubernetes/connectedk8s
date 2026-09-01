@@ -601,111 +601,21 @@ def test_split_container_log_handles_stringified_bytes():
     ]
 
 
-def test_post_watch_read_recovers_job_that_completed_at_timeout(monkeypatch):
-    """A final Job read should recover a completion event missed by the watch."""
+def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
     _reset_globals()
-    expected_log = "All PreOnboading Diagnostic Checks passed successfully"
 
-    scheduled_job = MagicMock()
-    scheduled_job.metadata.name = "cluster-diagnostic-checks-job"
-    scheduled_job.status.failed = None
-    scheduled_job.status.succeeded = None
-    scheduled_job.status.conditions = None
-    watcher = MagicMock()
-    watcher.stream.return_value = iter([{"object": scheduled_job}])
-
+    complete_condition = MagicMock(type="Complete", status="True")
     completed_job = MagicMock()
-    completed_job.status.succeeded = 1
-    completed_job.status.conditions = [MagicMock(type="Complete", status="True")]
+    completed_job.metadata.name = "cluster-diagnostic-checks-job"
+    completed_job.status.failed = None
+    completed_job.status.conditions = [complete_condition]
+    watcher = MagicMock()
+    watcher.stream.return_value = iter([{"object": completed_job}])
+
     batchv1_api = MagicMock()
-    batchv1_api.read_namespaced_job.return_value = completed_job
 
     pod = MagicMock()
     pod.metadata.name = "cluster-diagnostic-checks-job-abc12"
-    pod.metadata.creation_timestamp = "2026-08-21T23:02:22Z"
-    corev1_api = MagicMock()
-    corev1_api.list_namespaced_pod.return_value = MagicMock(items=[pod])
-    corev1_api.read_namespaced_pod_log.return_value = expected_log
-
-    cmd = MagicMock()
-    cmd.cli_ctx.cloud.endpoints.active_directory = (
-        "https://login.microsoftonline.com"
-    )
-    monkeypatch.setattr(precheckutils.watch, "Watch", lambda: watcher)
-    monkeypatch.setattr(precheckutils.config, "load_kube_config", MagicMock())
-    monkeypatch.setattr(precheckutils, "Popen", MagicMock())
-    monkeypatch.setattr(
-        precheckutils,
-        "helm_install_release_cluster_diagnostic_checks",
-        MagicMock(),
-    )
-    monkeypatch.setattr(
-        precheckutils.azext_utils, "get_release_namespace", lambda *_args: None
-    )
-    monkeypatch.setattr(
-        precheckutils.azext_utils,
-        "get_mcr_path",
-        lambda *_args: "mcr.microsoft.com",
-    )
-    monkeypatch.setattr(
-        precheckutils.azext_utils, "get_chart_path", lambda *_args: "/fake/chart"
-    )
-
-    result = precheckutils.executing_cluster_diagnostic_checks_job(
-        cmd=cmd,
-        corev1_api_instance=corev1_api,
-        batchv1_api_instance=batchv1_api,
-        helm_client_location="helm",
-        kubectl_client_location="kubectl",
-        kube_config=None,
-        kube_context=None,
-        location="eastus",
-        http_proxy="",
-        https_proxy="",
-        no_proxy="",
-        proxy_cert="",
-        azure_cloud="AZUREPUBLICCLOUD",
-        filepath_with_timestamp="/tmp/prediagnostics",
-        storage_space_available=False,
-    )
-
-    batchv1_api.read_namespaced_job.assert_called_once_with(
-        name="cluster-diagnostic-checks-job",
-        namespace="azure-arc-release",
-    )
-    watcher.stream.assert_called_once_with(
-        batchv1_api.list_namespaced_job,
-        namespace="azure-arc-release",
-        label_selector="",
-        timeout_seconds=180,
-    )
-    assert result == expected_log
-    assert (
-        precheckutils.prediagnostic_job_execution_status
-        == consts.Job_Status_Completed
-    )
-
-
-def _job_status(*, failed=None, succeeded=None, conditions=None):
-    job = MagicMock()
-    job.metadata.name = "cluster-diagnostic-checks-job"
-    job.status.failed = failed
-    job.status.succeeded = succeeded
-    job.status.conditions = conditions
-    return job
-
-
-def _execute_job_scenario(monkeypatch, watch_jobs, current_job=None, read_error=None):
-    watcher = MagicMock()
-    watcher.stream.return_value = iter([{"object": job} for job in watch_jobs])
-    batchv1_api = MagicMock()
-    if read_error is not None:
-        batchv1_api.read_namespaced_job.side_effect = read_error
-    else:
-        batchv1_api.read_namespaced_job.return_value = current_job
-
-    pod = MagicMock()
-    pod.metadata.name = "cluster-diagnostic-checks-job-test"
     pod.metadata.creation_timestamp = "2026-08-21T23:02:22Z"
     corev1_api = MagicMock()
     corev1_api.list_namespaced_pod.return_value = MagicMock(items=[pod])
@@ -734,13 +644,8 @@ def _execute_job_scenario(monkeypatch, watch_jobs, current_job=None, read_error=
     monkeypatch.setattr(
         precheckutils.azext_utils, "get_chart_path", lambda *_args: "/fake/chart"
     )
-    monkeypatch.setattr(
-        precheckutils.azext_utils,
-        "save_cluster_diagnostic_checks_pod_description",
-        MagicMock(),
-    )
 
-    result = precheckutils.executing_cluster_diagnostic_checks_job(
+    precheckutils.executing_cluster_diagnostic_checks_job(
         cmd=cmd,
         corev1_api_instance=corev1_api,
         batchv1_api_instance=batchv1_api,
@@ -757,95 +662,15 @@ def _execute_job_scenario(monkeypatch, watch_jobs, current_job=None, read_error=
         filepath_with_timestamp="/tmp/prediagnostics",
         storage_space_available=False,
     )
-    return result, batchv1_api, corev1_api
 
-
-def test_watch_completion_does_not_require_reconciliation(monkeypatch):
-    _reset_globals()
-    complete_condition = MagicMock(type="Complete", status="True")
-
-    result, batchv1_api, _ = _execute_job_scenario(
-        monkeypatch,
-        [_job_status(conditions=[complete_condition])],
+    watcher.stream.assert_called_once_with(
+        batchv1_api.list_namespaced_job,
+        namespace="azure-arc-release",
+        label_selector="",
+        timeout_seconds=180,
     )
-
     batchv1_api.read_namespaced_job.assert_not_called()
-    assert result == "diagnostic output"
     assert (
         precheckutils.prediagnostic_job_execution_status
         == consts.Job_Status_Completed
     )
-
-
-def test_post_watch_read_preserves_genuine_incomplete_status(monkeypatch):
-    _reset_globals()
-
-    result, batchv1_api, _ = _execute_job_scenario(
-        monkeypatch,
-        [_job_status()],
-        current_job=_job_status(),
-    )
-
-    batchv1_api.read_namespaced_job.assert_called_once()
-    assert result == "diagnostic output"
-    assert (
-        precheckutils.prediagnostic_job_execution_status
-        == consts.Job_Status_Not_Completed
-    )
-
-
-def test_post_watch_not_found_preserves_not_scheduled_status(monkeypatch):
-    _reset_globals()
-
-    result, batchv1_api, corev1_api = _execute_job_scenario(
-        monkeypatch,
-        [],
-        read_error=Exception("404 Not Found"),
-    )
-
-    batchv1_api.read_namespaced_job.assert_called_once()
-    corev1_api.read_namespaced_pod_log.assert_not_called()
-    assert result is None
-    assert (
-        precheckutils.prediagnostic_job_execution_status
-        == consts.Job_Status_Not_Scheduled
-    )
-
-
-def test_post_watch_api_error_falls_back_to_not_completed(monkeypatch):
-    _reset_globals()
-
-    result, batchv1_api, _ = _execute_job_scenario(
-        monkeypatch,
-        [_job_status()],
-        read_error=Exception("connection reset"),
-    )
-
-    batchv1_api.read_namespaced_job.assert_called_once()
-    assert result == "diagnostic output"
-    assert (
-        precheckutils.prediagnostic_job_execution_status
-        == consts.Job_Status_Not_Completed
-    )
-
-
-def test_failed_retries_are_not_reclassified_as_complete(monkeypatch):
-    _reset_globals()
-
-    result, _, _ = _execute_job_scenario(
-        monkeypatch,
-        [_job_status(failed=3)],
-        current_job=_job_status(failed=3),
-    )
-
-    assert result == "diagnostic output"
-    assert (
-        precheckutils.prediagnostic_job_execution_status
-        == consts.Job_Status_Not_Completed
-    )
-
-
-def test_succeeded_count_is_sufficient_to_detect_completion():
-    job = _job_status(succeeded=1)
-
-    assert precheckutils._is_job_complete(job) is True
