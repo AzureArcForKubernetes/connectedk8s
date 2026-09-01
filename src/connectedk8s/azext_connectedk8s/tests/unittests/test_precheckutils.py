@@ -673,6 +673,12 @@ def test_post_watch_read_recovers_job_that_completed_at_timeout(monkeypatch):
         name="cluster-diagnostic-checks-job",
         namespace="azure-arc-release",
     )
+    watcher.stream.assert_called_once_with(
+        batchv1_api.list_namespaced_job,
+        namespace="azure-arc-release",
+        label_selector="",
+        timeout_seconds=180,
+    )
     assert result == expected_log
     assert (
         precheckutils.prediagnostic_job_execution_status

@@ -679,7 +679,7 @@ def executing_cluster_diagnostic_checks_job(
             mcr_url,
         )
 
-        # Watch the Job for up to 60s waiting for it to reach Complete or Failed (3 retries) state
+        # Watch the Job for up to 180s waiting for it to reach Complete or Failed (3 retries) state
         w = watch.Watch()
         is_job_complete = False
         is_job_scheduled = False
@@ -688,7 +688,7 @@ def executing_cluster_diagnostic_checks_job(
             batchv1_api_instance.list_namespaced_job,
             namespace="azure-arc-release",
             label_selector="",
-            timeout_seconds=60,
+            timeout_seconds=180,
         ):
             logger.debug(
                 "Watching Cluster Diagnostic Checks Job to reach completed state"
