@@ -234,9 +234,6 @@ def create_connectedk8s(
 
     print(f"Step: {utils.get_utctimestring()}: Escape Proxy Settings, if passed in")
 
-    # Expand --proxy-skip-range service keywords (e.g. "Arc") before escaping.
-    no_proxy = expand_proxy_skip_range_keywords(cmd, no_proxy)
-
     # Escaping comma, forward slash present in https proxy urls, needed for helm params.
     https_proxy = escape_proxy_settings(https_proxy)
 
@@ -1416,35 +1413,6 @@ def get_arc_proxy_skip_range_endpoints(cmd: CLICommand) -> list[str]:
     ]
 
 
-def expand_proxy_skip_range_keywords(cmd: CLICommand, no_proxy: str) -> str:
-    # Replace the "Arc" keyword (case-insensitive) with the Arc private-link endpoints,
-    # keeping all other entries in order; returns the value unchanged if no keyword.
-    if not no_proxy:
-        return no_proxy
-
-    entries = no_proxy.split(",")
-    if not any(
-        entry.strip().lower() == consts.Proxy_Skip_Range_Arc_Keyword
-        for entry in entries
-    ):
-        return no_proxy
-
-    expanded: list[str] = []
-    seen: set[str] = set()
-    for entry in entries:
-        stripped = entry.strip()
-        if stripped.lower() == consts.Proxy_Skip_Range_Arc_Keyword:
-            for endpoint in get_arc_proxy_skip_range_endpoints(cmd):
-                if endpoint.lower() not in seen:
-                    seen.add(endpoint.lower())
-                    expanded.append(endpoint)
-        elif stripped and stripped.lower() not in seen:
-            seen.add(stripped.lower())
-            expanded.append(stripped)
-
-    return ",".join(expanded)
-
-
 def check_kube_connection() -> str:
     print(f"Step: {utils.get_utctimestring()}: Checking Connectivity to Cluster")
     api_instance = kube_client.VersionApi()
@@ -2577,9 +2545,6 @@ def update_connected_cluster(
 
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
-
-    # Expand --proxy-skip-range service keywords (e.g. "Arc") before escaping.
-    no_proxy = expand_proxy_skip_range_keywords(cmd, no_proxy)
 
     # Escaping comma, forward slash present in https proxy urls, needed for helm params.
     https_proxy = escape_proxy_settings(https_proxy)

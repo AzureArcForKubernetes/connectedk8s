@@ -25,7 +25,7 @@ helps["connectedk8s connect"] = """
     - name: Onboard a connected kubernetes cluster by specifying the kubeconfig and kubecontext.
       text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --kube-config /path/to/kubeconfig --kube-context kubeContextName
     - name: Onboard a connected kubernetes cluster by specifying the https proxy, http proxy, no proxy settings.
-      text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --proxy-https https://proxy-url --proxy-http http://proxy-url --proxy-skip-range excludedIP,excludedCIDR,exampleCIDRfollowed,10.0.0.0/24,Arc
+      text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --proxy-https https://proxy-url --proxy-http http://proxy-url --proxy-skip-range excludedIP,excludedCIDR,exampleCIDRfollowed,10.0.0.0/24
     - name: Onboard a connected kubernetes cluster by specifying the https proxy, http proxy, no proxy  with cert settings.
       text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --proxy-cert /path/to/crt --proxy-https https://proxy-url --proxy-http http://proxy-url --proxy-skip-range excludedIP,excludedCIDR,exampleCIDRfollowed,10.0.0.0/24
     - name: Onboard a connected kubernetes cluster and bypass the proxy for the Container Insights agent.
@@ -48,7 +48,7 @@ helps["connectedk8s update"] = """
     short-summary: Update properties of the arc onboarded kubernetes cluster.
     examples:
     - name: Update proxy values for the agents
-      text: az connectedk8s update -g resourceGroupName -n connectedClusterName  --proxy-cert /path/to/crt --proxy-https https://proxy-url --proxy-http http://proxy-url --proxy-skip-range excludedIP,excludedCIDR,exampleCIDRfollowed,10.0.0.0/24,Arc
+      text: az connectedk8s update -g resourceGroupName -n connectedClusterName  --proxy-cert /path/to/crt --proxy-https https://proxy-url --proxy-http http://proxy-url --proxy-skip-range excludedIP,excludedCIDR,exampleCIDRfollowed,10.0.0.0/24
     - name: Disable proxy settings for agents
       text: az connectedk8s update -g resourceGroupName -n connectedClusterName --disable-proxy
     - name: Bypass the proxy for the Container Insights agent

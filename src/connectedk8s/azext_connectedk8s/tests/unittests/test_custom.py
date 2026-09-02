@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 from azext_connectedk8s import custom
 from azext_connectedk8s.custom import (
     _telemetry_catch_all,
-    expand_proxy_skip_range_keywords,
+    get_arc_proxy_skip_range_endpoints,
     get_kubernetes_distro,
     get_kubernetes_infra,
 )
@@ -114,89 +114,52 @@ def test_distro_invalid_metadata():
     assert get_kubernetes_distro(api_response) == "generic"
 
 
-# --------------------- Tests for expand_proxy_skip_range_keywords ---------------------
+# ---------------- Tests for get_arc_proxy_skip_range_endpoints ----------------
 def _proxy_cmd(active_directory="https://login.microsoftonline.com"):
     cmd = MagicMock()
     cmd.cli_ctx.cloud.endpoints.active_directory = active_directory
     return cmd
 
 
-ARC_PUBLIC = (
-    ".his.arc.azure.com,"
-    ".dp.kubernetesconfiguration.azure.com,"
-    ".guestconfiguration.azure.com"
-)
+def test_arc_endpoints_public_cloud():
+    assert get_arc_proxy_skip_range_endpoints(_proxy_cmd()) == [
+        ".his.arc.azure.com",
+        ".dp.kubernetesconfiguration.azure.com",
+        ".guestconfiguration.azure.com",
+    ]
 
 
-def test_expand_arc_keyword_public_cloud():
-    assert expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc") == ARC_PUBLIC
-
-
-@pytest.mark.parametrize("keyword", ["Arc", "arc", "ARC", " aRc "])
-def test_expand_arc_keyword_is_case_and_space_insensitive(keyword):
-    assert expand_proxy_skip_range_keywords(_proxy_cmd(), keyword) == ARC_PUBLIC
-
-
-def test_expand_arc_keyword_preserves_other_entries():
-    out = expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc,10.0.0.0/16,.svc")
-    assert out == ARC_PUBLIC + ",10.0.0.0/16,.svc"
-
-
-def test_expand_arc_keyword_china_cloud():
+def test_arc_endpoints_china_cloud():
     cmd = _proxy_cmd("https://login.chinacloudapi.cn")
-    out = expand_proxy_skip_range_keywords(cmd, "Arc")
-    assert out == (
-        ".his.arc.azure.cn,"
-        ".dp.kubernetesconfiguration.azure.cn,"
-        ".guestconfiguration.azure.cn"
-    )
+    assert get_arc_proxy_skip_range_endpoints(cmd) == [
+        ".his.arc.azure.cn",
+        ".dp.kubernetesconfiguration.azure.cn",
+        ".guestconfiguration.azure.cn",
+    ]
 
 
-def test_expand_arc_keyword_usgov_cloud():
+def test_arc_endpoints_usgov_cloud():
     cmd = _proxy_cmd("https://login.microsoftonline.us")
-    out = expand_proxy_skip_range_keywords(cmd, "Arc")
-    assert out == (
-        ".his.arc.azure.us,"
-        ".dp.kubernetesconfiguration.azure.us,"
-        ".guestconfiguration.azure.us"
-    )
+    assert get_arc_proxy_skip_range_endpoints(cmd) == [
+        ".his.arc.azure.us",
+        ".dp.kubernetesconfiguration.azure.us",
+        ".guestconfiguration.azure.us",
+    ]
 
 
-def test_expand_arc_keyword_ussec_cloud():
+def test_arc_endpoints_ussec_cloud():
     cmd = _proxy_cmd("https://login.microsoftonline.microsoft.scloud")
-    out = expand_proxy_skip_range_keywords(cmd, "Arc")
-    assert out == (
-        ".his.arc.azure.microsoft.scloud,"
-        ".dp.kubernetesconfiguration.azure.microsoft.scloud,"
-        ".guestconfiguration.azure.microsoft.scloud"
-    )
+    assert get_arc_proxy_skip_range_endpoints(cmd) == [
+        ".his.arc.azure.microsoft.scloud",
+        ".dp.kubernetesconfiguration.azure.microsoft.scloud",
+        ".guestconfiguration.azure.microsoft.scloud",
+    ]
 
 
-def test_expand_arc_keyword_usnat_cloud():
+def test_arc_endpoints_usnat_cloud():
     cmd = _proxy_cmd("https://login.microsoftonline.eaglex.ic.gov")
-    out = expand_proxy_skip_range_keywords(cmd, "Arc")
-    assert out == (
-        ".his.arc.azure.eaglex.ic.gov,"
-        ".dp.kubernetesconfiguration.azure.eaglex.ic.gov,"
-        ".guestconfiguration.azure.eaglex.ic.gov"
-    )
-
-
-def test_expand_no_keyword_returns_unchanged():
-    val = "10.0.0.0/16,.svc,localhost"
-    assert expand_proxy_skip_range_keywords(_proxy_cmd(), val) == val
-
-
-def test_expand_empty_returns_unchanged():
-    assert expand_proxy_skip_range_keywords(_proxy_cmd(), "") == ""
-
-
-def test_expand_arc_keyword_deduplicates():
-    out = expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc,Arc")
-    assert out == ARC_PUBLIC
-
-
-def test_expand_arc_keyword_dedups_case_insensitive_endpoint():
-    # A user endpoint differing only in case is not duplicated in NO_PROXY.
-    out = expand_proxy_skip_range_keywords(_proxy_cmd(), "Arc, .his.ARC.azure.com")
-    assert out == ARC_PUBLIC
+    assert get_arc_proxy_skip_range_endpoints(cmd) == [
+        ".his.arc.azure.eaglex.ic.gov",
+        ".dp.kubernetesconfiguration.azure.eaglex.ic.gov",
+        ".guestconfiguration.azure.eaglex.ic.gov",
+    ]
