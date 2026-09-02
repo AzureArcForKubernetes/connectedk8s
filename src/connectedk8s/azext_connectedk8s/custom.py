@@ -232,6 +232,16 @@ def create_connectedk8s(
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
 
+    # Apply the Arc bypass before escaping, so the separator added here is escaped too.
+    if validators.has_proxy_bypass_keyword(
+        add_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
+    ):
+        print(
+            f"Step: {utils.get_utctimestring()}: "
+            f"{consts.Proxy_Bypass_Arc_Applied_Message}"
+        )
+        no_proxy = add_arc_proxy_skip_range_endpoints(cmd, no_proxy)
+
     print(f"Step: {utils.get_utctimestring()}: Escape Proxy Settings, if passed in")
 
     # Escaping comma, forward slash present in https proxy urls, needed for helm params.
@@ -1411,6 +1421,18 @@ def get_arc_proxy_skip_range_endpoints(cmd: CLICommand) -> list[str]:
         endpoint.format(cloud_based_domain=cloud_based_domain)
         for endpoint in consts.Arc_Private_Link_Endpoints
     ]
+
+
+def add_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str:
+    # Add the Arc endpoints to the skip range, leaving any already listed alone.
+    # Re-running changes nothing, so update can re-apply the bypass without duplicates.
+    entries = [entry.strip() for entry in no_proxy.split(",") if entry.strip()]
+    existing = {entry.lower() for entry in entries}
+    for endpoint in get_arc_proxy_skip_range_endpoints(cmd):
+        if endpoint.lower() not in existing:
+            entries.append(endpoint)
+            existing.add(endpoint.lower())
+    return ",".join(entries)
 
 
 def check_kube_connection() -> str:
