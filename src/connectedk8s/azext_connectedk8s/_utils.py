@@ -1719,8 +1719,7 @@ def arm_exception_handler(
                 errors.CONNECTED_CLUSTER_UPDATE_FAILED,
                 errors.CONNECTED_CLUSTER_DELETE_FAILED,
             )
-            and arm_error_code
-            in ("connectedclusternotfound", "resourcenotfound")
+            and arm_error_code in ("connectedclusternotfound", "resourcenotfound")
         ):
             reported_error = errors.RESOURCE_NOT_FOUND
         elif (
