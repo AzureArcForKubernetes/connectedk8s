@@ -347,7 +347,10 @@ When migrating an existing error path:
 The shared reporter is currently used by the command catch-all, agent-state
 timeouts, Helm operation failures, and classified Helm timeout failures.
 Pre-onboarding and troubleshoot extension events use the ARM ID-aware event
-wrapper.
+wrapper. Client proxy download, port, startup, configuration, unexpected
+closure failures use the `AZK8S0800` through `AZK8S0804` classifications.
+The `AZK8S0805` cluster-credential definition is reserved for migration after
+the shared ARM error-classification changes land.
 
 The catalog contains the supplied error-code allocation across the
 `AZK8S0001` through `AZK8S0805` ranges, but not every historical call site has
