@@ -64,6 +64,7 @@ from azext_connectedk8s._utils import (  # noqa: E402
     _collect_timeout_diagnostics_from_events,
     _collect_timeout_diagnostics_from_pods,
     _resolve_helm_timeout_classification,
+    arm_exception_handler,
     build_helm_timeout_report,
     check_cluster_DNS,
     get_advanced_helm_timeout_fault_type,
@@ -555,6 +556,156 @@ def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id(
     assert properties["Context.Default.AzureCLI.errorMessage"] == expected_message
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == expected_message
     mock_telemetry.set_user_fault.assert_called_once_with()
+
+
+def test_arm_exception_handler_reports_standardized_arm_error(monkeypatch):
+    class ReportedError(Exception):
+        pass
+
+    class ArmError(Exception):
+        pass
+
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    source_error = RuntimeError("ARM request failed")
+    report_error = MagicMock(return_value=ReportedError("reported"))
+    monkeypatch.setattr(utils_module, "report_connectedk8s_error", report_error)
+    monkeypatch.setattr(utils_module, "HttpOperationError", ArmError)
+    monkeypatch.setattr(utils_module, "HttpResponseError", ArmError)
+    monkeypatch.setattr(utils_module, "ResourceNotFoundError", ArmError)
+
+    with pytest.raises(ReportedError, match="reported"):
+        arm_exception_handler(
+            source_error,
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED.fault_type,
+            "Unable to create connected cluster resource",
+            cmd=cmd,
+            error=errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+        )
+
+    report_error.assert_called_once_with(
+        cmd,
+        errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+        exception=source_error,
+        user_fault=False,
+        details="ARM request failed",
+    )
+
+
+@pytest.mark.parametrize(
+    "status_code, service_error_code, operation_error, expected_error, user_fault",
+    [
+        (
+            404,
+            "ConnectedClusterNotFound",
+            errors_module.CONNECTED_CLUSTER_UPDATE_FAILED,
+            errors_module.RESOURCE_NOT_FOUND,
+            True,
+        ),
+        (
+            409,
+            "ResourceAlreadyExists",
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            errors_module.RESOURCE_ALREADY_EXISTS,
+            True,
+        ),
+        (
+            404,
+            "ResourceGroupNotFound",
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            True,
+        ),
+        (
+            409,
+            "MissingSubscriptionRegistration",
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            True,
+        ),
+        (
+            408,
+            "RequestTimeout",
+            errors_module.CONNECTED_CLUSTER_UPDATE_FAILED,
+            errors_module.CONNECTED_CLUSTER_UPDATE_FAILED,
+            False,
+        ),
+        (
+            429,
+            "TooManyRequests",
+            errors_module.CONNECTED_CLUSTER_DELETE_FAILED,
+            errors_module.CONNECTED_CLUSTER_DELETE_FAILED,
+            False,
+        ),
+    ],
+)
+def test_arm_exception_handler_maps_arm_status_codes(
+    monkeypatch,
+    status_code,
+    service_error_code,
+    operation_error,
+    expected_error,
+    user_fault,
+):
+    class ReportedError(Exception):
+        pass
+
+    class ArmOperationError(Exception):
+        pass
+
+    class ArmResponseError(Exception):
+        def __init__(self, status, service_code):
+            super().__init__(f"ARM status {status}")
+            self.status_code = status
+            self.error = SimpleNamespace(code=service_code)
+
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    source_error = ArmResponseError(status_code, service_error_code)
+    report_error = MagicMock(return_value=ReportedError("reported"))
+    monkeypatch.setattr(utils_module, "report_connectedk8s_error", report_error)
+    monkeypatch.setattr(utils_module, "HttpOperationError", ArmOperationError)
+    monkeypatch.setattr(utils_module, "HttpResponseError", ArmResponseError)
+    monkeypatch.setattr(utils_module, "ResourceNotFoundError", ArmResponseError)
+
+    with pytest.raises(ReportedError, match="reported"):
+        arm_exception_handler(
+            source_error,
+            operation_error.fault_type,
+            "Connected cluster ARM operation failed",
+            cmd=cmd,
+            error=operation_error,
+        )
+
+    report_error.assert_called_once_with(
+        cmd,
+        expected_error,
+        exception=source_error,
+        user_fault=user_fault,
+        details=f"ARM status {status_code}",
+    )
+
+
+def test_arm_exception_handler_ignores_expected_not_found(monkeypatch):
+    class ArmOperationError(Exception):
+        pass
+
+    class ArmResponseError(Exception):
+        status_code = 404
+        error = SimpleNamespace(code="ResourceGroupNotFound")
+
+    report_error = MagicMock()
+    monkeypatch.setattr(utils_module, "report_connectedk8s_error", report_error)
+    monkeypatch.setattr(utils_module, "HttpOperationError", ArmOperationError)
+    monkeypatch.setattr(utils_module, "HttpResponseError", ArmResponseError)
+    monkeypatch.setattr(utils_module, "ResourceNotFoundError", ArmResponseError)
+
+    arm_exception_handler(
+        ArmResponseError("not found"),
+        errors_module.consts.Get_ConnectedCluster_Fault_Type,
+        "Checking whether the connected cluster exists",
+        return_if_not_found=True,
+    )
+
+    report_error.assert_not_called()
 
 
 def test_build_helm_timeout_report_preserves_failed_diagnostics(monkeypatch):
