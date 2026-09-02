@@ -19,6 +19,7 @@ from azure.cli.core.azclierror import (
     CLIInternalError,
     FileOperationError,
     InvalidArgumentValueError,
+    ManualInterrupt,
     MutuallyExclusiveArgumentError,
     RequiredArgumentMissingError,
     ValidationError,
@@ -573,7 +574,9 @@ def test_error_catalog_uses_proposed_exception_classes():
         "AZK8S0508": ClientRequestError,
         "AZK8S0602": ValidationError,
         "AZK8S0603": ValidationError,
+        "AZK8S0801": ClientRequestError,
         "AZK8S0803": FileOperationError,
+        "AZK8S0804": ManualInterrupt,
     }
     non_raising_codes = {
         "AZK8S0301",
