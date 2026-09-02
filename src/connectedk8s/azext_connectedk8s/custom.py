@@ -2509,6 +2509,8 @@ def update_connected_cluster(
     http_proxy: str = "",
     no_proxy: str = "",
     proxy_cert: str = "",
+    add_proxy_bypass: str = "",
+    clear_proxy_bypass: str = "",
     disable_proxy: bool = False,
     kube_config: str | None = None,
     kube_context: str | None = None,
@@ -2616,6 +2618,8 @@ def update_connected_cluster(
         and http_proxy == ""
         and no_proxy == ""
         and proxy_cert == ""
+        and add_proxy_bypass == ""
+        and clear_proxy_bypass == ""
         and not disable_proxy
     )
 
@@ -2664,7 +2668,7 @@ def update_connected_cluster(
         telemetry.set_user_fault()
         raise RequiredArgumentMissingError(consts.No_Param_Error)
 
-    if (https_proxy or http_proxy or no_proxy) and disable_proxy:
+    if (https_proxy or http_proxy or no_proxy or add_proxy_bypass) and disable_proxy:
         telemetry.set_exception(
             exception=consts.EnableProxy_Conflict_Error,
             fault_type=consts.Update_Proxy_Conflict_Fault_Type,

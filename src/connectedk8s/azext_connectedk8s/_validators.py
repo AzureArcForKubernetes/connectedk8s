@@ -37,13 +37,16 @@ def validate_proxy_bypass(namespace: Namespace) -> None:
     # --clear-proxy-bypass is update-only, so both flags are read defensively.
     allowed_values = ", ".join(consts.Proxy_Bypass_Enum_Values)
     allowed_keywords = {value.lower() for value in consts.Proxy_Bypass_Enum_Values}
-    for flag, dest in (
-        ("--add-proxy-bypass", "add_proxy_bypass"),
-        ("--clear-proxy-bypass", "clear_proxy_bypass"),
+    added = getattr(namespace, "add_proxy_bypass", None)
+    cleared = getattr(namespace, "clear_proxy_bypass", None)
+    for flag, value in (
+        ("--add-proxy-bypass", added),
+        ("--clear-proxy-bypass", cleared),
     ):
-        keywords = parse_proxy_bypass_keywords(getattr(namespace, dest, None))
         invalid = [
-            keyword for keyword in keywords if keyword.lower() not in allowed_keywords
+            keyword
+            for keyword in parse_proxy_bypass_keywords(value)
+            if keyword.lower() not in allowed_keywords
         ]
         if invalid:
             err_msg = (
@@ -51,6 +54,18 @@ def validate_proxy_bypass(namespace: Namespace) -> None:
                 f"Allowed values are {allowed_values}."
             )
             raise ArgumentUsageError(err_msg)
+
+    conflicting = [
+        keyword
+        for keyword in parse_proxy_bypass_keywords(added)
+        if has_proxy_bypass_keyword(cleared, keyword)
+    ]
+    if conflicting:
+        err_msg = (
+            f"Cannot specify {', '.join(conflicting)} on both --add-proxy-bypass and "
+            "--clear-proxy-bypass."
+        )
+        raise ArgumentUsageError(err_msg)
 
 
 def validate_private_link_properties(namespace: Namespace) -> None:
