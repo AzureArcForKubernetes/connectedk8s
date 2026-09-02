@@ -557,6 +557,7 @@ def report_connectedk8s_diagnostic(
     user_fault: bool = False,
     telemetry_properties: dict[str, Any] | None = None,
     fault_type: str | None = None,
+    recommendation: str | None = None,
     **context: object,
 ) -> str:
     """Report one standardized diagnostic to telemetry without raising it."""
@@ -605,7 +606,7 @@ def report_connectedk8s_error(
         fault_type=fault_type,
         **context,
     )
-    return error.as_error(**context)
+    return error.as_error(recommendation=recommendation, **context)
 
 
 def report_helm_timeout_error(
