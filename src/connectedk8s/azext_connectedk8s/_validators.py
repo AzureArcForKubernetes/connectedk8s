@@ -16,6 +16,22 @@ if TYPE_CHECKING:
     from knack.commands import CLICommand
 
 
+def parse_proxy_bypass_keywords(proxy_bypass: str | None) -> list[str]:
+    # Every consumer has to split the flag value the same way, otherwise validation and
+    # the code acting on the keywords can disagree about what the user asked for.
+    if not proxy_bypass:
+        return []
+    return [keyword.strip() for keyword in proxy_bypass.split(",") if keyword.strip()]
+
+
+def has_proxy_bypass_keyword(proxy_bypass: str | None, keyword: str) -> bool:
+    # Matching is case-insensitive, so a keyword counts however the user typed it.
+    return any(
+        entry.lower() == keyword.lower()
+        for entry in parse_proxy_bypass_keywords(proxy_bypass)
+    )
+
+
 def validate_private_link_properties(namespace: Namespace) -> None:
     if not namespace.enable_private_link and namespace.private_link_scope_resource_id:
         err_msg = (

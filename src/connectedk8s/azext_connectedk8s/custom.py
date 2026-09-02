@@ -62,6 +62,7 @@ import azext_connectedk8s._errors as errors
 import azext_connectedk8s._precheckutils as precheckutils
 import azext_connectedk8s._troubleshootutils as troubleshootutils
 import azext_connectedk8s._utils as utils
+import azext_connectedk8s._validators as validators
 import azext_connectedk8s.clientproxyhelper._binaryutils as proxybinaryutils
 import azext_connectedk8s.clientproxyhelper._proxylogic as proxylogic
 import azext_connectedk8s.clientproxyhelper._utils as clientproxyutils
@@ -738,8 +739,10 @@ def create_connectedk8s(
             dp_request_payload = cc_poller.result()
             cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(cc_poller)
 
-            # Only touch the ConfigMap when the flag was passed on this run.
-            if proxy_bypass:
+            # Only touch the ConfigMap when Container Insights was named on this run.
+            if validators.has_proxy_bypass_keyword(
+                proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+            ):
                 containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
                     api_instance, True
                 )
@@ -973,8 +976,10 @@ def create_connectedk8s(
     )
 
     # Sync the ConfigMap before the cluster resource exists, so a failure leaves nothing
-    # behind in Azure. Only touch it when the flag was passed on this run.
-    if proxy_bypass:
+    # behind in Azure. Only touch it when Container Insights was named on this run.
+    if validators.has_proxy_bypass_keyword(
+        proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+    ):
         containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
             kube_client.CoreV1Api(), True
         )
@@ -1182,7 +1187,9 @@ def create_connectedk8s(
     except Exception:  # pylint: disable=broad-except
         # Undo the bypass so a failed onboarding does not leave the cluster changed.
         # raise_on_failure=False keeps the original error as the one the user sees.
-        if proxy_bypass:
+        if validators.has_proxy_bypass_keyword(
+            proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+        ):
             logger.warning(consts.CI_ConfigMap_Rollback_Warning)
             containerinsightsutils.remove_container_insights_proxy_bypass_configmap(
                 kube_client.CoreV1Api(), raise_on_failure=False
