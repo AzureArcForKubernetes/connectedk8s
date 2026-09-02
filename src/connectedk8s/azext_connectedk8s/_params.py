@@ -24,7 +24,6 @@ from azext_connectedk8s._constants import (
     Distribution_Enum_Values,
     Feature_Values,
     Infrastructure_Enum_Values,
-    Proxy_Bypass_Enum_Values,
 )
 
 from ._validators import (
@@ -32,6 +31,7 @@ from ._validators import (
     validate_enable_oidc_issuer_updates,
     validate_gateway_updates,
     validate_private_link_properties,
+    validate_proxy_bypass,
     validate_self_hosted_issuer,
     validate_workload_identity_updates,
 )
@@ -101,12 +101,11 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             help="List of URLs/CIDRs for which proxy should not be used.",
         )
         c.argument(
-            "proxy_bypass",
-            options_list=["--proxy-bypass"],
+            "add_proxy_bypass",
+            options_list=["--add-proxy-bypass"],
             arg_group="Proxy",
-            arg_type=get_enum_type(Proxy_Bypass_Enum_Values),
-            help="Extension type whose agent should bypass the proxy. Configures that "
-            "extension's agent directly, not the Arc agent proxy settings.",
+            validator=validate_proxy_bypass,
+            help="Comma-separated list of values that should bypass the proxy.",
         )
         c.argument(
             "proxy_cert",
@@ -272,20 +271,18 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             help="List of URLs/CIDRs for which proxy should not be used.",
         )
         c.argument(
-            "proxy_bypass",
-            options_list=["--proxy-bypass"],
+            "add_proxy_bypass",
+            options_list=["--add-proxy-bypass"],
             arg_group="Proxy",
-            arg_type=get_enum_type(Proxy_Bypass_Enum_Values),
-            help="Extension type whose agent should bypass the proxy. Configures that "
-            "extension's agent directly, not the Arc agent proxy settings.",
+            validator=validate_proxy_bypass,
+            help="Comma-separated list of values that should bypass the proxy.",
         )
         c.argument(
             "clear_proxy_bypass",
             options_list=["--clear-proxy-bypass"],
             arg_group="Proxy",
-            arg_type=get_enum_type(Proxy_Bypass_Enum_Values),
-            help="Extension type whose agent should stop bypassing the proxy. Only a bypass "
-            "added by this CLI is removed.",
+            validator=validate_proxy_bypass,
+            help="Comma-separated list of values that should stop bypassing the proxy.",
         )
         c.argument(
             "distribution",

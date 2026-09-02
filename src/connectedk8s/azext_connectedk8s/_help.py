@@ -29,7 +29,7 @@ helps["connectedk8s connect"] = """
     - name: Onboard a connected kubernetes cluster by specifying the https proxy, http proxy, no proxy  with cert settings.
       text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --proxy-cert /path/to/crt --proxy-https https://proxy-url --proxy-http http://proxy-url --proxy-skip-range excludedIP,excludedCIDR,exampleCIDRfollowed,10.0.0.0/24
     - name: Onboard a connected kubernetes cluster and bypass the proxy for the Container Insights agent.
-      text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --proxy-https https://proxy-url --proxy-http http://proxy-url --proxy-bypass Microsoft.AzureMonitor.Containers
+      text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --proxy-https https://proxy-url --proxy-http http://proxy-url --add-proxy-bypass Microsoft.AzureMonitor.Containers
     - name: Onboard a connected kubernetes cluster with private link feature enabled by specifying private link parameters.
       text: az connectedk8s connect -g resourceGroupName -n connectedClusterName --enable-private-link true --private-link-scope-resource-id pls/resource/arm/id
     - name: Onboard a connected kubernetes cluster with custom onboarding timeout.
@@ -52,7 +52,7 @@ helps["connectedk8s update"] = """
     - name: Disable proxy settings for agents
       text: az connectedk8s update -g resourceGroupName -n connectedClusterName --disable-proxy
     - name: Bypass the proxy for the Container Insights agent
-      text: az connectedk8s update -g resourceGroupName -n connectedClusterName --proxy-bypass Microsoft.AzureMonitor.Containers
+      text: az connectedk8s update -g resourceGroupName -n connectedClusterName --add-proxy-bypass Microsoft.AzureMonitor.Containers
     - name: Stop bypassing the proxy for the Container Insights agent
       text: az connectedk8s update -g resourceGroupName -n connectedClusterName --clear-proxy-bypass Microsoft.AzureMonitor.Containers
     - name: Disable auto-upgrade of agents

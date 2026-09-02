@@ -14,7 +14,7 @@ The bypass is therefore cluster state, not an agent proxy setting, and is driven
 parameters rather than by --proxy-skip-range. Nothing here reads or writes no_proxy.
 
 Flow:
-  1. --proxy-bypass <extension type> on connect/update requests the bypass;
+  1. --add-proxy-bypass <extension type> on connect/update requests the bypass;
      --clear-proxy-bypass on update withdraws it
   2. sync_container_insights_proxy_bypass_configmap() dispatches on that answer, so connect
      and update cannot drift apart:
@@ -321,8 +321,8 @@ def sync_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
     requested: bool,
 ) -> None:
-    # Single entry point for connect and update, so the two cannot drift apart. Callers only
-    # reach here when --proxy-bypass or --clear-proxy-bypass was passed, so a failure is always fatal.
+    # Single entry point for connect and update, so the two cannot drift apart. Callers only reach
+    # here when --add-proxy-bypass or --clear-proxy-bypass was passed, so a failure is always fatal.
     # Apply the bypass when requested, otherwise remove it.
     if requested:
         ensure_container_insights_proxy_bypass_configmap(api_instance)

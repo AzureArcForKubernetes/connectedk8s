@@ -266,7 +266,7 @@ Arc_Private_Link_Endpoints = [
     ".guestconfiguration.azure.{cloud_based_domain}",
 ]
 
-# Keyword accepted by --proxy-bypass, which bypasses the proxy for the endpoints above.
+# Keyword accepted by --add-proxy-bypass, which bypasses the proxy for the endpoints above.
 Proxy_Bypass_Arc_Keyword = "Arc"
 # Announces the Arc bypass, which is kept until cleared, and names the command that clears it.
 Proxy_Bypass_Arc_Applied_Message = (
@@ -276,14 +276,14 @@ Proxy_Bypass_Arc_Applied_Message = (
 )
 # Names the carry-over, so keeping a bypass the command did not mention is not a surprise.
 Proxy_Bypass_Arc_Preserved_Warning = (
-    "The Azure Arc private-link endpoints requested by an earlier --proxy-bypass Arc have "
+    "The Azure Arc private-link endpoints requested by an earlier --add-proxy-bypass Arc have "
     "been kept in the proxy skip range. Run "
     "'az connectedk8s update --clear-proxy-bypass Arc' to stop bypassing them."
 )
 
-# Extension type accepted by --proxy-bypass, which makes that agent bypass the proxy.
+# Extension type accepted by --add-proxy-bypass, which makes that agent bypass the proxy.
 Proxy_Bypass_ContainerInsights_Extension_Type = "Microsoft.AzureMonitor.Containers"
-# Values accepted by --proxy-bypass and --clear-proxy-bypass.
+# Values accepted by --add-proxy-bypass and --clear-proxy-bypass.
 Proxy_Bypass_Enum_Values = [
     Proxy_Bypass_Arc_Keyword,
     Proxy_Bypass_ContainerInsights_Extension_Type,

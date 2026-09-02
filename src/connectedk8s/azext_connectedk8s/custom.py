@@ -146,7 +146,7 @@ def create_connectedk8s(
     http_proxy: str = "",
     no_proxy: str = "",
     proxy_cert: str = "",
-    proxy_bypass: str = "",
+    add_proxy_bypass: str = "",
     location: str | None = None,
     kube_config: str | None = None,
     kube_context: str | None = None,
@@ -738,7 +738,7 @@ def create_connectedk8s(
 
             # Only touch the ConfigMap when Container Insights was named on this run.
             if validators.has_proxy_bypass_keyword(
-                proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+                add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
             ):
                 containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
                     api_instance, True
@@ -975,7 +975,7 @@ def create_connectedk8s(
     # Sync the ConfigMap before the cluster resource exists, so a failure leaves nothing
     # behind in Azure. Only touch it when Container Insights was named on this run.
     if validators.has_proxy_bypass_keyword(
-        proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+        add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
     ):
         containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
             kube_client.CoreV1Api(), True
@@ -1185,7 +1185,7 @@ def create_connectedk8s(
         # Undo the bypass so a failed onboarding does not leave the cluster changed.
         # raise_on_failure=False keeps the original error as the one the user sees.
         if validators.has_proxy_bypass_keyword(
-            proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+            add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
         ):
             logger.warning(consts.CI_ConfigMap_Rollback_Warning)
             containerinsightsutils.remove_container_insights_proxy_bypass_configmap(

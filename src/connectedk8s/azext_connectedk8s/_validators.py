@@ -32,6 +32,27 @@ def has_proxy_bypass_keyword(proxy_bypass: str | None, keyword: str) -> bool:
     )
 
 
+def validate_proxy_bypass(namespace: Namespace) -> None:
+    # get_enum_type rejects comma-separated lists, so each keyword is checked here.
+    # --clear-proxy-bypass is update-only, so both flags are read defensively.
+    allowed_values = ", ".join(consts.Proxy_Bypass_Enum_Values)
+    allowed_keywords = {value.lower() for value in consts.Proxy_Bypass_Enum_Values}
+    for flag, dest in (
+        ("--add-proxy-bypass", "add_proxy_bypass"),
+        ("--clear-proxy-bypass", "clear_proxy_bypass"),
+    ):
+        keywords = parse_proxy_bypass_keywords(getattr(namespace, dest, None))
+        invalid = [
+            keyword for keyword in keywords if keyword.lower() not in allowed_keywords
+        ]
+        if invalid:
+            err_msg = (
+                f"Invalid value for {flag}: {', '.join(invalid)}. "
+                f"Allowed values are {allowed_values}."
+            )
+            raise ArgumentUsageError(err_msg)
+
+
 def validate_private_link_properties(namespace: Namespace) -> None:
     if not namespace.enable_private_link and namespace.private_link_scope_resource_id:
         err_msg = (
