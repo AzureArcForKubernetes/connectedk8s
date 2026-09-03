@@ -413,6 +413,8 @@ def create_connectedk8s(
                     "diagnostic check logs on your device"
                 )
 
+    # Preserve errors already assigned a specific AZK8S code, such as AZK8S0607
+    # for Helm installation failures, instead of reclassifying them below.
     except AzCLIError:
         raise
 

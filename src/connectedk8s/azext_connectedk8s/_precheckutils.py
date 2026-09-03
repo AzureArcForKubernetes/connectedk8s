@@ -544,6 +544,8 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
         # All checks passed or not applicable
         return consts.Diagnostic_Check_Passed, storage_space_available
 
+    # Preserve errors already assigned a specific AZK8S code, such as AZK8S0607
+    # for Helm installation failures, instead of reclassifying them below.
     except AzCLIError:
         raise
 
@@ -905,6 +907,8 @@ def executing_cluster_diagnostic_checks_job(
         # Clearing all the resources after fetching the cluster diagnostic checks container logs
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
 
+    # Preserve errors already assigned a specific AZK8S code, such as AZK8S0607
+    # for Helm installation failures, instead of reclassifying them below.
     except AzCLIError:
         prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
