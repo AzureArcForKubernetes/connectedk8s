@@ -1054,8 +1054,9 @@ def fetching_cli_output_logs(
                 with open(
                     cli_output_logger_path, "w+", encoding="utf-8"
                 ) as cli_output_writer:
-                    for output in diagnoser_output:
-                        cli_output_writer.write(output + "\n")
+                    cli_output_writer.writelines(
+                        output + "\n" for output in diagnoser_output
+                    )
                     # If flag is 0 that means that process was terminated using the Keyboard Interrupt so adding that
                     # also to the text file
                     if flag == 0:

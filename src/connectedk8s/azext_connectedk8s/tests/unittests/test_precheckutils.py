@@ -695,9 +695,7 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
     corev1_api.read_namespaced_pod_log.return_value = "diagnostic output"
 
     cmd = MagicMock()
-    cmd.cli_ctx.cloud.endpoints.active_directory = (
-        "https://login.microsoftonline.com"
-    )
+    cmd.cli_ctx.cloud.endpoints.active_directory = "https://login.microsoftonline.com"
     monkeypatch.setattr(precheckutils.watch, "Watch", lambda: watcher)
     monkeypatch.setattr(precheckutils.config, "load_kube_config", MagicMock())
     monkeypatch.setattr(precheckutils, "Popen", MagicMock())
@@ -744,6 +742,5 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
     )
     batchv1_api.read_namespaced_job.assert_not_called()
     assert (
-        precheckutils.prediagnostic_job_execution_status
-        == consts.Job_Status_Completed
+        precheckutils.prediagnostic_job_execution_status == consts.Job_Status_Completed
     )
