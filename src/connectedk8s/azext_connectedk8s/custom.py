@@ -413,6 +413,9 @@ def create_connectedk8s(
                     "diagnostic check logs on your device"
                 )
 
+    except AzCLIError:
+        raise
+
     except Exception as e:
         precheckutils.send_prediagnostic_job_execution_error_telemetry(
             reason=str(e), cmd=cmd
