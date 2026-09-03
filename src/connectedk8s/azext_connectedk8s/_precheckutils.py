@@ -545,7 +545,9 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
 # ---------------------------------------------------------------------------
 
 
-def _get_incomplete_job_diagnostic(pod: Any) -> str:
+def _get_incomplete_job_diagnostic(  # pylint: disable=too-many-return-statements
+    pod: Any,
+) -> str:
     """Return actionable guidance for a diagnostic pod that did not finish."""
     pod_status = getattr(pod, "status", None)
     if pod_status is None:
