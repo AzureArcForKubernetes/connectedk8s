@@ -66,8 +66,8 @@ _utils_stub = sys.modules.get("azext_connectedk8s._utils")
 if isinstance(_utils_stub, MagicMock):
     _utils_stub.process_helm_error_detail = lambda x: x
 
-import azext_connectedk8s._constants as consts  # noqa: I001
-import azext_connectedk8s._precheckutils as precheckutils
+import azext_connectedk8s._constants as consts  # noqa: E402, I001, RUF100
+import azext_connectedk8s._precheckutils as precheckutils  # noqa: E402, RUF100
 
 
 for mod, original_module in _ORIGINAL_MODULES.items():
