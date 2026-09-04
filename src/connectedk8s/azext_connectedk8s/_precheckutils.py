@@ -35,7 +35,6 @@ from typing import TYPE_CHECKING, Any
 from azure.cli.core import telemetry
 from azure.cli.core.azclierror import (
     AzCLIError,
-    CLIInternalError,
 )
 from knack.log import get_logger
 from kubernetes import config, watch
@@ -757,7 +756,6 @@ def executing_cluster_diagnostic_checks_job(
             kube_context,
             helm_client_location,
             mcr_url,
-            cmd=cmd,
         )
 
         # Watch the Job for up to 180s waiting for it to reach Complete or Failed (3 retries) state
@@ -1025,7 +1023,6 @@ def helm_install_release_cluster_diagnostic_checks(
     helm_client_location: str,
     mcr_url: str,
     onboarding_timeout: str = "60",
-    cmd: CLICommand | None = None,
 ) -> None:
     cmd_helm_install = [
         helm_client_location,
