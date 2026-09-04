@@ -240,6 +240,7 @@ Standard extension-event properties:
 | `Context.Default.AzureCLI.errorName` | `ArcError.name` |
 | `Context.Default.AzureCLI.errorMessage` | Fully rendered customer message |
 | `Context.Default.AzureCLI.errorTsgLink` | Optional `ArcError.tsg_link` |
+| `Context.Default.AzureCLI.errorExceptionType` | Deepest wrapped exception class where available; exception messages are not included |
 
 The reporter also calls:
 
