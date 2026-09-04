@@ -276,9 +276,8 @@ Proxy_Bypass_Arc_Applied_Message = (
 )
 # Names the carry-over, so keeping a bypass the command did not mention is not a surprise.
 Proxy_Bypass_Arc_Preserved_Warning = (
-    "The Azure Arc private-link endpoints requested by an earlier --add-proxy-bypass Arc have "
-    "been kept in the proxy skip range. Run "
-    "'az connectedk8s update --clear-proxy-bypass Arc' to stop bypassing them."
+    "Azure Arc private-link endpoints were found in the proxy skip range and have been "
+    "kept. Run 'az connectedk8s update --clear-proxy-bypass Arc' to stop bypassing them."
 )
 
 # Extension type accepted by --add-proxy-bypass, which makes that agent bypass the proxy.

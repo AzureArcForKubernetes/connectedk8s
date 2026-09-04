@@ -1435,6 +1435,60 @@ def add_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str:
     return ",".join(entries)
 
 
+def has_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> bool:
+    # Checking whether the Arc endpoints are present in the proxy skip range
+    entries = {entry.strip().lower() for entry in no_proxy.split(",")}
+    return any(
+        endpoint.lower() in entries
+        for endpoint in get_arc_proxy_skip_range_endpoints(cmd)
+    )
+
+
+def resolve_arc_proxy_bypass_on_update(
+    cmd: CLICommand,
+    no_proxy: str,
+    add_proxy_bypass: str,
+    clear_proxy_bypass: str,
+    release_namespace: str,
+    kube_config: str | None,
+    kube_context: str | None,
+    helm_client_location: str,
+) -> str | None:
+    # --proxy-skip-range replaces the whole skip range, so re-apply the Arc bypass here or
+    # changing the skip range would drop the endpoints. Return None to leave the skip range
+    # alone, which keeps updates that say nothing about it untouched.
+    requested = validators.has_proxy_bypass_keyword(
+        add_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
+    )
+    cleared = validators.has_proxy_bypass_keyword(
+        clear_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
+    )
+    if cleared or not (requested or no_proxy):
+        return None
+
+    # The cluster's skip range is only needed when the bypass is merged into it.
+    current_no_proxy = ""
+    if not (requested and no_proxy):
+        # Read the skip range the agents run with today; helm returns it unescaped. It is
+        # the base when the bypass is added without a new skip range, so entries survive.
+        helm_values = get_all_helm_values(
+            release_namespace, kube_config, kube_context, helm_client_location
+        )
+        current_no_proxy = str(utils.flatten(helm_values).get("global.noProxy") or "")
+
+    if requested:
+        print(
+            f"Step: {utils.get_utctimestring()}: "
+            f"{consts.Proxy_Bypass_Arc_Applied_Message}"
+        )
+    elif has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy):
+        logger.warning(consts.Proxy_Bypass_Arc_Preserved_Warning)
+    else:
+        return None
+
+    return add_arc_proxy_skip_range_endpoints(cmd, no_proxy or current_no_proxy)
+
+
 def check_kube_connection() -> str:
     print(f"Step: {utils.get_utctimestring()}: Checking Connectivity to Cluster")
     api_instance = kube_client.VersionApi()
@@ -2576,6 +2630,10 @@ def update_connected_cluster(
     # Escaping comma, forward slash present in http proxy urls, needed for helm params.
     http_proxy = escape_proxy_settings(http_proxy)
 
+    # The Arc bypass is merged with the cluster's current skip range, which helm reports
+    # unescaped, so hold on to this value in the same form until that merge can run.
+    requested_no_proxy = no_proxy
+
     # Escaping comma, forward slash present in no proxy urls, needed for helm params.
     no_proxy = escape_proxy_settings(no_proxy)
 
@@ -2720,6 +2778,37 @@ def update_connected_cluster(
         kube_context,
         helm_client_location,
     )
+
+    resolved_no_proxy = resolve_arc_proxy_bypass_on_update(
+        cmd,
+        requested_no_proxy,
+        add_proxy_bypass,
+        clear_proxy_bypass,
+        release_namespace,
+        kube_config,
+        kube_context,
+        helm_client_location,
+    )
+    if resolved_no_proxy is not None:
+        no_proxy = escape_proxy_settings(resolved_no_proxy)
+        # Rebuild the settings from the resolved skip range, so the ARM payload and the
+        # agent configuration below both carry the bypass.
+        (
+            configuration_settings,
+            configuration_protected_settings,
+            redacted_protected_values,
+        ) = add_config_protected_settings(
+            http_proxy,
+            https_proxy,
+            no_proxy,
+            proxy_cert,
+            container_log_path,
+            configuration_settings,
+            configuration_protected_settings,
+        )
+        arc_agentry_configurations = generate_arc_agent_configuration(
+            configuration_settings, redacted_protected_values
+        )
 
     # Fetch Connected Cluster for agent version
     connected_cluster = client.get(resource_group_name, cluster_name)
