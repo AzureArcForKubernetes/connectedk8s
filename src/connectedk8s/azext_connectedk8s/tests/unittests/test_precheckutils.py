@@ -880,7 +880,9 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
         MagicMock(),
     )
     monkeypatch.setattr(
-        precheckutils.azext_utils, "get_release_namespace", lambda *_args: None
+        precheckutils.azext_utils,
+        "get_release_namespace",
+        lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
         precheckutils.azext_utils,
