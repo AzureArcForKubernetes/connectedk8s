@@ -195,24 +195,28 @@ KUBERNETES_CONNECTIVITY_FAILED = _define(
     name="KubernetesConnectivityFailed",
     description="Unable to connect to the Kubernetes cluster.",
     fault_type=consts.Kubernetes_Connectivity_FaultType,
+    az_error_cls=ValidationError
 )
 KUBERNETES_DISTRIBUTION_DETECTION_FAILED = _define(
     code="AZK8S0203",
     name="KubernetesDistributionDetectionFailed",
     description="Failed to detect the Kubernetes distribution.",
     fault_type=consts.Get_Kubernetes_Distro_Fault_Type,
+    az_error_cls=CLIInternalError
 )
 KUBERNETES_NAMESPACE_GET_FAILED = _define(
     code="AZK8S0204",
     name="KubernetesNamespaceGetFailed",
     description="Failed to determine the Kubernetes namespace.",
     fault_type=consts.Get_Kubernetes_Namespace_Fault_Type,
+    az_error_cls=CLIInternalError
 )
 LINUX_NODE_NOT_FOUND = _define(
     code="AZK8S0205",
     name="LinuxNodeNotFound",
     description="No Linux node is available for scheduling Azure Arc agents.",
     fault_type=consts.Linux_Node_Not_Exists_Fault_Type,
+    az_error_cls=ValidationError,
 )
 CLUSTER_ROLE_BINDING_CREATE_FORBIDDEN = _define(
     code="AZK8S0206",
@@ -234,6 +238,7 @@ KUBERNETES_PRIVATE_KEY_INJECTION_FAILED = _define(
     description="Failed to inject the private key into the Kubernetes cluster.",
     fault_type=consts.Failed_To_Inject_Private_Key_Fault_Type,
     fault_type_aliases=(consts.Inject_PrivateKey_Secret_Fault_Type,),
+    az_error_cls=CLIInternalError
 )
 
 # Network & Connectivity (AZK8S0300-AZK8S0399)
