@@ -1805,7 +1805,7 @@ def load_kube_config(
             cmd,
             errors.KUBECONFIG_LOAD_FAILED,
             exception=e,
-            details=f"Problem loading the kubeconfig file. {e}",
+            user_fault=True,
         ) from e
 
 

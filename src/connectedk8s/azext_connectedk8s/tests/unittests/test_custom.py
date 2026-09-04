@@ -57,6 +57,7 @@ def test_load_kube_config_forwards_command_context(monkeypatch):
 
     assert raised.value is expected
     assert report_error.call_args.args[0] is cmd
+    assert report_error.call_args.kwargs["user_fault"] is True
 
 
 def test_check_kube_connection_forwards_command_context(monkeypatch):
@@ -121,7 +122,9 @@ def test_namespace_cleanup_transient_lookup_failure_is_not_reported(monkeypatch)
     sleep.assert_called_once_with(5)
 
 
-def test_namespace_cleanup_reports_persistent_lookup_failure_without_raising(monkeypatch):
+def test_namespace_cleanup_reports_persistent_lookup_failure_without_raising(
+    monkeypatch,
+):
     cmd = MagicMock()
     lookup_error = RuntimeError("cluster unreachable")
     api_instance = MagicMock()

@@ -63,6 +63,7 @@ from azext_connectedk8s._utils import (  # noqa: E402
     _build_helm_timeout_telemetry_properties,
     _collect_timeout_diagnostics_from_events,
     _collect_timeout_diagnostics_from_pods,
+    _get_underlying_exception_type,
     _resolve_helm_timeout_classification,
     build_helm_timeout_report,
     check_cluster_DNS,
@@ -84,6 +85,36 @@ def _build_test_proxy_url(username, password):
     # Avoid storing credential-shaped URLs in the test source.
     credentials = f"{username}:{password}"
     return urlunsplit(("http", f"{credentials}@example.com:8080", "", "", ""))
+
+
+def test_get_underlying_exception_type_uses_transport_reason():
+    underlying = type("NameResolutionError", (Exception,), {})("sensitive endpoint")
+    outer = type("MaxRetryError", (Exception,), {"reason": underlying})("retry")
+
+    assert _get_underlying_exception_type(outer) == "NameResolutionError"
+
+
+def test_get_underlying_exception_type_uses_explicit_cause():
+    underlying = PermissionError("sensitive path")
+    outer = RuntimeError("wrapper")
+    outer.__cause__ = underlying
+
+    assert _get_underlying_exception_type(outer) == "PermissionError"
+
+
+def test_get_underlying_exception_type_stops_on_cycle():
+    outer = RuntimeError("wrapper")
+    underlying = OSError("underlying")
+    outer.__cause__ = underlying
+    underlying.__cause__ = outer
+
+    assert _get_underlying_exception_type(outer) == "OSError"
+
+
+def test_get_underlying_exception_type_is_bounded():
+    exception = type("E" * 256, (Exception,), {})("sensitive detail")
+
+    assert _get_underlying_exception_type(exception) == "E" * 128
 
 
 def test_remove_rsa_private_key():
@@ -554,6 +585,9 @@ def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id(
     assert properties["Context.Default.AzureCLI.errorFaultType"] == "test-error"
     assert properties["Context.Default.AzureCLI.errorName"] == "TestError"
     assert properties["Context.Default.AzureCLI.errorMessage"] == expected_message
+    assert (
+        properties["Context.Default.AzureCLI.errorExceptionType"] == "RuntimeError"
+    )
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == expected_message
     mock_telemetry.set_user_fault.assert_called_once_with()
 

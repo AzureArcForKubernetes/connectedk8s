@@ -596,6 +596,10 @@ def report_connectedk8s_error(
             consts.Telemetry_Error_Message_Key: message,
         }
     )
+    if exception is not None:
+        properties[consts.Telemetry_Error_Exception_Type_Key] = (
+            _get_underlying_exception_type(exception)
+        )
     if error.tsg_link:
         properties[consts.Telemetry_Error_Tsg_Link_Key] = error.tsg_link
     add_connectedk8s_telemetry_event(cmd, properties)
@@ -608,6 +612,33 @@ def report_connectedk8s_error(
         summary=message,
     )
     return error.as_error(**context)
+
+
+def _get_underlying_exception_type(exception: BaseException) -> str:
+    """Return the deepest wrapped exception type without emitting its message."""
+    current = exception
+    seen: set[int] = set()
+    for _ in range(32):
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        context = None if current.__suppress_context__ else current.__context__
+        nested = next(
+            (
+                candidate
+                for candidate in (
+                    getattr(current, "reason", None),
+                    current.__cause__,
+                    context,
+                )
+                if isinstance(candidate, BaseException)
+            ),
+            None,
+        )
+        if nested is None or id(nested) in seen:
+            break
+        current = nested
+    return type(current).__name__[:128]
 
 
 def report_helm_timeout_error(cmd: Any | None, report: HelmTimeoutReport) -> AzCLIError:
