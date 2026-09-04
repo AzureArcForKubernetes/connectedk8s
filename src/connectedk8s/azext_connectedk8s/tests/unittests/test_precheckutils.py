@@ -168,6 +168,7 @@ def test_prediagnostics_helm_install_uses_standardized_error(monkeypatch):
 
     with pytest.raises(precheckutils.AzCLIError) as raised:
         precheckutils.helm_install_release_cluster_diagnostic_checks(
+            cmd,
             "/tmp/chart",
             "eastus",
             "",
@@ -179,7 +180,6 @@ def test_prediagnostics_helm_install_uses_standardized_error(monkeypatch):
             None,
             "/usr/bin/helm",
             "mcr.microsoft.com",
-            cmd=cmd,
         )
 
     assert str(raised.value).startswith("[AZK8S0607] PrediagnosticsHelmInstallFailed:")
