@@ -585,9 +585,7 @@ def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id(
     assert properties["Context.Default.AzureCLI.errorFaultType"] == "test-error"
     assert properties["Context.Default.AzureCLI.errorName"] == "TestError"
     assert properties["Context.Default.AzureCLI.errorMessage"] == expected_message
-    assert (
-        properties["Context.Default.AzureCLI.errorExceptionType"] == "RuntimeError"
-    )
+    assert properties["Context.Default.AzureCLI.errorExceptionType"] == "RuntimeError"
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == expected_message
     mock_telemetry.set_user_fault.assert_called_once_with()
 
