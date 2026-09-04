@@ -121,12 +121,12 @@ def test_namespace_cleanup_transient_lookup_failure_is_not_reported(monkeypatch)
     sleep.assert_called_once_with(5)
 
 
-def test_namespace_cleanup_reports_persistent_lookup_failure_once(monkeypatch):
+def test_namespace_cleanup_reports_persistent_lookup_failure_without_raising(monkeypatch):
     cmd = MagicMock()
     lookup_error = RuntimeError("cluster unreachable")
     api_instance = MagicMock()
     api_instance.list_namespace.side_effect = lookup_error
-    exception_handler = MagicMock(side_effect=ValidationError("reported"))
+    exception_handler = MagicMock()
     monkeypatch.setattr(
         custom.utils.kube_client,
         "CoreV1Api",
@@ -140,11 +140,11 @@ def test_namespace_cleanup_reports_persistent_lookup_failure_once(monkeypatch):
         MagicMock(side_effect=[0, 0, 181]),
     )
 
-    with pytest.raises(ValidationError):
-        custom.utils.ensure_namespace_cleanup(cmd)
+    custom.utils.ensure_namespace_cleanup(cmd)
 
     exception_handler.assert_called_once()
     assert exception_handler.call_args.args[0] is lookup_error
+    assert exception_handler.call_args.kwargs["raise_error"] is False
     assert exception_handler.call_args.kwargs["cmd"] is cmd
 
 

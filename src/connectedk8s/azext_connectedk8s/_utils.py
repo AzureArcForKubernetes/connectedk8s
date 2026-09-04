@@ -1897,6 +1897,7 @@ def ensure_namespace_cleanup(cmd: CLICommand | None = None) -> None:
                     last_lookup_error,
                     consts.Get_Kubernetes_Namespace_Fault_Type,
                     "Unable to fetch kubernetes namespace",
+                    raise_error=False,
                     arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
                     cmd=cmd,
                 )
