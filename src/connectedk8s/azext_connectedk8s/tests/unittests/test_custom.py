@@ -140,7 +140,7 @@ def test_namespace_cleanup_reports_persistent_lookup_failure_without_raising(
     monkeypatch.setattr(
         custom.utils.time,
         "time",
-        MagicMock(side_effect=[0, 0, 181]),
+        MagicMock(side_effect=[0, 0, 181, 181]),
     )
 
     custom.utils.ensure_namespace_cleanup(cmd)
