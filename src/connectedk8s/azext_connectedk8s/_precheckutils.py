@@ -657,7 +657,10 @@ def executing_cluster_diagnostic_checks_job(
     # Setting the log output as Empty
     cluster_diagnostic_checks_container_log = ""
     release_namespace = azext_utils.get_release_namespace(
-        kube_config, kube_context, helm_client_location, "cluster-diagnostic-checks"
+        kube_config,
+        kube_context,
+        helm_client_location,
+        "cluster-diagnostic-checks",
     )
     cmd_helm_delete = [
         helm_client_location,

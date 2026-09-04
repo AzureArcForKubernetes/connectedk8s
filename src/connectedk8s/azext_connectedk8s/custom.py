@@ -300,12 +300,12 @@ def create_connectedk8s(
     )
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     print(f"Step: {utils.get_utctimestring()}: Do node validations")
     api_instance = kube_client.CoreV1Api()
@@ -502,17 +502,17 @@ def create_connectedk8s(
         )
 
     if not required_node_exists:
-        telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(
-                "Could not find any node on the kubernetes cluster with the OS linux"
-            ),
-            fault_type=consts.Linux_Node_Not_Exists,
-            summary="Could not find any node on the kubernetes cluster with the OS linux",
+        linux_node_error = (
+            "Could not find any node on the Kubernetes cluster with the OS linux."
+        )
+        utils.report_connectedk8s_warning(
+            cmd,
+            errors.LINUX_NODE_NOT_FOUND,
+            details=linux_node_error,
         )
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             check_name="LinuxNodeExists",
-            reason="Could not find any node on the kubernetes cluster with the OS linux",
+            reason=linux_node_error,
             cmd=cmd,
         )
         logger.warning(
@@ -527,12 +527,6 @@ def create_connectedk8s(
     crb_permission = utils.can_create_clusterrolebindings()
     if not crb_permission or crb_permission == "Unknown":
         ex_msg = "Your credentials doesn't have permission to create clusterrolebindings on this kubernetes cluster."
-        summ_msg = "Your credentials doesn't have permission to create clusterrolebindings on this kubernetes cluster."
-        telemetry.set_exception(
-            exception=Exception(ex_msg),
-            fault_type=consts.Cannot_Create_ClusterRoleBindings_Fault_Type,
-            summary=summ_msg,
-        )
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             check_name="ClusterRoleBindings",
             reason=ex_msg,
@@ -542,7 +536,13 @@ def create_connectedk8s(
             "Your credentials doesn't have permission to create clusterrolebindings on this "
             "kubernetes cluster. Please check your permissions."
         )
-        raise ValidationError(err_msg)
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.CLUSTER_ROLE_BINDING_CREATE_FORBIDDEN,
+            exception=Exception(ex_msg),
+            user_fault=True,
+            details=err_msg,
+        )
 
     print(
         f"Step: {utils.get_utctimestring()}: Determining Cluster Distribution and Infrastructure"
@@ -550,7 +550,7 @@ def create_connectedk8s(
     # Get kubernetes cluster info
     if distribution == "generic":
         kubernetes_distro = get_kubernetes_distro(
-            node_api_response
+            node_api_response, cmd=cmd
         )  # (cluster heuristics)
     else:
         kubernetes_distro = distribution
@@ -663,6 +663,8 @@ def create_connectedk8s(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
+                arc_error=errors.CONFIGMAP_READ_FAILED,
+                cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
         configmap_cluster_name = configmap.data["AZURE_RESOURCE_NAME"]
@@ -846,6 +848,7 @@ def create_connectedk8s(
             helm_client_location,
             is_arm64_cluster,
             True,
+            cmd=cmd,
         )
 
     else:
@@ -1118,17 +1121,19 @@ def create_connectedk8s(
         # has the onboarding secret available - even if the subsequent helm
         # install/CLI is interrupted - preventing a stuck-disconnected state.
         try:
-            utils.inject_onboarding_private_key_secret(private_key_pem)
+            utils.inject_onboarding_private_key_secret(private_key_pem, cmd=cmd)
+        except AzCLIError:
+            raise
         except Exception as e:
-            telemetry.set_exception(
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
                 exception=e,
-                fault_type=consts.Inject_PrivateKey_Secret_Fault_Type,
-                summary="Failed to pre-create onboarding private key secret",
-            )
-            raise CLIInternalError(
-                "Failed to pre-create onboarding private key secret on the "
-                f"Kubernetes cluster: {e}"
-            )
+                details=(
+                    "Failed to pre-create the onboarding private key secret on "
+                    f"the Kubernetes cluster: {e}"
+                ),
+            ) from e
 
     # Install azure-arc agents
     utils.helm_install_release(
@@ -1405,7 +1410,7 @@ def expand_proxy_skip_range_keywords(cmd: CLICommand, no_proxy: str) -> str:
     return ",".join(expanded)
 
 
-def check_kube_connection() -> str:
+def check_kube_connection(cmd: CLICommand | None = None) -> str:
     print(f"Step: {utils.get_utctimestring()}: Checking Connectivity to Cluster")
     api_instance = kube_client.VersionApi()
     try:
@@ -1418,6 +1423,8 @@ def check_kube_connection() -> str:
             e,
             consts.Kubernetes_Connectivity_FaultType,
             "Unable to verify connectivity to the Kubernetes cluster",
+            arc_error=errors.KUBERNETES_CONNECTIVITY_FAILED,
+            cmd=cmd,
         )
 
     assert False
@@ -1774,7 +1781,10 @@ def get_public_key(key_pair: RsaKey) -> str:
 
 
 def load_kube_config(
-    kube_config: str | None, kube_context: str | None, skip_ssl_verification: bool
+    kube_config: str | None,
+    kube_context: str | None,
+    skip_ssl_verification: bool,
+    cmd: CLICommand | None = None,
 ) -> None:
     try:
         config.load_kube_config(config_file=kube_config, context=kube_context)
@@ -1785,14 +1795,12 @@ def load_kube_config(
             default_config.verify_ssl = False
             Configuration.set_default(default_config)
     except Exception as e:
-        telemetry.set_exception(
-            exception=e,
-            fault_type=consts.Load_Kubeconfig_Fault_Type,
-            summary="Problem loading the kubeconfig file",
-        )
         logger.warning(consts.Kubeconfig_Load_Failed_Warning)
-        raise FileOperationError(
-            "Problem loading the kubeconfig file. " + str(e)
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.KUBECONFIG_LOAD_FAILED,
+            exception=e,
+            user_fault=True,
         ) from e
 
 
@@ -1804,7 +1812,10 @@ def get_private_key(key_pair: RsaKey) -> str:
 # Updated function to include more Kubernetes distributions based on provided criteria
 # pylint: disable=too-many-return-statements,too-many-branches
 # Multiple distribution detection logic requires many conditional branches
-def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
+def get_kubernetes_distro(
+    api_response: V1NodeList,
+    cmd: CLICommand | None = None,
+) -> str:  # Heuristic
     if api_response is None:
         return "generic"
     try:
@@ -1870,6 +1881,8 @@ def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
             consts.Get_Kubernetes_Distro_Fault_Type,
             "Unable to fetch kubernetes distribution",
             raise_error=False,
+            arc_error=errors.KUBERNETES_DISTRIBUTION_DETECTION_FAILED,
+            cmd=cmd,
         )
         return "generic"
 
@@ -2114,13 +2127,11 @@ def get_kubeconfig_node_dict(kube_config: str | None = None) -> ConfigNode:
     try:
         kubeconfig_data = KubeConfigMerger(kube_config).config
     except Exception as ex:
-        telemetry.set_exception(
+        raise utils.report_connectedk8s_error(
+            None,
+            errors.KUBECONFIG_LOAD_FAILED,
             exception=ex,
-            fault_type=consts.Load_Kubeconfig_Fault_Type,
-            summary="Error while fetching details from kubeconfig",
-        )
-        raise FileOperationError(
-            "Error while fetching details from kubeconfig." + str(ex)
+            details=f"Error while fetching details from kubeconfig. {ex}",
         ) from ex
     return kubeconfig_data
 
@@ -2253,12 +2264,12 @@ def delete_connectedk8s(
     kube_config = set_kube_config(kube_config)
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled
     # AKS clusters if the user had not logged in.
-    check_kube_connection()
+    check_kube_connection(cmd=cmd)
 
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
@@ -2296,6 +2307,7 @@ def delete_connectedk8s(
                 helm_client_location,
                 is_arm64_cluster,
                 True,
+                cmd=cmd,
             )
 
         return
@@ -2323,6 +2335,8 @@ def delete_connectedk8s(
             "Unable to read ConfigMap",
             error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
             message_for_not_found=err_msg,
+            arc_error=errors.CONFIGMAP_READ_FAILED,
+            cmd=cmd,
         )
 
     subscription_id = (
@@ -2380,6 +2394,7 @@ def delete_connectedk8s(
         kube_context,
         helm_client_location,
         is_arm64_cluster,
+        cmd=cmd,
     )
 
     print(f"Step: {utils.get_utctimestring()}: Delete of Connected Cluster ended.")
@@ -2672,12 +2687,12 @@ def update_connected_cluster(
     values_file = utils.get_values_file()
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
@@ -2688,6 +2703,7 @@ def update_connected_cluster(
         kube_config,
         kube_context,
         helm_client_location,
+        cmd=cmd,
     )
 
     # Fetch Connected Cluster for agent version
@@ -2953,12 +2969,12 @@ def upgrade_agents(
     values_file = utils.get_values_file()
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     api_instance = kube_client.CoreV1Api()
 
@@ -2987,6 +3003,8 @@ def upgrade_agents(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
+                arc_error=errors.CONFIGMAP_READ_FAILED,
+                cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
         configmap_cluster_name = configmap.data["AZURE_RESOURCE_NAME"]
@@ -3247,6 +3265,7 @@ def validate_release_namespace(
     kube_config: str | None,
     kube_context: str | None,
     helm_client_location: str,
+    cmd: CLICommand | None = None,
 ) -> str:
     # Check Release Existance
     release_namespace = utils.get_release_namespace(
@@ -3271,6 +3290,8 @@ def validate_release_namespace(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
+                arc_error=errors.CONFIGMAP_READ_FAILED,
+                cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
         configmap_cluster_name = configmap.data["AZURE_RESOURCE_NAME"]
@@ -3479,12 +3500,12 @@ def enable_features(
     values_file = utils.get_values_file()
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
@@ -3495,6 +3516,7 @@ def enable_features(
         kube_config,
         kube_context,
         helm_client_location,
+        cmd=cmd,
     )
 
     kubernetes_properties = {
@@ -3681,12 +3703,12 @@ def disable_features(
     values_file = utils.get_values_file()
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
@@ -3697,6 +3719,7 @@ def disable_features(
         kube_config,
         kube_context,
         helm_client_location,
+        cmd=cmd,
     )
 
     kubernetes_properties = {
@@ -3968,13 +3991,11 @@ def merge_kubernetes_configurations(
         existing = load_kubernetes_configuration(existing_file)
         addition = load_kubernetes_configuration(addition_file)
     except Exception as ex:
-        telemetry.set_exception(
+        raise utils.report_connectedk8s_error(
+            None,
+            errors.KUBERNETES_CONFIGURATION_LOAD_FAILED,
             exception=ex,
-            fault_type=consts.Failed_To_Load_K8s_Configuration_Fault_Type,
-            summary="Exception while loading kubernetes configuration",
-        )
-        raise CLIInternalError(
-            f"Exception while loading kubernetes configuration: {ex}"
+            details=f"Exception while loading Kubernetes configuration: {ex}",
         ) from ex
 
     if context_name is not None:
@@ -4425,14 +4446,13 @@ def client_side_proxy(
         try:
             kubeconfig = json.loads(response.text)
         except Exception as e:
-            telemetry.set_exception(
+            clientproxy_process.terminate()
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.KUBECONFIG_LOAD_FAILED,
                 exception=e,
-                fault_type=consts.Load_Kubeconfig_Fault_Type,
-                summary="Unable to load Kubeconfig",
-            )
-            clientproxyutils.close_subprocess_and_raise_cli_error(
-                clientproxy_process, "Failed to load kubeconfig." + str(e)
-            )
+                details=f"Failed to load kubeconfig. {e}",
+            ) from e
 
         kubeconfig = kubeconfig["kubeconfigs"][0]["value"]
         kubeconfig = b64decode(kubeconfig).decode("utf-8")
@@ -4610,7 +4630,7 @@ def troubleshoot(
         kube_client.rest.logger.setLevel(logging.WARNING)
 
         # Loading the kubeconfig file in kubernetes client configuration
-        load_kube_config(kube_config, kube_context, skip_ssl_verification)
+        load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
         azure_cloud = send_cloud_telemetry(cmd)
         kubectl_client_location = get_kubectl_client_location(
@@ -4624,12 +4644,13 @@ def troubleshoot(
             kube_config,
             kube_context,
             helm_client_location,
+            cmd=cmd,
         )
 
         # Checking the connection to kubernetes cluster.
         # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
         # if the user had not logged in.
-        check_kube_connection()
+        check_kube_connection(cmd=cmd)
 
         # Fetch Connected Cluster for agent version
         connected_cluster = client.get(resource_group_name, cluster_name)

@@ -549,6 +549,32 @@ def add_connectedk8s_telemetry_event(
     telemetry.add_extension_event("connectedk8s", event_properties)
 
 
+def report_connectedk8s_warning(
+    cmd: CLICommand | None,
+    error: errors.ArcError,
+    *,
+    telemetry_properties: dict[str, Any] | None = None,
+    fault_type: str | None = None,
+    **context: object,
+) -> str:
+    """Report a standardized warning without marking the command as failed."""
+    message = error.format(**context)
+    properties = (telemetry_properties or {}).copy()
+    properties.update(
+        {
+            consts.Telemetry_Warning_Code_Key: error.code,
+            consts.Telemetry_Warning_Fault_Type_Key: fault_type or error.fault_type,
+            consts.Telemetry_Warning_Name_Key: error.name,
+            consts.Telemetry_Warning_Message_Key: message,
+        }
+    )
+    if error.tsg_link:
+        properties[consts.Telemetry_Warning_Tsg_Link_Key] = error.tsg_link
+    add_connectedk8s_telemetry_event(cmd, properties)
+    logger.warning("%s", message)
+    return message
+
+
 def report_connectedk8s_error(
     cmd: Any | None,
     error: errors.ArcError,
@@ -570,6 +596,10 @@ def report_connectedk8s_error(
             consts.Telemetry_Error_Message_Key: message,
         }
     )
+    if exception is not None:
+        properties[consts.Telemetry_Error_Exception_Type_Key] = (
+            _get_underlying_exception_type(exception)
+        )
     if error.tsg_link:
         properties[consts.Telemetry_Error_Tsg_Link_Key] = error.tsg_link
     add_connectedk8s_telemetry_event(cmd, properties)
@@ -582,6 +612,33 @@ def report_connectedk8s_error(
         summary=message,
     )
     return error.as_error(**context)
+
+
+def _get_underlying_exception_type(exception: BaseException) -> str:
+    """Return the deepest wrapped exception type without emitting its message."""
+    current = exception
+    seen: set[int] = set()
+    for _ in range(32):
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        context = None if current.__suppress_context__ else current.__context__
+        nested = next(
+            (
+                candidate
+                for candidate in (
+                    getattr(current, "reason", None),
+                    current.__cause__,
+                    context,
+                )
+                if isinstance(candidate, BaseException)
+            ),
+            None,
+        )
+        if nested is None or id(nested) in seen:
+            break
+        current = nested
+    return type(current).__name__[:128]
 
 
 def report_helm_timeout_error(cmd: Any | None, report: HelmTimeoutReport) -> AzCLIError:
@@ -1773,8 +1830,10 @@ def kubernetes_exception_handler(
     "ensure you have cluster admin privileges on the cluster to onboard.",
     message_for_not_found: str = "The requested kubernetes resource was not found.",
     raise_error: bool = True,
+    arc_error: errors.ArcError | None = None,
+    cmd: CLICommand | None = None,
 ) -> None:
-    telemetry.set_user_fault()
+    details: str
     if isinstance(ex, ApiException):
         status_code = ex.status
         if status_code == 403:
@@ -1783,17 +1842,52 @@ def kubernetes_exception_handler(
             logger.warning(message_for_not_found)
         else:
             logger.debug("Kubernetes Exception: ", exc_info=True)
+        details = error_message + "\nError Response: " + str(ex.body)
+        if arc_error is not None:
+            if raise_error:
+                raise report_connectedk8s_error(
+                    cmd,
+                    arc_error,
+                    exception=ex,
+                    user_fault=True,
+                    details=details,
+                ) from ex
+            report_connectedk8s_warning(
+                cmd,
+                arc_error,
+                details=details,
+            )
+            return
+        telemetry.set_user_fault()
         if raise_error:
             telemetry.set_exception(
                 exception=ex, fault_type=fault_type, summary=summary
             )
-            raise ValidationError(error_message + "\nError Response: " + str(ex.body))
+            raise ValidationError(details)
     else:
+        details = error_message + "\nError: " + str(ex)
+        if arc_error is not None:
+            if raise_error:
+                raise report_connectedk8s_error(
+                    cmd,
+                    arc_error,
+                    exception=ex,
+                    user_fault=True,
+                    details=details,
+                ) from ex
+            report_connectedk8s_warning(
+                cmd,
+                arc_error,
+                details=details,
+            )
+            logger.debug("Kubernetes Exception", exc_info=True)
+            return
+        telemetry.set_user_fault()
         if raise_error:
             telemetry.set_exception(
                 exception=ex, fault_type=fault_type, summary=summary
             )
-            raise ValidationError(error_message + "\nError: " + str(ex))
+            raise ValidationError(details)
 
         logger.debug("Kubernetes Exception", exc_info=True)
 
@@ -1820,14 +1914,24 @@ def get_values_file() -> str | None:
     return None
 
 
-def ensure_namespace_cleanup() -> None:
+def ensure_namespace_cleanup(cmd: CLICommand | None = None) -> None:
     print(
         f"Step: {get_utctimestring()}: Confirming '{consts.Arc_Namespace}' namespace got deleted."
     )
     api_instance = kube_client.CoreV1Api()
     timeout = time.time() + 180
+    last_lookup_error: Exception | None = None
     while True:
         if time.time() > timeout:
+            if last_lookup_error is not None:
+                kubernetes_exception_handler(
+                    last_lookup_error,
+                    consts.Get_Kubernetes_Namespace_Fault_Type,
+                    "Unable to fetch kubernetes namespace",
+                    raise_error=False,
+                    arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
+                    cmd=cmd,
+                )
             telemetry.set_user_fault()
             logger.warning(
                 "Namespace 'azure-arc' still in terminating state. Please ensure that you delete the "
@@ -1838,17 +1942,17 @@ def ensure_namespace_cleanup() -> None:
             api_response = api_instance.list_namespace(
                 field_selector="metadata.name=azure-arc"
             )
+            last_lookup_error = None
             if not api_response.items:
                 return
             time.sleep(5)
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.exception("Error while retrieving namespace information.")
-            kubernetes_exception_handler(
-                e,
-                consts.Get_Kubernetes_Namespace_Fault_Type,
-                "Unable to fetch kubernetes namespace",
-                raise_error=False,
+            last_lookup_error = e
+            logger.debug(
+                "Error while retrieving namespace information; retrying.",
+                exc_info=True,
             )
+            time.sleep(5)
 
 
 def delete_arc_agents(
@@ -1858,6 +1962,7 @@ def delete_arc_agents(
     helm_client_location: str,
     is_arm64_cluster: bool = False,
     no_hooks: bool = False,
+    cmd: CLICommand | None = None,
 ) -> None:
     print(f"Step: {get_utctimestring()}: Uninstalling Arc Agents' Helm release")
     if no_hooks:
@@ -1905,7 +2010,7 @@ def delete_arc_agents(
             "the release is deleted."
         )
         raise CLIInternalError(err_msg)
-    ensure_namespace_cleanup()
+    ensure_namespace_cleanup(cmd)
     # Cleanup azure-arc-release NS if present (created during helm installation)
     cleanup_release_install_namespace_if_exists()
 
@@ -2000,7 +2105,9 @@ def should_use_secret_injection_flow(
         return False
 
 
-def ensure_arc_namespace_with_helm_metadata() -> None:
+def ensure_arc_namespace_with_helm_metadata(
+    cmd: CLICommand | None = None,
+) -> None:
     """
     Ensure the ``azure-arc`` namespace exists and is annotated/labeled so that
     the subsequent ``helm install`` can adopt it without erroring out with
@@ -2022,6 +2129,8 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 consts.Get_Kubernetes_Namespace_Fault_Type,
                 error_message=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
+                arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
+                cmd=cmd,
             )
             return
         # Namespace does not exist, create it with the required metadata.
@@ -2037,9 +2146,11 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
         except ApiException as create_ex:
             kubernetes_exception_handler(
                 create_ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=f"Unable to create namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to create namespace '{consts.Arc_Namespace}'",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                cmd=cmd,
             )
         return
 
@@ -2055,7 +2166,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
     except ApiException as patch_ex:
         kubernetes_exception_handler(
             patch_ex,
-            consts.Inject_PrivateKey_Secret_Fault_Type,
+            errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
             error_message=(
                 f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
                 "ownership metadata"
@@ -2064,10 +2175,15 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
                 "ownership metadata"
             ),
+            arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+            cmd=cmd,
         )
 
 
-def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
+def inject_onboarding_private_key_secret(
+    private_key_pem: str,
+    cmd: CLICommand | None = None,
+) -> None:
     """
     Pre-create the onboarding private key as a Kubernetes Secret so the agents
     can consume it without ever exposing it through helm values. The namespace
@@ -2084,7 +2200,7 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         f"secret '{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
         f"'{consts.Arc_Namespace}'."
     )
-    ensure_arc_namespace_with_helm_metadata()
+    ensure_arc_namespace_with_helm_metadata(cmd)
 
     api_instance = kube_client.CoreV1Api()
     secret_body = kube_client.V1Secret(
@@ -2107,13 +2223,15 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         if ex.status != 409:
             kubernetes_exception_handler(
                 ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=(
                     "Unable to create onboarding private key secret "
                     f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
                     f"'{consts.Arc_Namespace}'"
                 ),
                 summary="Unable to create onboarding private key secret",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                cmd=cmd,
             )
             return
         # Secret already exists - replace its contents
@@ -2127,13 +2245,15 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         except ApiException as replace_ex:
             kubernetes_exception_handler(
                 replace_ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=(
                     "Unable to update existing onboarding private key secret "
                     f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
                     f"'{consts.Arc_Namespace}'"
                 ),
                 summary="Unable to update onboarding private key secret",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                cmd=cmd,
             )
 
 
