@@ -279,6 +279,16 @@ Proxy_Bypass_Arc_Preserved_Warning = (
     "Azure Arc private-link endpoints were found in the proxy skip range and have been "
     "kept. Run 'az connectedk8s update --clear-proxy-bypass Arc' to stop bypassing them."
 )
+# Confirms the clear, so removing the bypass is announced just like applying it.
+Proxy_Bypass_Arc_Cleared_Message = (
+    "Removing the Azure Arc private-link endpoints from the proxy skip range, so the "
+    "proxy is no longer bypassed for them"
+)
+# Reports a clear that found nothing, so a no-op is not mistaken for a change.
+Proxy_Bypass_Arc_Nothing_To_Clear_Warning = (
+    "No Azure Arc private-link endpoints were found in the proxy skip range; there is "
+    "nothing to clear."
+)
 
 # Extension type accepted by --add-proxy-bypass, which makes that agent bypass the proxy.
 Proxy_Bypass_ContainerInsights_Extension_Type = "Microsoft.AzureMonitor.Containers"

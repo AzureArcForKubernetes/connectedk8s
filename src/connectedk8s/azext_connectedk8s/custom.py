@@ -1444,6 +1444,16 @@ def has_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> bool:
     )
 
 
+def remove_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str:
+    # Remove only the Arc endpoints, so entries the user added to the skip range survive.
+    # They are derived rather than stored, so matching on value is what identifies them.
+    removable = {
+        endpoint.lower() for endpoint in get_arc_proxy_skip_range_endpoints(cmd)
+    }
+    entries = [entry.strip() for entry in no_proxy.split(",") if entry.strip()]
+    return ",".join(entry for entry in entries if entry.lower() not in removable)
+
+
 def resolve_arc_proxy_bypass_on_update(
     cmd: CLICommand,
     no_proxy: str,
@@ -1463,18 +1473,30 @@ def resolve_arc_proxy_bypass_on_update(
     cleared = validators.has_proxy_bypass_keyword(
         clear_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
     )
-    if cleared or not (requested or no_proxy):
+    if not (cleared or requested or no_proxy):
         return None
 
-    # The cluster's skip range is only needed when the bypass is merged into it.
+    # The cluster's skip range is needed to merge the bypass into it or remove it from it.
     current_no_proxy = ""
-    if not (requested and no_proxy):
+    if cleared or not (requested and no_proxy):
         # Read the skip range the agents run with today; helm returns it unescaped. It is
         # the base when the bypass is added without a new skip range, so entries survive.
         helm_values = get_all_helm_values(
             release_namespace, kube_config, kube_context, helm_client_location
         )
         current_no_proxy = str(utils.flatten(helm_values).get("global.noProxy") or "")
+
+    if cleared:
+        # Leave the skip range alone when there is nothing to remove, so clearing a
+        # cluster that never had the bypass does not start sending a proxy setting.
+        if not has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy):
+            logger.warning(consts.Proxy_Bypass_Arc_Nothing_To_Clear_Warning)
+            return None
+        print(
+            f"Step: {utils.get_utctimestring()}: "
+            f"{consts.Proxy_Bypass_Arc_Cleared_Message}"
+        )
+        return remove_arc_proxy_skip_range_endpoints(cmd, current_no_proxy)
 
     if requested:
         print(
@@ -2805,6 +2827,7 @@ def update_connected_cluster(
             container_log_path,
             configuration_settings,
             configuration_protected_settings,
+            no_proxy_explicit=True,
         )
         arc_agentry_configurations = generate_arc_agent_configuration(
             configuration_settings, redacted_protected_values
@@ -5252,6 +5275,7 @@ def add_config_protected_settings(
     container_log_path: str | None,
     configuration_settings: dict[str, Any] | None,
     configuration_protected_settings: dict[str, Any] | None,
+    no_proxy_explicit: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     redacted_protected_values: dict[str, Any] = {}
 
@@ -5266,14 +5290,15 @@ def add_config_protected_settings(
         configuration_settings.setdefault(
             "logging", {"container_log_path": container_log_path}
         )
-    if any([https_proxy, http_proxy, no_proxy, proxy_cert]):
+    if any([https_proxy, http_proxy, no_proxy, proxy_cert, no_proxy_explicit]):
         configuration_protected_settings.setdefault("proxy", {})
         configuration_settings.setdefault("proxy", {})
         if https_proxy:
             configuration_protected_settings["proxy"]["https_proxy"] = https_proxy
         if http_proxy:
             configuration_protected_settings["proxy"]["http_proxy"] = http_proxy
-        if no_proxy:
+        # An emptied skip range still has to be sent, or the agents keep the old value.
+        if no_proxy or no_proxy_explicit:
             configuration_protected_settings["proxy"]["no_proxy"] = no_proxy
         if proxy_cert:
             configuration_protected_settings["proxy"]["proxy_cert"] = proxy_cert
