@@ -3047,6 +3047,18 @@ def update_connected_cluster(
             operation="update",
         )
 
+    # Touch the ConfigMap only after the update succeeds; update has no rollback path.
+    ci_requested = validators.has_proxy_bypass_keyword(
+        add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+    )
+    ci_cleared = validators.has_proxy_bypass_keyword(
+        clear_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+    )
+    if ci_requested or ci_cleared:
+        containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
+            kube_client.CoreV1Api(), ci_requested
+        )
+
     return connected_cluster
 
 
