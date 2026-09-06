@@ -297,6 +297,12 @@ Proxy_Bypass_Enum_Values = [
     Proxy_Bypass_Arc_Keyword,
     Proxy_Bypass_ContainerInsights_Extension_Type,
 ]
+# Names the command that clears the Container Insights bypass, so each message says how to undo it.
+Proxy_Bypass_ContainerInsights_Clear = (
+    "Run 'az connectedk8s update --clear-proxy-bypass "
+    f"{Proxy_Bypass_ContainerInsights_Extension_Type}' to stop bypassing the proxy for "
+    "Container Insights."
+)
 
 # ConfigMap the Container Insights agent reads; ignore_proxy_settings here drives the proxy bypass.
 CI_ConfigMap_Name = "container-azm-ms-agentconfig"

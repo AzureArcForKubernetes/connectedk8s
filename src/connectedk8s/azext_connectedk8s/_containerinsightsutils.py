@@ -177,7 +177,8 @@ def ensure_container_insights_proxy_bypass_configmap(
     if merged == current:
         print(
             f"Step: {utils.get_utctimestring()}: '{consts.CI_ConfigMap_Name}' ConfigMap already "
-            f"bypasses the proxy for Container Insights; no change needed"
+            f"bypasses the proxy for Container Insights; no change needed. "
+            f"{consts.Proxy_Bypass_ContainerInsights_Clear}"
         )
         return
 
@@ -200,7 +201,8 @@ def ensure_container_insights_proxy_bypass_configmap(
         )
         print(
             f"Step: {utils.get_utctimestring()}: Updated existing '{consts.CI_ConfigMap_Name}' "
-            f"ConfigMap to bypass the proxy for Container Insights"
+            f"ConfigMap to bypass the proxy for Container Insights. "
+            f"{consts.Proxy_Bypass_ContainerInsights_Clear}"
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
         report_container_insights_configmap_failure(
@@ -235,7 +237,8 @@ def create_container_insights_proxy_bypass_configmap(
         )
         print(
             f"Step: {utils.get_utctimestring()}: Created '{consts.CI_ConfigMap_Name}' ConfigMap "
-            f"in '{consts.CI_ConfigMap_Namespace}' namespace for Container Insights proxy bypass"
+            f"in '{consts.CI_ConfigMap_Namespace}' namespace for Container Insights proxy bypass. "
+            f"{consts.Proxy_Bypass_ContainerInsights_Clear}"
         )
     except Exception as e:  # pylint: disable=broad-exception-caught
         if getattr(e, "status", None) == 409:
