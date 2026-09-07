@@ -2378,6 +2378,12 @@ def delete_connectedk8s(
     node_api_response = utils.validate_node_api_response(api_instance)
     is_arm64_cluster = check_arm64_node(node_api_response)
 
+    # Undo the bypass before anything is deleted, so a failure here stops the command
+    # instead of deboarding the cluster and leaving the setting behind.
+    containerinsightsutils.remove_container_insights_proxy_bypass_configmap(
+        api_instance
+    )
+
     # Check forced delete flag
     if force_delete:
         print(f"Step: {utils.get_utctimestring()}: Performing Force Delete")
