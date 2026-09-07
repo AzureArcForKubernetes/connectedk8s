@@ -22,7 +22,8 @@ Flow:
                           setting, creating the ConfigMap only if it does not already exist
        - not requested -> remove_container_insights_proxy_bypass_configmap() undoes a setting
                           added by an earlier run, identified by the annotation this CLI stamps
-  3. delete calls remove_container_insights_proxy_bypass_configmap() directly
+  3. delete calls remove_container_insights_proxy_bypass_configmap() directly, as does
+     connect when it clears a stale bypass left by an earlier onboarding
   4. Every call runs before the step it protects, so a failure stops the command instead of
      leaving the agents and the ConfigMap out of step
 

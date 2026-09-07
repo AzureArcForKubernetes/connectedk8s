@@ -858,6 +858,10 @@ def create_connectedk8s(
         logger.warning(
             "Cleaning up the stale arc agents present on the cluster before starting new onboarding."
         )
+        # Check if an earlier instance left a Container Insights proxy bypass behind.
+        containerinsightsutils.remove_container_insights_proxy_bypass_configmap(
+            api_instance
+        )
         # Explicit CRD Deletion
         crd_cleanup_force_delete(
             cmd, kubectl_client_location, kube_config, kube_context
