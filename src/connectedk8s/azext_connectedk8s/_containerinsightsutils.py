@@ -26,8 +26,9 @@ Flow:
   4. Every call runs before the step it protects, so a failure stops the command instead of
      leaving the agents and the ConfigMap out of step
 
-Only the "ignore_proxy_settings" line is ever written or removed, and removal happens only
-where the annotation shows this CLI added it, so settings the customer owns are left alone.
+Only the "ignore_proxy_settings" line is ever written, and the bypass is withdrawn by setting it
+to "false". That happens only where the annotation shows this CLI added it, so settings the
+customer owns are left alone.
 """
 
 from __future__ import annotations
@@ -55,7 +56,9 @@ def find_active_proxy_bypass_setting(lines: list[str]) -> tuple[int | None, int 
             continue
         # Track which section the following settings belong to.
         if stripped.startswith("["):
-            in_section = stripped.startswith(consts.CI_ConfigMap_Proxy_Config_Section)
+            in_section = "".join(stripped.split()).startswith(
+                consts.CI_ConfigMap_Proxy_Config_Section
+            )
             current_header = i if in_section else None
             if in_section and first_header is None:
                 first_header = i
@@ -96,26 +99,18 @@ def merge_proxy_bypass_into_agent_settings(agent_settings: str) -> str:
 
 
 def remove_proxy_bypass_from_agent_settings(agent_settings: str) -> str:
-    # Remove the ignore_proxy_settings line, leaving the agent's other settings intact.
+    # Withdraw the bypass by setting ignore_proxy_settings to "false", leaving the agent's other
+    # settings intact.
     lines = agent_settings.splitlines()
-    header, setting = find_active_proxy_bypass_setting(lines)
+    _, setting = find_active_proxy_bypass_setting(lines)
 
     # Nothing to undo unless proxy_config holds an active setting.
-    if setting is None or header is None:
+    if setting is None:
         return agent_settings
 
-    del lines[setting]
-
-    # Drop that header as well, unless another setting still belongs to it.
-    for i in range(header + 1, len(lines)):
-        stripped = lines[i].strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        if stripped.startswith("["):
-            break
-        return "\n".join(lines)
-
-    del lines[header]
+    line = lines[setting]
+    indent = line[: len(line) - len(line.lstrip())]
+    lines[setting] = f"{indent}{consts.CI_ConfigMap_Proxy_Bypass_Disabled}"
     return "\n".join(lines)
 
 
@@ -295,7 +290,7 @@ def remove_container_insights_proxy_bypass_configmap(
     )
     existing.data = data
 
-    # Drop the annotation too, so a later run does not look for a setting that is no longer there.
+    # Drop the annotation too, so the disabled setting left behind is not treated as CLI-owned.
     del annotations[consts.CI_ConfigMap_Proxy_Bypass_Annotation]
     metadata.annotations = annotations
 

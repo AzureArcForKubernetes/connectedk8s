@@ -315,6 +315,8 @@ CI_ConfigMap_Proxy_Config_Section = "[agent_settings.proxy_config]"
 CI_ConfigMap_Proxy_Bypass_Setting = "ignore_proxy_settings"
 # Setting line written to enable the bypass.
 CI_ConfigMap_Proxy_Bypass_Enabled = f'{CI_ConfigMap_Proxy_Bypass_Setting} = "true"'
+# Setting line written to withdraw the bypass; the agent then honours the proxy again.
+CI_ConfigMap_Proxy_Bypass_Disabled = f'{CI_ConfigMap_Proxy_Bypass_Setting} = "false"'
 # Section and setting written together when agent-settings has no proxy_config section yet.
 CI_ConfigMap_Proxy_Bypass_Block = (
     f"{CI_ConfigMap_Proxy_Config_Section}\n    {CI_ConfigMap_Proxy_Bypass_Enabled}"
