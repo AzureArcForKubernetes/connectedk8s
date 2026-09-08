@@ -260,7 +260,9 @@ def test_job_execution_propagates_helm_install_error_unchanged(monkeypatch):
     classified_error = ClassifiedError("[AZK8S0607] forbidden")
     monkeypatch.setattr(precheckutils.config, "load_kube_config", MagicMock())
     monkeypatch.setattr(
-        precheckutils.azext_utils, "get_release_namespace", lambda *_args: None
+        precheckutils.azext_utils,
+        "get_release_namespace",
+        lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(precheckutils.azext_utils, "get_mcr_path", lambda *_args: "mcr")
     monkeypatch.setattr(
