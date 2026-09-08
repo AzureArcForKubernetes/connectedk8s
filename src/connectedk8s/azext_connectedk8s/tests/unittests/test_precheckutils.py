@@ -124,7 +124,7 @@ def test_precheck_telemetry_helpers_forward_command_context(monkeypatch):
     assert all(call.args[0] is cmd for call in add_event.call_args_list)
 
 
-def test_log_save_failure_reports_azk8s0606_with_command_context(monkeypatch):
+def test_log_save_failure_reports_diagnostic_event_without_fault(monkeypatch):
     cmd = MagicMock()
     exception = OSError("write failed")
     add_event = MagicMock()
@@ -141,11 +141,24 @@ def test_log_save_failure_reports_azk8s0606_with_command_context(monkeypatch):
     assert event_cmd is cmd
     assert properties[consts.Telemetry_Error_Code_Key] == "AZK8S0606"
     assert "write failed" in properties[consts.Telemetry_Error_Message_Key]
-    set_exception.assert_called_once_with(
-        exception=exception,
-        fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-        summary=properties[consts.Telemetry_Error_Message_Key],
+    set_exception.assert_not_called()
+
+
+def test_contributing_prediagnostic_events_do_not_emit_faults(monkeypatch):
+    set_exception = MagicMock()
+    monkeypatch.setattr(precheckutils.telemetry, "set_exception", set_exception)
+
+    precheckutils.send_prediagnostic_job_execution_error_telemetry(cmd=MagicMock())
+    precheckutils.send_prediagnostic_check_failure_telemetry(
+        consts.Diagnostic_Check_Failed,
+        consts.Diagnostic_Check_Passed,
+        cmd=MagicMock(),
     )
+    precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+        "LinuxNodeExists", "No Linux nodes found", cmd=MagicMock()
+    )
+
+    set_exception.assert_not_called()
 
 
 def test_fetch_results_propagates_classified_azure_cli_error(monkeypatch):
@@ -184,6 +197,50 @@ def test_fetch_results_propagates_classified_azure_cli_error(monkeypatch):
         )
 
     assert exc_info.value is classified_error
+
+
+def test_fetch_results_reports_unclassified_error_once(monkeypatch):
+    class ClassifiedError(Exception):
+        pass
+
+    failure = RuntimeError("unexpected parsing failure")
+    terminal_error = ClassifiedError("[AZK8S0600] prediagnostics failed")
+    report_error = MagicMock(return_value=terminal_error)
+
+    monkeypatch.setattr(precheckutils, "AzCLIError", ClassifiedError)
+    monkeypatch.setattr(
+        precheckutils,
+        "executing_cluster_diagnostic_checks_job",
+        MagicMock(side_effect=failure),
+    )
+    monkeypatch.setattr(
+        precheckutils.azext_utils,
+        "report_connectedk8s_error",
+        report_error,
+    )
+
+    with pytest.raises(ClassifiedError) as exc_info:
+        precheckutils.fetch_diagnostic_checks_results(
+            cmd=MagicMock(),
+            corev1_api_instance=MagicMock(),
+            batchv1_api_instance=MagicMock(),
+            helm_client_location="helm",
+            kubectl_client_location="kubectl",
+            kube_config=None,
+            kube_context=None,
+            location="eastus",
+            http_proxy="",
+            https_proxy="",
+            no_proxy="",
+            proxy_cert="",
+            azure_cloud="AZUREPUBLICCLOUD",
+            filepath_with_timestamp="/tmp/prediagnostics",
+            storage_space_available=True,
+        )
+
+    assert exc_info.value is terminal_error
+    report_error.assert_called_once()
+    assert report_error.call_args.kwargs["exception"] is failure
 
 
 def test_job_execution_propagates_helm_install_error_unchanged(monkeypatch):

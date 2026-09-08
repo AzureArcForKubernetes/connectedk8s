@@ -254,6 +254,17 @@ telemetry.set_exception(
 This retains Azure CLI's reserved fault fields while the extension event carries
 the structured AZK8S fields and connected-cluster ARM ID.
 
+## Single-fault invariant
+
+A failed command must emit at most one Azure CLI fault event. The code path that
+terminates the command owns the call to `report_connectedk8s_error`; lower-level
+checks must not also call `telemetry.set_exception`.
+
+Contributing causes, component results, cleanup failures, and diagnostic-log
+failures remain available through `add_connectedk8s_telemetry_event`. This
+preserves the investigation detail without making one failed onboarding command
+look like multiple failures in command-level success-rate queries.
+
 ## Non-fatal diagnostics
 
 Some catalog entries describe informational or non-fatal diagnostics and have
@@ -335,6 +346,8 @@ When migrating an existing error path:
   `add_connectedk8s_telemetry_event`.
 - Replace paired `telemetry.set_exception` and `raise AzCLIError(...)` calls
   with `raise report_connectedk8s_error(...)`.
+- If an outer layer owns the terminal error, report inner causes with
+  `add_connectedk8s_telemetry_event` instead of another fault event.
 - Set `user_fault=True` where the existing path calls
   `telemetry.set_user_fault()`.
 - Pass existing extension-event properties through `telemetry_properties`.
@@ -345,9 +358,9 @@ When migrating an existing error path:
 ## Current scope
 
 The shared reporter is currently used by the command catch-all, agent-state
-timeouts, Helm operation failures, and classified Helm timeout failures.
-Pre-onboarding and troubleshoot extension events use the ARM ID-aware event
-wrapper.
+timeouts, Helm operation failures, classified Helm timeout failures, and
+terminal pre-onboarding failures. Contributing pre-onboarding and troubleshoot
+diagnostics use the ARM ID-aware event wrapper.
 
 The catalog contains the supplied error-code allocation across the
 `AZK8S0001` through `AZK8S0805` ranges, but not every historical call site has

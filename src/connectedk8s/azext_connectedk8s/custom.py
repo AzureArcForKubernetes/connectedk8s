@@ -398,7 +398,7 @@ def create_connectedk8s(
                 )
             )
             precheckutils.fetching_cli_output_logs(
-                filepath_with_timestamp, storage_space_available, 1
+                filepath_with_timestamp, storage_space_available, 1, cmd=cmd
             )
 
             if precheckutils.diagnoser_output:
