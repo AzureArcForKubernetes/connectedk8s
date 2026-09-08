@@ -353,6 +353,8 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                 filepath_with_timestamp,
                 storage_space_available,
                 diagnoser_output,
+                cmd=cmd,
+                emit_fault=False,
             )
             prediagnostic_dns_check = dns_check
             outbound_connectivity_check, storage_space_available = (

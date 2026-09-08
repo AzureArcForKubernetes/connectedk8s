@@ -584,6 +584,7 @@ def report_connectedk8s_diagnostic(
     *,
     exception: BaseException | None = None,
     user_fault: bool = False,
+    emit_fault: bool = True,
     telemetry_properties: dict[str, Any] | None = None,
     fault_type: str | None = None,
     **context: object,
@@ -608,14 +609,15 @@ def report_connectedk8s_diagnostic(
         properties[consts.Telemetry_Error_Tsg_Link_Key] = error.tsg_link
     add_connectedk8s_telemetry_event(cmd, properties)
 
-    if user_fault:
-        telemetry.set_user_fault()
-    telemetry_exception = sanitize_telemetry_exception(exception, telemetry_message)
-    telemetry.set_exception(
-        exception=telemetry_exception,
-        fault_type=fault_type or error.fault_type,
-        summary=telemetry_message,
-    )
+    if emit_fault:
+        if user_fault:
+            telemetry.set_user_fault()
+        telemetry_exception = sanitize_telemetry_exception(exception, telemetry_message)
+        telemetry.set_exception(
+            exception=telemetry_exception,
+            fault_type=fault_type or error.fault_type,
+            summary=telemetry_message,
+        )
     return message
 
 
@@ -1042,6 +1044,7 @@ def check_cluster_DNS(
     storage_space_available: bool,
     diagnoser_output: list[str],
     cmd: CLICommand | None = None,
+    emit_fault: bool = True,
 ) -> tuple[str, bool]:
     try:
         if consts.DNS_Check_Result_String not in dns_check_log:
@@ -1104,6 +1107,7 @@ def check_cluster_DNS(
                 cmd,
                 dns_error,
                 details=details,
+                emit_fault=emit_fault,
             )
             logger.warning(message)
             diagnoser_output.append(message)
@@ -1129,22 +1133,24 @@ def check_cluster_DNS(
     except OSError as e:
         if "[Errno 28]" in str(e):
             storage_space_available = False
-            telemetry.set_exception(
-                exception=e,
-                fault_type=consts.No_Storage_Space_Available_Fault_Type,
-                summary="No space left on device",
-            )
+            if emit_fault:
+                telemetry.set_exception(
+                    exception=e,
+                    fault_type=consts.No_Storage_Space_Available_Fault_Type,
+                    summary="No space left on device",
+                )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while performing the DNS check on the "
                 "cluster."
             )
-            telemetry.set_exception(
-                exception=e,
-                fault_type=consts.Cluster_DNS_Check_Fault_Type,
-                summary="Error occured while performing cluster DNS check",
-            )
+            if emit_fault:
+                telemetry.set_exception(
+                    exception=e,
+                    fault_type=consts.Cluster_DNS_Check_Fault_Type,
+                    summary="Error occured while performing cluster DNS check",
+                )
             diagnoser_output.append(
                 "An exception has occured while performing the DNS check on the cluster. "
                 f"Exception: {e}\n"
@@ -1155,11 +1161,12 @@ def check_cluster_DNS(
         logger.exception(
             "An exception has occured while performing the DNS check on the cluster."
         )
-        telemetry.set_exception(
-            exception=e,
-            fault_type=consts.Cluster_DNS_Check_Fault_Type,
-            summary="Error occured while performing cluster DNS check",
-        )
+        if emit_fault:
+            telemetry.set_exception(
+                exception=e,
+                fault_type=consts.Cluster_DNS_Check_Fault_Type,
+                summary="Error occured while performing cluster DNS check",
+            )
         diagnoser_output.append(
             "An exception has occured while performing the DNS check on the cluster. "
             f"Exception: {e}\n"
@@ -1210,6 +1217,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                     report_connectedk8s_diagnostic(
                         cmd,
                         errors.OUTBOUND_ENDPOINT_NON2XX,
+                        emit_fault=False,
                         details=details,
                         telemetry_properties={
                             consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
@@ -1246,6 +1254,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                     errors.CLUSTER_CONNECT_OUTBOUND_CONNECTIVITY_FAILED,
                     details=details,
                     user_fault=True,
+                    emit_fault=False,
                 )
                 logger.warning(
                     "%s\n"
@@ -1293,6 +1302,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                     report_connectedk8s_diagnostic(
                         cmd,
                         errors.OUTBOUND_ENDPOINT_NON2XX,
+                        emit_fault=False,
                         details=details,
                         telemetry_properties={
                             consts.Telemetry_Onboarding_Error_Type_Key: consts.Outbound_Connectivity_Non2xx_Response_Type,
@@ -1365,6 +1375,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
             message = report_connectedk8s_diagnostic(
                 cmd,
                 errors.ONBOARDING_OUTBOUND_CONNECTIVITY_FAILED,
+                emit_fault=False,
                 details=(
                     f"{details} Review network requirements at "
                     f"{consts.Doc_Network_Requirements_Url}."
@@ -1465,22 +1476,24 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
     except OSError as e:
         if "[Errno 28]" in str(e):
             storage_space_available = False
-            telemetry.set_exception(
-                exception=e,
-                fault_type=consts.No_Storage_Space_Available_Fault_Type,
-                summary="No space left on device",
-            )
+            if outbound_connectivity_check_for == "troubleshoot":
+                telemetry.set_exception(
+                    exception=e,
+                    fault_type=consts.No_Storage_Space_Available_Fault_Type,
+                    summary="No space left on device",
+                )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
         else:
             logger.exception(
                 "An exception has occured while performing the outbound connectivity "
                 "check on the cluster."
             )
-            telemetry.set_exception(
-                exception=e,
-                fault_type=consts.Outbound_Connectivity_Check_Fault_Type,
-                summary="Error occured while performing outbound connectivity check in the cluster",
-            )
+            if outbound_connectivity_check_for == "troubleshoot":
+                telemetry.set_exception(
+                    exception=e,
+                    fault_type=consts.Outbound_Connectivity_Check_Fault_Type,
+                    summary="Error occured while performing outbound connectivity check in the cluster",
+                )
             diagnoser_output.append(
                 "An exception has occured while performing the outbound connectivity check on the cluster. "
                 f"Exception: {e}\n"
@@ -1492,11 +1505,12 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
             "An exception has occured while performing the outbound connectivity check "
             "on the cluster."
         )
-        telemetry.set_exception(
-            exception=e,
-            fault_type=consts.Outbound_Connectivity_Check_Fault_Type,
-            summary="Error occured while performing outbound connectivity check in the cluster",
-        )
+        if outbound_connectivity_check_for == "troubleshoot":
+            telemetry.set_exception(
+                exception=e,
+                fault_type=consts.Outbound_Connectivity_Check_Fault_Type,
+                summary="Error occured while performing outbound connectivity check in the cluster",
+            )
         diagnoser_output.append(
             "An exception has occured while performing the outbound connectivity check on the cluster. "
             f"Exception: {e}\n"

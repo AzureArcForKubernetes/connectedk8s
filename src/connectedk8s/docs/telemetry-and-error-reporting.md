@@ -1,5 +1,8 @@
 # ConnectedK8s Telemetry and Error Reporting
 
+For the duplicate-fault analysis, measured KPI impact, and migration details,
+see [One Fault per ConnectedK8s Failure](one-fault-per-failure.md).
+
 This document describes the shared telemetry and customer-facing error reporting
 constructs used by the `connectedk8s` Azure CLI extension.
 
