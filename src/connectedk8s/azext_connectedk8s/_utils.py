@@ -537,7 +537,10 @@ def set_connected_cluster_arm_id_telemetry_context(
 def add_connectedk8s_telemetry_event(
     cmd: CLICommand | None, properties: dict[str, Any]
 ) -> None:
-    event_properties = properties.copy()
+    event_properties = {
+        key: _sanitize_telemetry_text(value) if isinstance(value, str) else value
+        for key, value in properties.items()
+    }
     if cmd is not None:
         arm_id = cmd.cli_ctx.data.get(
             consts.Connected_Cluster_Arm_Id_Telemetry_Context_Key
@@ -547,6 +550,20 @@ def add_connectedk8s_telemetry_event(
                 arm_id
             )
     telemetry.add_extension_event("connectedk8s", event_properties)
+
+
+def _sanitize_telemetry_text(value: str) -> str:
+    # Azure CLI telemetry replaces apostrophes with quotes before parsing JSON.
+    return value.replace("'", "")
+
+
+def _sanitize_exception_for_telemetry(exception: BaseException) -> BaseException:
+    sanitized_message = _sanitize_telemetry_text(str(exception))
+    if sanitized_message == str(exception):
+        return exception
+
+    telemetry_exception_type = type(exception.__class__.__name__, (Exception,), {})
+    return telemetry_exception_type(sanitized_message)
 
 
 def report_connectedk8s_warning(
@@ -587,7 +604,7 @@ def report_connectedk8s_diagnostic(
 ) -> str:
     """Report one standardized diagnostic to telemetry without raising it."""
     message = error.format(**context)
-    telemetry_message = message.replace("'", "")
+    telemetry_message = _sanitize_telemetry_text(message)
     properties = (telemetry_properties or {}).copy()
     properties.update(
         {
@@ -608,7 +625,11 @@ def report_connectedk8s_diagnostic(
     if user_fault:
         telemetry.set_user_fault()
     telemetry.set_exception(
-        exception=exception if exception is not None else Exception(message),
+        exception=(
+            _sanitize_exception_for_telemetry(exception)
+            if exception is not None
+            else Exception(telemetry_message)
+        ),
         fault_type=fault_type or error.fault_type,
         summary=telemetry_message,
     )
