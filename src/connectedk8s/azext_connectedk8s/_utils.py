@@ -563,7 +563,8 @@ def _sanitize_exception_for_telemetry(exception: BaseException) -> BaseException
         return exception
 
     telemetry_exception_type = type(exception.__class__.__name__, (Exception,), {})
-    return telemetry_exception_type(sanitized_message)
+    telemetry_exception: BaseException = telemetry_exception_type(sanitized_message)
+    return telemetry_exception
 
 
 def report_connectedk8s_warning(
