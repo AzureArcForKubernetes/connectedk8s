@@ -271,8 +271,7 @@ Proxy_Bypass_Arc_Keyword = "Arc"
 # Announces the Arc bypass, which is kept until cleared, and names the command that clears it.
 Proxy_Bypass_Arc_Applied_Message = (
     "Bypassing the proxy for the Azure Arc private-link endpoints. This is kept when "
-    "--proxy-skip-range is changed later; run "
-    "'az connectedk8s update --clear-proxy-bypass Arc' to stop bypassing them"
+    "--proxy-skip-range is changed later. Run 'az connectedk8s update --clear-proxy-bypass Arc' to stop bypassing them."
 )
 # Names the carry-over, so keeping a bypass the command did not mention is not a surprise.
 Proxy_Bypass_Arc_Preserved_Warning = (

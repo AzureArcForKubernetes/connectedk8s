@@ -105,7 +105,11 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             options_list=["--add-proxy-bypass"],
             arg_group="Proxy",
             validator=validate_proxy_bypass,
-            help="Comma-separated list of values that should bypass the proxy.",
+            help=(
+                "Comma-separated list of values that should bypass the proxy. Allowed "
+                "values: Arc (Azure Arc private-link endpoints), "
+                "Microsoft.AzureMonitor.Containers (Container Insights agent)."
+            ),
         )
         c.argument(
             "proxy_cert",
@@ -275,14 +279,22 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             options_list=["--add-proxy-bypass"],
             arg_group="Proxy",
             validator=validate_proxy_bypass,
-            help="Comma-separated list of values that should bypass the proxy.",
+            help=(
+                "Comma-separated list of values that should bypass the proxy. Allowed "
+                "values: Arc (Azure Arc private-link endpoints), "
+                "Microsoft.AzureMonitor.Containers (Container Insights agent)."
+            ),
         )
         c.argument(
             "clear_proxy_bypass",
             options_list=["--clear-proxy-bypass"],
             arg_group="Proxy",
             validator=validate_proxy_bypass,
-            help="Comma-separated list of values that should stop bypassing the proxy.",
+            help=(
+                "Comma-separated list of values that should stop bypassing the proxy. "
+                "Allowed values: Arc (Azure Arc private-link endpoints), "
+                "Microsoft.AzureMonitor.Containers (Container Insights agent)."
+            ),
         )
         c.argument(
             "distribution",
