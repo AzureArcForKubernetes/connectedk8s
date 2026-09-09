@@ -235,6 +235,12 @@ def test_fetch_results_reports_unclassified_error_once(monkeypatch):
     assert exc_info.value is terminal_error
     report_error.assert_called_once()
     assert report_error.call_args.kwargs["exception"] is failure
+    assert report_error.call_args.kwargs["telemetry_properties"] == {
+        consts.Telemetry_Onboarding_Error_Type_Key: (
+            consts.Cluster_Diagnostic_Checks_Execution_Failed_Fault_Type
+        ),
+        consts.Telemetry_Onboarding_Error_Message_Key: str(failure),
+    }
 
 
 def test_job_execution_propagates_helm_install_error_unchanged(monkeypatch):

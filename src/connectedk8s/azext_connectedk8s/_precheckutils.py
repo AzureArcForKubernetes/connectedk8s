@@ -461,6 +461,12 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
             errors.PREDIAGNOSTICS_FAILED,
             exception=e,
             fault_type=consts.Cluster_Diagnostic_Checks_Execution_Failed_Fault_Type,
+            telemetry_properties={
+                consts.Telemetry_Onboarding_Error_Type_Key: (
+                    consts.Cluster_Diagnostic_Checks_Execution_Failed_Fault_Type
+                ),
+                consts.Telemetry_Onboarding_Error_Message_Key: str(e),
+            },
             details=str(e),
         ) from e
 
