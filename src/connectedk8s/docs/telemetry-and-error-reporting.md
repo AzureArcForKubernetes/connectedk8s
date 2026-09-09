@@ -241,6 +241,7 @@ Standard extension-event properties:
 | `Context.Default.AzureCLI.errorMessage` | Fully rendered customer message |
 | `Context.Default.AzureCLI.errorTsgLink` | Optional `ArcError.tsg_link` |
 | `Context.Default.AzureCLI.errorExceptionType` | Deepest wrapped exception class where available; exception messages are not included |
+| `Context.Default.AzureCLI.errorHttpStatusCode` | Numeric Kubernetes API status, when available, to distinguish authorization, missing-resource, throttling, and server errors without recording response headers or bodies in this field |
 
 The reporter also calls:
 

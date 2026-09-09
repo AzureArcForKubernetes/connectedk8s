@@ -577,12 +577,11 @@ def create_connectedk8s(
         utils.report_connectedk8s_warning(
             cmd,
             errors.LINUX_NODE_NOT_FOUND,
+            telemetry_properties=precheckutils.get_post_diagnostic_precheck_telemetry_properties(
+                check_name="LinuxNodeExists",
+                reason=linux_node_error,
+            ),
             details=linux_node_error,
-        )
-        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
-            check_name="LinuxNodeExists",
-            reason=linux_node_error,
-            cmd=cmd,
         )
         logger.warning(
             "Please ensure that this Kubernetes cluster has any nodes with OS 'linux', for scheduling the "
@@ -638,7 +637,7 @@ def create_connectedk8s(
     utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Checking if it is an AKS cluster
-    is_aks_cluster = check_aks_cluster(kube_config, kube_context)
+    is_aks_cluster = check_aks_cluster(kube_config, kube_context, cmd=cmd)
     if is_aks_cluster:
         logger.warning(
             "Connecting an Azure Kubernetes Service (AKS) cluster to Azure Arc is only required for "
@@ -2316,7 +2315,9 @@ def generate_patch_payload(
     )
 
 
-def get_kubeconfig_node_dict(kube_config: str | None = None) -> ConfigNode:
+def get_kubeconfig_node_dict(
+    kube_config: str | None = None, cmd: CLICommand | None = None
+) -> ConfigNode:
     if kube_config is None:
         kube_config = os.getenv("KUBECONFIG") or os.path.join(
             os.path.expanduser("~"), ".kube", "config"
@@ -2325,7 +2326,7 @@ def get_kubeconfig_node_dict(kube_config: str | None = None) -> ConfigNode:
         kubeconfig_data = KubeConfigMerger(kube_config).config
     except Exception as ex:
         raise utils.report_connectedk8s_error(
-            None,
+            cmd,
             errors.KUBECONFIG_LOAD_FAILED,
             exception=ex,
             details=f"Error while fetching details from kubeconfig. {ex}",
@@ -2334,21 +2335,32 @@ def get_kubeconfig_node_dict(kube_config: str | None = None) -> ConfigNode:
 
 
 def check_proxy_kubeconfig(
-    kube_config: str | None, kube_context: str | None, arm_hash: str
+    kube_config: str | None,
+    kube_context: str | None,
+    arm_hash: str,
+    cmd: CLICommand | None = None,
 ) -> bool:
-    server_address = get_server_address(kube_config, kube_context)
+    server_address = get_server_address(kube_config, kube_context, cmd=cmd)
     regex_string = r"https://127.0.0.1:[0-9]{1,5}/" + arm_hash
     p = re.compile(regex_string)
     return bool(p.fullmatch(server_address))
 
 
-def check_aks_cluster(kube_config: str | None, kube_context: str | None) -> bool:
-    server_address = get_server_address(kube_config, kube_context)
+def check_aks_cluster(
+    kube_config: str | None,
+    kube_context: str | None,
+    cmd: CLICommand | None = None,
+) -> bool:
+    server_address = get_server_address(kube_config, kube_context, cmd=cmd)
     return server_address.find(".azmk8s.io:") != -1
 
 
-def get_server_address(kube_config: str | None, kube_context: str | None) -> str:
-    config_data = get_kubeconfig_node_dict(kube_config=kube_config)
+def get_server_address(
+    kube_config: str | None,
+    kube_context: str | None,
+    cmd: CLICommand | None = None,
+) -> str:
+    config_data = get_kubeconfig_node_dict(kube_config=kube_config, cmd=cmd)
     try:
         all_contexts, current_context = config.list_kube_config_contexts(
             config_file=kube_config
@@ -2559,7 +2571,7 @@ def delete_connectedk8s(
         )
         arm_hash = hashlib.sha256(armid.lower().encode("utf-8")).hexdigest()
 
-        if check_proxy_kubeconfig(kube_config, kube_context, arm_hash):
+        if check_proxy_kubeconfig(kube_config, kube_context, arm_hash, cmd=cmd):
             telemetry.set_exception(
                 exception=Exception("Encountered proxy kubeconfig during deletion."),
                 fault_type=consts.Proxy_Kubeconfig_During_Deletion_Fault_Type,
