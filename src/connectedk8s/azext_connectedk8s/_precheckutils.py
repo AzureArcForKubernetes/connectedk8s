@@ -1064,8 +1064,6 @@ def helm_install_release_cluster_diagnostic_checks(
     if response_helm_install.returncode != 0:
         error = error_helm_install.decode("ascii", errors="replace")
         error = azext_utils.process_helm_error_detail(error)
-        if "forbidden" in error or "timed out waiting for the condition" in error:
-            telemetry.set_user_fault()
 
         raise azext_utils.report_connectedk8s_error(
             cmd,

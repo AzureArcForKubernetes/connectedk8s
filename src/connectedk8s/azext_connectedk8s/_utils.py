@@ -561,13 +561,14 @@ def report_connectedk8s_diagnostic(
 ) -> str:
     """Report one standardized diagnostic to telemetry without raising it."""
     message = error.format(**context)
+    telemetry_message = message.replace("'", "")
     properties = (telemetry_properties or {}).copy()
     properties.update(
         {
             consts.Telemetry_Error_Code_Key: error.code,
             consts.Telemetry_Error_Fault_Type_Key: fault_type or error.fault_type,
             consts.Telemetry_Error_Name_Key: error.name,
-            consts.Telemetry_Error_Message_Key: message,
+            consts.Telemetry_Error_Message_Key: telemetry_message,
         }
     )
     if error.tsg_link:
@@ -579,7 +580,7 @@ def report_connectedk8s_diagnostic(
     telemetry.set_exception(
         exception=exception if exception is not None else Exception(message),
         fault_type=fault_type or error.fault_type,
-        summary=message,
+        summary=telemetry_message,
     )
     return message
 
@@ -796,18 +797,19 @@ def get_chart_path(
 
     # Returning helm chart path
     helm_chart_path = os.path.join(chart_export_path, chart_name)
-    if not os.path.isdir(helm_chart_path):
-        details = f"Expected exported chart directory was not found: {helm_chart_path}"
+    if chart_folder_name == consts.Pre_Onboarding_Helm_Charts_Folder_Name:
+        chart_path = helm_chart_path
+    else:
+        chart_path = os.getenv("HELMCHART", helm_chart_path)
+
+    if not os.path.isdir(chart_path):
+        details = f"Expected exported chart directory was not found: {chart_path}"
         raise report_connectedk8s_error(
             cmd,
             errors.HELM_CHART_EXPORT_FAILED,
             exception=FileNotFoundError(details),
             details=details,
         )
-    if chart_folder_name == consts.Pre_Onboarding_Helm_Charts_Folder_Name:
-        chart_path = helm_chart_path
-    else:
-        chart_path = os.getenv("HELMCHART", helm_chart_path)
 
     return chart_path
 
@@ -2454,27 +2456,23 @@ def validate_helm_client(cmd: CLICommand, helm_client_location: str) -> None:
 
     if response.returncode != 0:
         details = process_helm_error_detail(error.decode("ascii", errors="replace"))
-        raise report_connectedk8s_error(
-            cmd,
-            errors.HELM_CLIENT_ERROR,
-            exception=Exception(details),
-            user_fault=True,
-            details=details,
+        logger.debug(
+            "Unable to validate Helm client %s; continuing so the requested Helm "
+            "operation can provide the authoritative failure: %s",
+            helm_client_location,
+            details,
         )
+        return
 
     version_output = output.decode("ascii", errors="replace").strip()
     major_version_match = re.search(r"v?(\d+)\.", version_output)
     if not major_version_match:
-        raise report_connectedk8s_error(
-            cmd,
-            errors.HELM_VERSION_TOO_OLD,
-            exception=Exception(version_output),
-            user_fault=True,
-            details=(
-                f"Could not determine a supported Helm version from "
-                f"'{version_output}'. Helm version 3 or later is required."
-            ),
+        logger.debug(
+            "Unable to determine the Helm major version from %r; continuing so the "
+            "requested Helm operation can diagnose compatibility",
+            version_output,
         )
+        return
     if int(major_version_match.group(1)) < 3:
         raise report_connectedk8s_error(
             cmd,

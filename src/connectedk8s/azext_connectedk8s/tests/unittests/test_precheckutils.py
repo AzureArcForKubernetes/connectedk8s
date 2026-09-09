@@ -188,6 +188,35 @@ def test_prediagnostics_helm_install_uses_standardized_error(monkeypatch):
     assert properties["Context.Default.AzureCLI.resourceid"] == arm_id
     assert properties["Context.Default.AzureCLI.errorMessage"] == str(raised.value)
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == str(raised.value)
+    mock_telemetry.set_user_fault.assert_not_called()
+
+
+def test_prediagnostics_helm_install_sets_user_fault_once(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"Error: forbidden")
+    monkeypatch.setattr(precheckutils, "Popen", MagicMock(return_value=process))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(precheckutils.azext_utils, "telemetry", mock_telemetry)
+    monkeypatch.setattr(precheckutils, "telemetry", mock_telemetry)
+
+    with pytest.raises(precheckutils.AzCLIError):
+        precheckutils.helm_install_release_cluster_diagnostic_checks(
+            MagicMock(),
+            "/tmp/chart",
+            "eastus",
+            "",
+            "",
+            "",
+            "",
+            "AzureCloud",
+            None,
+            None,
+            "/usr/bin/helm",
+            "mcr.microsoft.com",
+        )
+
+    mock_telemetry.set_user_fault.assert_called_once_with()
+    mock_telemetry.set_exception.assert_called_once()
 
 
 def test_log_save_failure_reports_azk8s0606_with_command_context(monkeypatch):
