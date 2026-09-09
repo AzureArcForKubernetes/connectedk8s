@@ -256,6 +256,7 @@ def test_load_kube_config_forwards_command_context(monkeypatch):
     assert raised.value is expected
     assert report_error.call_args.args[0] is cmd
     assert report_error.call_args.kwargs["user_fault"] is True
+    assert report_error.call_args.kwargs["details"] == "invalid kubeconfig"
 
 
 def test_check_kube_connection_forwards_command_context(monkeypatch):

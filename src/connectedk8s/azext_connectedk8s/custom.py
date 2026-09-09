@@ -582,11 +582,6 @@ def create_connectedk8s(
     crb_permission = utils.can_create_clusterrolebindings()
     if not crb_permission or crb_permission == "Unknown":
         ex_msg = "Your credentials doesn't have permission to create clusterrolebindings on this kubernetes cluster."
-        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
-            check_name="ClusterRoleBindings",
-            reason=ex_msg,
-            cmd=cmd,
-        )
         err_msg = (
             "Your credentials doesn't have permission to create clusterrolebindings on this "
             "kubernetes cluster. Please check your permissions."
@@ -596,6 +591,10 @@ def create_connectedk8s(
             errors.CLUSTER_ROLE_BINDING_CREATE_FORBIDDEN,
             exception=Exception(ex_msg),
             user_fault=True,
+            telemetry_properties=precheckutils.get_post_diagnostic_precheck_telemetry_properties(
+                check_name="ClusterRoleBindings",
+                reason=ex_msg,
+            ),
             details=err_msg,
         )
 
@@ -1841,6 +1840,7 @@ def load_kube_config(
             errors.KUBECONFIG_LOAD_FAILED,
             exception=e,
             user_fault=True,
+            details=str(e),
         ) from e
 
 
