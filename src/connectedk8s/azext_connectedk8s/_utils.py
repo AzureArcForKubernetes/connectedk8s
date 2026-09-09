@@ -1890,12 +1890,18 @@ def kubernetes_exception_handler(
             logger.debug("Kubernetes Exception: ", exc_info=True)
         details = error_message + "\nError Response: " + str(ex.body)
         if arc_error is not None:
+            telemetry_properties = (
+                {consts.Telemetry_Error_Http_Status_Code_Key: status_code}
+                if isinstance(status_code, int)
+                else {}
+            )
             if raise_error:
                 raise report_connectedk8s_error(
                     cmd,
                     arc_error,
                     exception=ex,
                     user_fault=True,
+                    telemetry_properties=telemetry_properties,
                     details=details,
                 ) from ex
             report_connectedk8s_warning(
@@ -1998,7 +2004,6 @@ def ensure_namespace_cleanup(cmd: CLICommand | None = None) -> None:
                 "Error while retrieving namespace information; retrying.",
                 exc_info=True,
             )
-            time.sleep(5)
 
 
 def delete_arc_agents(
