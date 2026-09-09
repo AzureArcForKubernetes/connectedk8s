@@ -665,8 +665,7 @@ def test_report_connectedk8s_error_sanitizes_telemetry_apostrophes(monkeypatch):
     )
 
     assert str(reported_error) == (
-        "[AZK8S0009] TestError: Test message: "
-        "can't connect to host='127.0.0.1'"
+        "[AZK8S0009] TestError: Test message: can't connect to host='127.0.0.1'"
     )
     _, properties = mock_telemetry.add_extension_event.call_args.args
     telemetry_message = properties["Context.Default.AzureCLI.errorMessage"]
