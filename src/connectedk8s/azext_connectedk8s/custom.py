@@ -398,7 +398,7 @@ def create_connectedk8s(
                 )
             )
             precheckutils.fetching_cli_output_logs(
-                filepath_with_timestamp, storage_space_available, 1
+                filepath_with_timestamp, storage_space_available, 1, cmd=cmd
             )
 
             if precheckutils.diagnoser_output:
@@ -484,6 +484,7 @@ def create_connectedk8s(
         raise utils.report_connectedk8s_error(
             cmd,
             errors.POST_DIAGNOSTIC_PRECHECK_FAILED,
+            user_fault=True,
             fault_type=consts.Cluster_Diagnostic_Prechecks_Failed,
             details=(
                 "One or more pre-onboarding diagnostic checks failed; cluster onboarding will not proceed. "

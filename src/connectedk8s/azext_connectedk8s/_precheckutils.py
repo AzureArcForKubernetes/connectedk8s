@@ -32,7 +32,6 @@ import shutil
 from subprocess import PIPE, Popen
 from typing import TYPE_CHECKING, Any
 
-from azure.cli.core import telemetry
 from azure.cli.core.azclierror import AzCLIError
 from knack.log import get_logger
 from kubernetes import config, watch
@@ -121,37 +120,8 @@ def _parse_crd_check_result(crd_check_log: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Telemetry helpers
-# These emit fault events to ADX via the Azure CLI telemetry pipeline.
-# Key data is encoded in the fault_type string (whitelisted field) rather than
-# in custom properties or long descriptions, which are dropped/rejected.
-# ---------------------------------------------------------------------------
-
-
-def _send_onboarding_telemetry_event(fault_type: str, summary: str) -> None:
-    """Send a fault telemetry event with a short summary.
-
-    The fault_type should encode any structured data (check results, component
-    names) since it maps to the whitelisted context.default.azurecli.faulttype
-    field in ADX. The summary must be short and free of raw JSON to avoid
-    pipeline content-validation rejections.
-    """
-    logger.debug(
-        "[Telemetry] faultType=%s summary=%s",
-        fault_type,
-        summary,
-    )
-    try:
-        raise RuntimeError(summary)
-    except RuntimeError as e:
-        telemetry.set_exception(
-            exception=e,
-            fault_type=fault_type,
-            summary=summary,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Public telemetry functions (called from fetch_diagnostic_checks_results and custom.py)
+# These emit contributing diagnostic events. The command-terminating caller is
+# responsible for emitting the single Azure CLI fault for the failed operation.
 # ---------------------------------------------------------------------------
 
 
@@ -197,13 +167,7 @@ def _attach_error_details(components: list[dict[str, Any]]) -> None:
 def send_prediagnostic_job_execution_error_telemetry(
     reason: str = "", cmd: CLICommand | None = None
 ) -> None:
-    """Send telemetry when prediagnostic job execution fails.
-
-    Encodes the job status into the fault_type so ADX queries can distinguish
-    between not-scheduled, not-completed, cleanup-failed, etc. without relying
-    on add_extension_event properties (which get stripped by GDPR pipeline).
-    """
-    # Build structured message for add_extension_event (best-effort, may be stripped)
+    """Send a contributing diagnostic event when the prediagnostic job fails."""
     msg: dict[str, Any] = {"jobExecutionStatus": prediagnostic_job_execution_status}
     if reason:
         msg["reason"] = reason
@@ -213,18 +177,6 @@ def send_prediagnostic_job_execution_error_telemetry(
         consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg).replace("'", ""),
     }
     azext_utils.add_connectedk8s_telemetry_event(cmd, props)
-
-    # Encode job status into fault_type for ADX visibility
-    status_slug = prediagnostic_job_execution_status.replace(" ", "-").lower()
-    fault_type = f"prediagnostics-job-{status_slug}"
-
-    # Build a descriptive summary that survives into reserved.datamodel.fault.description
-    short_reason = reason[:200] if reason else "no additional details"
-    summary = (
-        f"Prediagnostic job failed | status={prediagnostic_job_execution_status} | "
-        f"reason={short_reason}"
-    )
-    _send_onboarding_telemetry_event(fault_type, summary)
 
 
 def _report_prediagnostic_log_save_failure(
@@ -240,11 +192,6 @@ def _report_prediagnostic_log_save_failure(
             consts.Telemetry_Error_Message_Key: message,
         },
     )
-    telemetry.set_exception(
-        exception=exception,
-        fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-        summary=message,
-    )
     logger.warning(message)
 
 
@@ -253,12 +200,7 @@ def send_prediagnostic_check_failure_telemetry(
     outbound_connectivity_check: str,
     cmd: CLICommand | None = None,
 ) -> None:
-    """Send telemetry when prediagnostic checks fail (job completed but checks did not pass).
-
-    Emits detailed, per-check error information in the summary field (which survives
-    to reserved.datamodel.fault.description in ADX). The fault_type encodes a
-    structured pass/fail/na per check for easy KQL filtering.
-    """
+    """Send per-check diagnostics without creating another command fault."""
     # Build generic component list
     components: list[dict[str, Any]] = [
         {"componentName": "dns", "checkResult": dns_check},
@@ -281,40 +223,6 @@ def send_prediagnostic_check_failure_telemetry(
     }
     azext_utils.add_connectedk8s_telemetry_event(cmd, props)
 
-    # Build the encoded fault_type (survives to context.default.azurecli.faulttype)
-    def _short(result: str) -> str:
-        return {"Passed": "pass", "Failed": "fail", "NotApplicable": "na"}.get(
-            result, "incomplete"
-        )
-
-    fault_type = (
-        f"prediagnostics"
-        f"-dns-{_short(dns_check)}"
-        f"-outbound-{_short(outbound_connectivity_check)}"
-        f"-entra-{_short(prediagnostic_entra_check)}"
-        f"-crd-{_short(prediagnostic_crd_check)}"
-    )
-
-    # Build a rich summary with per-check errors (survives to reserved.datamodel.fault.description)
-    failed_details: list[str] = []
-    for comp in components:
-        if comp["checkResult"] == consts.Diagnostic_Check_Failed:
-            error_msg = comp.get("error", "no error details captured")
-            failed_details.append(f"{comp['componentName']}={error_msg}")
-
-    if failed_details:
-        # Truncate to 500 chars to stay under any pipeline limits
-        details_str = " | ".join(failed_details)[:500]
-        summary = f"Prediagnostic check failures: {details_str}"
-    else:
-        summary = (
-            f"Prediagnostic checks failed | "
-            f"dns={dns_check} outbound={outbound_connectivity_check} "
-            f"entra={prediagnostic_entra_check} crd={prediagnostic_crd_check}"
-        )
-
-    _send_onboarding_telemetry_event(fault_type, summary)
-
 
 def send_post_diagnostic_precheck_failure_telemetry(
     check_name: str, reason: str, cmd: CLICommand | None = None
@@ -328,14 +236,6 @@ def send_post_diagnostic_precheck_failure_telemetry(
         consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg).replace("'", ""),
     }
     azext_utils.add_connectedk8s_telemetry_event(cmd, props)
-
-    # Also send via set_exception for ADX fault_type encoding
-    fault_type = f"{consts.Post_Diagnostic_Precheck_Fault_Type}-{check_name}"
-    short_reason = reason[:80] if reason else "unknown"
-    _send_onboarding_telemetry_event(
-        fault_type,
-        f"Post-diagnostic precheck failed: {short_reason}",
-    )
 
 
 def get_precheck_failure_summary() -> str:
@@ -447,6 +347,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                 filepath_with_timestamp,
                 storage_space_available,
                 diagnoser_output,
+                emit_fault=False,
             )
             prediagnostic_dns_check = dns_check
             outbound_connectivity_check, storage_space_available = (
@@ -555,14 +456,19 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
             "An exception has occured while trying to execute cluster diagnostic checks "
             "container on the cluster."
         )
-        send_prediagnostic_job_execution_error_telemetry(reason=str(e), cmd=cmd)
-        telemetry.set_exception(
+        raise azext_utils.report_connectedk8s_error(
+            cmd,
+            errors.PREDIAGNOSTICS_FAILED,
             exception=e,
             fault_type=consts.Cluster_Diagnostic_Checks_Execution_Failed_Fault_Type,
-            summary="Error occured while executing the cluster diagnostic checks container",
-        )
-
-    return consts.Diagnostic_Check_Incomplete, storage_space_available
+            telemetry_properties={
+                consts.Telemetry_Onboarding_Error_Type_Key: (
+                    consts.Cluster_Diagnostic_Checks_Execution_Failed_Fault_Type
+                ),
+                consts.Telemetry_Onboarding_Error_Message_Key: str(e),
+            },
+            details=str(e),
+        ) from e
 
 
 # ---------------------------------------------------------------------------
@@ -708,10 +614,14 @@ def executing_cluster_diagnostic_checks_job(
                         'install the new helm release. Please cleanup older release using "helm delete '
                         'cluster-diagnostic-checks -n azure-arc-release" and try onboarding again'
                     )
-                    telemetry.set_exception(
-                        exception=Exception(error_kubectl_delete_helm.decode("ascii")),
-                        fault_type=consts.Cluster_Diagnostic_Checks_Release_Cleanup_Failed,
-                        summary="Error while executing Cluster Diagnostic Checks Job",
+                    azext_utils.add_connectedk8s_telemetry_event(
+                        cmd,
+                        {
+                            consts.Telemetry_Onboarding_Error_Type_Key: consts.Cluster_Diagnostic_Checks_Release_Cleanup_Failed,
+                            consts.Telemetry_Onboarding_Error_Message_Key: error_kubectl_delete_helm.decode(
+                                "ascii"
+                            ),
+                        },
                     )
                     return None
 
@@ -831,11 +741,6 @@ def executing_cluster_diagnostic_checks_job(
                     consts.Telemetry_Error_Message_Key: message,
                 },
             )
-            telemetry.set_exception(
-                exception=Exception(message),
-                fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Scheduled,
-                summary=message,
-            )
             logger.warning(message)
             logger.debug(
                 "Cluster diagnostic Job couldn't be scheduled.  Deleting the helm release in the cluster"
@@ -900,10 +805,12 @@ def executing_cluster_diagnostic_checks_job(
                 except OSError as e:
                     if "[Errno 28]" in str(e):
                         storage_space_available = False
-                        telemetry.set_exception(
-                            exception=e,
-                            fault_type=consts.No_Storage_Space_Available_Fault_Type,
-                            summary="No space left on device",
+                        azext_utils.add_connectedk8s_telemetry_event(
+                            cmd,
+                            {
+                                consts.Telemetry_Onboarding_Error_Type_Key: consts.No_Storage_Space_Available_Fault_Type,
+                                consts.Telemetry_Onboarding_Error_Message_Key: "No space left on device",
+                            },
                         )
                         shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
                     else:
@@ -923,11 +830,6 @@ def executing_cluster_diagnostic_checks_job(
                     consts.Telemetry_Error_Name_Key: errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.name,
                     consts.Telemetry_Error_Message_Key: message,
                 },
-            )
-            telemetry.set_exception(
-                exception=Exception(message),
-                fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Complete,
-                summary=message,
             )
             logger.warning(message)
 
@@ -965,10 +867,12 @@ def executing_cluster_diagnostic_checks_job(
                 except OSError as e:
                     if "[Errno 28]" in str(e):
                         storage_space_available = False
-                        telemetry.set_exception(
-                            exception=e,
-                            fault_type=consts.No_Storage_Space_Available_Fault_Type,
-                            summary="No space left on device",
+                        azext_utils.add_connectedk8s_telemetry_event(
+                            cmd,
+                            {
+                                consts.Telemetry_Onboarding_Error_Type_Key: consts.No_Storage_Space_Available_Fault_Type,
+                                consts.Telemetry_Onboarding_Error_Message_Key: "No space left on device",
+                            },
                         )
                         shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
                     else:
@@ -1070,7 +974,10 @@ def helm_install_release_cluster_diagnostic_checks(
 
 
 def fetching_cli_output_logs(
-    filepath_with_timestamp: str, storage_space_available: bool, flag: int
+    filepath_with_timestamp: str,
+    storage_space_available: bool,
+    flag: int,
+    cmd: CLICommand | None = None,
 ) -> str:
     # This function is used to store the output that is obtained throughout the Diagnoser process
 
@@ -1115,10 +1022,12 @@ def fetching_cli_output_logs(
     except OSError as e:
         if "[Errno 28]" in str(e):
             storage_space_available = False
-            telemetry.set_exception(
-                exception=e,
-                fault_type=consts.No_Storage_Space_Available_Fault_Type,
-                summary="No space left on device",
+            azext_utils.add_connectedk8s_telemetry_event(
+                cmd,
+                {
+                    consts.Telemetry_Onboarding_Error_Type_Key: consts.No_Storage_Space_Available_Fault_Type,
+                    consts.Telemetry_Onboarding_Error_Message_Key: "No space left on device",
+                },
             )
             shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
 
@@ -1127,10 +1036,12 @@ def fetching_cli_output_logs(
         logger.exception(
             "An exception has occured while trying to store the diagnoser results."
         )
-        telemetry.set_exception(
-            exception=e,
-            fault_type=consts.Diagnoser_Result_Fault_Type,
-            summary="Error while storing the diagnoser results",
+        azext_utils.add_connectedk8s_telemetry_event(
+            cmd,
+            {
+                consts.Telemetry_Onboarding_Error_Type_Key: consts.Diagnoser_Result_Fault_Type,
+                consts.Telemetry_Onboarding_Error_Message_Key: str(e),
+            },
         )
 
     return consts.Diagnostic_Check_Failed

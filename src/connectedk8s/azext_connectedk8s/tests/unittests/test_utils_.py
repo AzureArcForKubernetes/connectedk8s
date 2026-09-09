@@ -55,6 +55,7 @@ from azure.cli.core.azclierror import (  # noqa: E402
     ValidationError,
 )
 
+import azext_connectedk8s._constants as consts  # noqa: E402
 import azext_connectedk8s._errors as errors_module  # noqa: E402
 import azext_connectedk8s._utils as utils_module  # noqa: E402
 from azext_connectedk8s._errors import ArcError  # noqa: E402
@@ -66,6 +67,7 @@ from azext_connectedk8s._utils import (  # noqa: E402
     _resolve_helm_timeout_classification,
     build_helm_timeout_report,
     check_cluster_DNS,
+    check_cluster_outbound_connectivity,
     get_advanced_helm_timeout_fault_type,
     get_mcr_path,
     is_helm_timeout_error,
@@ -628,13 +630,14 @@ if __name__ == "__main__":
 
 
 class TestCheckClusterDNS:
-    def _run(self, dns_log):
+    def _run(self, dns_log, emit_fault=True):
         diagnoser_output = []
         result, _ = check_cluster_DNS(
             dns_log,
             os.path.join(os.path.dirname(__file__), "tmp_dns"),
             False,
             diagnoser_output,
+            emit_fault=emit_fault,
         )
         return result, diagnoser_output
 
@@ -663,3 +666,54 @@ class TestCheckClusterDNS:
         result, diag = self._run(log)
         assert result == "Passed"
         assert diag == []
+
+    def test_connect_failure_does_not_emit_contributing_fault(self, monkeypatch):
+        mock_telemetry = MagicMock()
+        monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+        result, _ = self._run(
+            "DNS Result: ;; connection timed out; no servers could be reached",
+            emit_fault=False,
+        )
+
+        assert result == "Failed"
+        mock_telemetry.set_exception.assert_not_called()
+
+
+class TestCheckClusterOutboundConnectivity:
+    def test_connect_failures_do_not_emit_faults_or_set_command_result(
+        self, monkeypatch
+    ):
+        mock_telemetry = MagicMock()
+        monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+        cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+        diagnoser_output = []
+        outbound_log = (
+            "Response Code - Outbound Network Connectivity Check for Cluster Connect"
+            " : https://cluster-connect.example.test/ : 000  "
+            "Outbound Network Connectivity Check for MCR Repo URL Result"
+            " : mcr.microsoft.com : 000"
+        )
+
+        result, _ = check_cluster_outbound_connectivity(
+            outbound_log,
+            os.path.join(os.path.dirname(__file__), "tmp_outbound"),
+            False,
+            diagnoser_output,
+            cmd=cmd,
+        )
+
+        assert result == "Failed"
+        mock_telemetry.set_exception.assert_not_called()
+        mock_telemetry.set_user_fault.assert_not_called()
+        mock_telemetry.add_extension_event.assert_called_once()
+        _, properties = mock_telemetry.add_extension_event.call_args.args
+        assert properties[consts.Telemetry_Error_Code_Key] == "AZK8S0307"
+        assert (
+            properties[consts.Telemetry_Onboarding_Error_Type_Key]
+            == consts.Outbound_Connectivity_Check_Failed_For_Cluster_Connect_Fault_Type
+        )
+        assert (
+            "target=cluster-connect"
+            in properties[consts.Telemetry_Onboarding_Error_Message_Key]
+        )
