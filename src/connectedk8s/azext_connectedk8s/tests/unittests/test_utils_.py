@@ -660,20 +660,23 @@ def test_report_connectedk8s_error_sanitizes_telemetry_apostrophes(monkeypatch):
     reported_error = report_connectedk8s_error(
         None,
         error,
-        details="Run 'helm version' to diagnose",
+        exception=RuntimeError("can't connect to host='127.0.0.1'"),
+        details="can't connect to host='127.0.0.1'",
     )
 
     assert str(reported_error) == (
-        "[AZK8S0009] TestError: Test message: Run 'helm version' to diagnose"
+        "[AZK8S0009] TestError: Test message: "
+        "can't connect to host='127.0.0.1'"
     )
     _, properties = mock_telemetry.add_extension_event.call_args.args
     telemetry_message = properties["Context.Default.AzureCLI.errorMessage"]
     assert telemetry_message == (
-        "[AZK8S0009] TestError: Test message: Run helm version to diagnose"
+        "[AZK8S0009] TestError: Test message: cant connect to host=127.0.0.1"
     )
+    telemetry_exception = mock_telemetry.set_exception.call_args.kwargs["exception"]
+    assert type(telemetry_exception).__name__ == "RuntimeError"
+    assert str(telemetry_exception) == "cant connect to host=127.0.0.1"
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == telemetry_message
-    mock_telemetry.add_extension_event.assert_called_once()
-    mock_telemetry.set_exception.assert_called_once()
 
 
 def test_report_connectedk8s_diagnostic_does_not_build_cli_exception(monkeypatch):
