@@ -1690,8 +1690,54 @@ def send_request_with_retries(
 
 
 def arm_exception_handler(
-    ex: Exception, fault_type: str, summary: str, return_if_not_found: bool = False
+    ex: Exception,
+    fault_type: str,
+    summary: str,
+    return_if_not_found: bool = False,
+    *,
+    cmd: Any | None = None,
+    error: errors.ArcError | None = None,
 ) -> None:
+    status_code = None
+    if isinstance(ex, HttpOperationError):
+        status_code = ex.response.status_code
+    elif isinstance(ex, HttpResponseError):
+        status_code = ex.status_code
+    arm_error_code = _get_arm_error_code(ex)
+
+    if return_if_not_found and (
+        status_code == 404 or isinstance(ex, ResourceNotFoundError)
+    ):
+        return
+
+    if error is not None:
+        reported_error = error
+        if (
+            status_code == 404
+            and error
+            in (
+                errors.CONNECTED_CLUSTER_UPDATE_FAILED,
+                errors.CONNECTED_CLUSTER_DELETE_FAILED,
+            )
+            and arm_error_code in ("connectedclusternotfound", "resourcenotfound")
+        ):
+            reported_error = errors.RESOURCE_NOT_FOUND
+        elif (
+            status_code == 409
+            and error is errors.CONNECTED_CLUSTER_CREATE_FAILED
+            and arm_error_code
+            in ("connectedclusteralreadyexists", "resourcealreadyexists")
+        ):
+            reported_error = errors.RESOURCE_ALREADY_EXISTS
+
+        raise report_connectedk8s_error(
+            cmd,
+            reported_error,
+            exception=ex,
+            user_fault=status_code in (400, 401, 403, 404, 409, 412, 422),
+            details=str(ex),
+        ) from ex
+
     if isinstance(ex, AuthenticationError):
         telemetry.set_exception(exception=ex, fault_type=fault_type, summary=summary)
         raise AzureResponseError(
@@ -1710,8 +1756,6 @@ def arm_exception_handler(
 
     if isinstance(ex, HttpOperationError):
         status_code = ex.response.status_code
-        if status_code == 404 and return_if_not_found:
-            return
         if status_code // 100 == 4:
             telemetry.set_user_fault()
         telemetry.set_exception(exception=ex, fault_type=fault_type, summary=summary)
@@ -1737,8 +1781,6 @@ def arm_exception_handler(
 
     if isinstance(ex, HttpResponseError):
         status_code = ex.status_code
-        if status_code == 404 and return_if_not_found:
-            return
         if status_code and status_code // 100 == 4:
             telemetry.set_user_fault()
         telemetry.set_exception(exception=ex, fault_type=fault_type, summary=summary)
@@ -1754,13 +1796,39 @@ def arm_exception_handler(
             + f"\nSummary: {summary}"
         )
 
-    if isinstance(ex, ResourceNotFoundError) and return_if_not_found:
-        return
-
     telemetry.set_exception(exception=ex, fault_type=fault_type, summary=summary)
     raise ClientRequestError(
         "Error occured while making ARM request: " + str(ex) + f"\nSummary: {summary}"
     )
+
+
+def _get_arm_error_code(ex: Exception) -> str | None:
+    for value in (getattr(ex, "error", None), getattr(ex, "model", None)):
+        code = _get_error_code_from_value(value)
+        if code:
+            return code.lower()
+
+    response = getattr(ex, "response", None)
+    if response is None:
+        return None
+    try:
+        payload = response.json()
+    except (AttributeError, TypeError, ValueError):
+        return None
+    code = _get_error_code_from_value(payload)
+    return code.lower() if code else None
+
+
+def _get_error_code_from_value(value: Any) -> str | None:
+    if isinstance(value, dict):
+        nested_error = value.get("error")
+        if isinstance(nested_error, dict):
+            value = nested_error
+        code = value.get("code")
+    else:
+        nested_error = getattr(value, "error", None)
+        code = getattr(nested_error, "code", None) or getattr(value, "code", None)
+    return code if isinstance(code, str) and code else None
 
 
 def kubernetes_exception_handler(
@@ -2490,30 +2558,29 @@ def is_guid(guid: str) -> bool:
 
 
 def check_provider_registrations(
-    cli_ctx: AzCli,
+    cmd: CLICommand,
     subscription_id: str,
     is_gateway_enabled: bool,
     is_workload_identity_enabled: bool,
 ) -> None:
     print(f"Step: {get_utctimestring()}: Checking Provider Registrations")
     try:
-        rp_client = resource_providers_client(cli_ctx, subscription_id)
+        rp_client = resource_providers_client(cmd.cli_ctx, subscription_id)
         cc_registration_state = rp_client.get(
             consts.Connected_Cluster_Provider_Namespace
         ).registration_state
         if cc_registration_state not in consts.allowed_rp_registration_states:
-            telemetry.set_exception(
-                exception=Exception(
-                    f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered"
-                ),
-                fault_type=consts.CC_Provider_Namespace_Not_Registered_Fault_Type,
-                summary=f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered",
-            )
             err_msg = (
                 f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered. Please register it using 'az provider register -n 'Microsoft."
                 "Kubernetes' before running the connect command."
             )
-            raise ValidationError(err_msg)
+            raise report_connectedk8s_error(
+                cmd,
+                errors.CONNECTED_CLUSTER_PROVIDER_NOT_REGISTERED,
+                exception=Exception(err_msg),
+                user_fault=True,
+                details=err_msg,
+            )
         kc_registration_state = rp_client.get(
             consts.Kubernetes_Configuration_Provider_Namespace
         ).registration_state
@@ -2556,8 +2623,13 @@ def check_provider_registrations(
                 raise ValidationError(err_msg)
     except ValidationError:
         raise
-    except Exception:  # pylint: disable=broad-exception-caught
-        logger.exception("Couldn't check the required provider's registration status")
+    except Exception as ex:  # pylint: disable=broad-exception-caught
+        raise report_connectedk8s_error(
+            cmd,
+            errors.RESOURCE_PROVIDER_FETCH_FAILED,
+            exception=ex,
+            details=str(ex),
+        ) from ex
 
 
 def can_create_clusterrolebindings() -> bool | str:
