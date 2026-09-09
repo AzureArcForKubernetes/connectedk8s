@@ -1798,6 +1798,10 @@ def test_cluster_connect_failure_emits_azk8s0307_and_remains_nonfatal(monkeypatc
     assert result == consts.Diagnostic_Check_Passed
     _, properties = mock_telemetry.add_extension_event.call_args.args
     assert properties[consts.Telemetry_Error_Code_Key] == "AZK8S0307"
+    assert (
+        "target=cluster-connect"
+        in properties[consts.Telemetry_Onboarding_Error_Message_Key]
+    )
     mock_telemetry.add_extension_event.assert_called_once()
     mock_telemetry.set_exception.assert_not_called()
     mock_telemetry.set_user_fault.assert_not_called()
