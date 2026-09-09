@@ -67,19 +67,6 @@ def validate_proxy_bypass(namespace: Namespace) -> None:
         )
         raise ArgumentUsageError(err_msg)
 
-    # --proxy-skip-range replaces the skip range, so it already drops the Arc endpoints.
-    # Accepting both would let the clear look meaningful when it changes nothing.
-    if (
-        has_proxy_bypass_keyword(cleared, consts.Proxy_Bypass_Arc_Keyword)
-        and namespace.no_proxy != ""
-    ):
-        err_msg = (
-            f"Cannot specify {consts.Proxy_Bypass_Arc_Keyword} on --clear-proxy-bypass "
-            "together with --proxy-skip-range. --proxy-skip-range replaces the proxy "
-            "skip range, which already removes the Azure Arc private link endpoints."
-        )
-        raise ArgumentUsageError(err_msg)
-
 
 def validate_private_link_properties(namespace: Namespace) -> None:
     if not namespace.enable_private_link and namespace.private_link_scope_resource_id:
