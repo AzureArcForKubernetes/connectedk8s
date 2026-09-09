@@ -9,7 +9,7 @@ from typing import Dict, Optional
 from unittest.mock import MagicMock
 
 import pytest
-from azure.cli.core.azclierror import ValidationError
+from azure.cli.core.azclierror import AzCLIError, FileOperationError, ValidationError
 from kubernetes.client.exceptions import ApiException
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
@@ -318,7 +318,7 @@ def test_namespace_cleanup_transient_lookup_failure_is_not_reported(monkeypatch)
     custom.utils.ensure_namespace_cleanup(cmd)
 
     exception_handler.assert_not_called()
-    sleep.assert_called_once_with(5)
+    sleep.assert_not_called()
 
 
 def test_namespace_cleanup_reports_persistent_lookup_failure_without_raising(
@@ -348,6 +348,190 @@ def test_namespace_cleanup_reports_persistent_lookup_failure_without_raising(
     assert exception_handler.call_args.args[0] is lookup_error
     assert exception_handler.call_args.kwargs["raise_error"] is False
     assert exception_handler.call_args.kwargs["cmd"] is cmd
+
+
+@pytest.fixture
+def onboarding_access_context(monkeypatch):
+    cmd = MagicMock()
+    cmd.cli_ctx.data = {}
+    cmd.cli_ctx.cloud.endpoints.resource_manager = "https://management.azure.com"
+    telemetry = MagicMock()
+    monkeypatch.setattr(custom, "telemetry", telemetry)
+    monkeypatch.setattr(custom.utils, "telemetry", telemetry)
+    monkeypatch.setattr(custom.precheckutils, "telemetry", telemetry)
+    for name, value in {
+        "get_subscription_id": "subscription",
+        "send_cloud_telemetry": "AzureCloud",
+        "set_kube_config": "kubeconfig",
+        "get_config_dp_endpoint": ("endpoint", "stable"),
+        "get_kubectl_client_location": "kubectl",
+        "get_helm_client_location": "helm",
+    }.items():
+        monkeypatch.setattr(custom, name, MagicMock(return_value=value))
+    for name, value in {
+        "validate_custom_token": (False, "eastus"),
+        "check_provider_registrations": None,
+        "get_values_file": None,
+        "get_metadata": {},
+    }.items():
+        monkeypatch.setattr(custom.utils, name, MagicMock(return_value=value))
+    monkeypatch.setattr(custom.config, "load_kube_config", MagicMock())
+    version_api = MagicMock()
+    version_api.get_code.return_value.git_version = "v1.30.0"
+    monkeypatch.setattr(
+        custom.kube_client, "VersionApi", MagicMock(return_value=version_api)
+    )
+    core_api = MagicMock()
+    monkeypatch.setattr(
+        custom.kube_client, "CoreV1Api", MagicMock(return_value=core_api)
+    )
+    permission = MagicMock(return_value=False)
+    monkeypatch.setattr(custom.utils, "can_create_clusterrolebindings", permission)
+    helm_install = MagicMock()
+    monkeypatch.setattr(custom.utils, "helm_install_release", helm_install)
+    return SimpleNamespace(
+        cmd=cmd,
+        telemetry=telemetry,
+        core_api=core_api,
+        permission=permission,
+        helm_install=helm_install,
+        version_api=version_api,
+    )
+
+
+@pytest.mark.parametrize("node_os", ["linux", "windows"])
+@pytest.mark.parametrize("permission", [False, "Unknown"])
+def test_onboarding_permission_failure_emits_one_fault(
+    onboarding_access_context, node_os, permission
+):
+    ctx = onboarding_access_context
+    ctx.core_api.list_node.return_value = V1NodeList(
+        items=[create_node(labels={"kubernetes.io/os": node_os})]
+    )
+    ctx.permission.return_value = permission
+
+    with pytest.raises(ValidationError, match="ClusterRoleBindingCreateForbidden"):
+        custom.create_connectedk8s(
+            ctx.cmd,
+            MagicMock(),
+            "rg",
+            "cluster",
+            infrastructure="azure_stack_hci",
+            distribution="aks_edge_k3s",
+        )
+
+    ctx.telemetry.set_exception.assert_called_once()
+    fault = ctx.telemetry.set_exception.call_args.kwargs
+    assert (
+        fault["fault_type"]
+        == custom.consts.Cannot_Create_ClusterRoleBindings_Fault_Type
+    )
+    ctx.permission.assert_called_once()
+    ctx.helm_install.assert_not_called()
+    properties = ctx.telemetry.add_extension_event.call_args.args[1]
+    assert properties[custom.consts.Telemetry_Error_Code_Key] == (
+        custom.errors.CLUSTER_ROLE_BINDING_CREATE_FORBIDDEN.code
+    )
+    assert properties[
+        custom.consts.Connected_Cluster_Arm_Id_Telemetry_Property
+    ].endswith("/connectedClusters/cluster")
+    warning_events = [
+        call.args[1]
+        for call in ctx.telemetry.add_extension_event.call_args_list
+        if custom.consts.Telemetry_Warning_Code_Key in call.args[1]
+    ]
+    assert len(warning_events) == (0 if node_os == "linux" else 1)
+
+
+@pytest.mark.parametrize("failure_point", ["kubeconfig", "connectivity"])
+def test_onboarding_cluster_access_failure_is_not_reported_twice(
+    onboarding_access_context, monkeypatch, failure_point
+):
+    ctx = onboarding_access_context
+    if failure_point == "kubeconfig":
+        monkeypatch.setattr(
+            custom.config,
+            "load_kube_config",
+            MagicMock(side_effect=RuntimeError("invalid kubeconfig")),
+        )
+    else:
+        ctx.version_api.get_code.side_effect = ApiException(status=403)
+
+    with pytest.raises(AzCLIError):
+        custom.create_connectedk8s(ctx.cmd, MagicMock(), "rg", "cluster")
+
+    ctx.telemetry.set_exception.assert_called_once()
+    ctx.core_api.list_node.assert_not_called()
+    ctx.permission.assert_not_called()
+    ctx.helm_install.assert_not_called()
+    properties = ctx.telemetry.add_extension_event.call_args.args[1]
+    assert properties[custom.consts.Telemetry_Error_Exception_Type_Key] == (
+        "RuntimeError" if failure_point == "kubeconfig" else "ApiException"
+    )
+    if failure_point == "connectivity":
+        assert properties[custom.consts.Telemetry_Error_Http_Status_Code_Key] == 403
+
+
+@pytest.mark.parametrize("status", [401, 403, 404, 429, 500])
+def test_private_key_failure_retains_status_and_emits_one_fault(monkeypatch, status):
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", telemetry)
+    monkeypatch.setattr(custom, "telemetry", telemetry)
+    monkeypatch.setattr(
+        custom.utils, "ensure_arc_namespace_with_helm_metadata", MagicMock()
+    )
+    api = MagicMock()
+    api.create_namespaced_secret.side_effect = ApiException(status=status)
+    monkeypatch.setattr(
+        custom.utils.kube_client, "CoreV1Api", MagicMock(return_value=api)
+    )
+
+    @_telemetry_catch_all
+    def inject(cmd):
+        custom.utils.inject_onboarding_private_key_secret("private-key", cmd=cmd)
+
+    with pytest.raises(AzCLIError):
+        inject(cmd)
+
+    telemetry.set_exception.assert_called_once()
+    properties = telemetry.add_extension_event.call_args.args[1]
+    assert properties[custom.consts.Telemetry_Error_Http_Status_Code_Key] == status
+    assert (
+        properties[custom.consts.Telemetry_Error_Exception_Type_Key] == "ApiException"
+    )
+    assert properties[custom.consts.Telemetry_Error_Fault_Type_Key] == (
+        custom.errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type
+    )
+    api.replace_namespaced_secret.assert_not_called()
+
+
+@pytest.mark.parametrize("check", ["aks", "proxy"])
+def test_kubeconfig_lookup_error_keeps_command_context(monkeypatch, check):
+    arm_id = "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Kubernetes/connectedClusters/cluster"
+    cmd = SimpleNamespace(
+        cli_ctx=SimpleNamespace(
+            data={custom.consts.Connected_Cluster_Arm_Id_Telemetry_Context_Key: arm_id}
+        )
+    )
+    telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", telemetry)
+    monkeypatch.setattr(
+        custom,
+        "KubeConfigMerger",
+        MagicMock(side_effect=RuntimeError("invalid kubeconfig")),
+    )
+    with pytest.raises(FileOperationError):
+        if check == "aks":
+            custom.check_aks_cluster("kubeconfig", None, cmd=cmd)
+        else:
+            custom.check_proxy_kubeconfig("kubeconfig", None, "hash", cmd=cmd)
+
+    telemetry.set_exception.assert_called_once()
+    properties = telemetry.add_extension_event.call_args.args[1]
+    assert (
+        properties[custom.consts.Connected_Cluster_Arm_Id_Telemetry_Property] == arm_id
+    )
 
 
 def create_node(
