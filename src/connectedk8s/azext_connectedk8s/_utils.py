@@ -1051,7 +1051,7 @@ def check_cluster_DNS(
 
 # pylint: disable=too-many-return-statements
 # Outbound connectivity check returns different results based on connection state
-def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,too-many-nested-blocks
+def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,too-many-nested-blocks,too-many-locals
     outbound_connectivity_check_log: str,
     filepath_with_timestamp: str,
     storage_space_available: bool,
@@ -1120,9 +1120,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                     "above endpoint.\n",
                     Cluster_Connect_Precheck_Endpoint_Url,
                 )
-                diagnostic_error = (
-                    errors.CLUSTER_CONNECT_OUTBOUND_CONNECTIVITY_FAILED
-                )
+                diagnostic_error = errors.CLUSTER_CONNECT_OUTBOUND_CONNECTIVITY_FAILED
                 diagnostic_message = diagnostic_error.format()
                 add_connectedk8s_telemetry_event(
                     cmd,

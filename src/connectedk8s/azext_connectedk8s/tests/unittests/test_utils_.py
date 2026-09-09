@@ -713,6 +713,7 @@ class TestCheckClusterOutboundConnectivity:
             properties[consts.Telemetry_Onboarding_Error_Type_Key]
             == consts.Outbound_Connectivity_Check_Failed_For_Cluster_Connect_Fault_Type
         )
-        assert "target=cluster-connect" in properties[
-            consts.Telemetry_Onboarding_Error_Message_Key
-        ]
+        assert (
+            "target=cluster-connect"
+            in properties[consts.Telemetry_Onboarding_Error_Message_Key]
+        )
