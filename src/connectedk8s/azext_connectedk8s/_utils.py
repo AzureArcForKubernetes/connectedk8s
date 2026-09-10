@@ -874,10 +874,10 @@ def pull_helm_chart(
         )
         _, error_helm_chart_pull = response_helm_chart_pull.communicate()
         if response_helm_chart_pull.returncode != 0:
-            error = process_helm_error_detail(
-                error_helm_chart_pull.decode("ascii", errors="replace")
-            )
             if i == retry_count - 1:
+                error = process_helm_error_detail(
+                    error_helm_chart_pull.decode("ascii", errors="replace")
+                )
                 raise report_connectedk8s_error(
                     cmd,
                     errors.HELM_CHART_PULL_FAILED,

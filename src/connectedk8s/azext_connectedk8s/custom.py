@@ -160,8 +160,8 @@ def _generate_key_pair(cmd: CLICommand) -> Any:
         ) from ex
 
 
-def _raise_agent_state_timeout(cmd: CLICommand, operation: str) -> None:
-    raise utils.report_connectedk8s_error(
+def _agent_state_timeout_error(cmd: CLICommand, operation: str) -> AzCLIError:
+    return utils.report_connectedk8s_error(
         cmd,
         errors.AGENT_STATE_TIMEOUT,
         exception=Exception(
@@ -1226,7 +1226,7 @@ def create_connectedk8s(
             )
             return connected_cluster
 
-        _raise_agent_state_timeout(cmd, "create")
+        raise _agent_state_timeout_error(cmd, "create")
     if cl_oid and enable_custom_locations and cl_oid == custom_locations_oid:
         logger.warning(consts.Manual_Custom_Location_Oid_Warning)
     return put_cc_response
@@ -2943,7 +2943,7 @@ def update_connected_cluster(
 
     # If we didn't see a terminal agent state, now's the time to throw an error.
     if not terminal_agent_state:
-        _raise_agent_state_timeout(cmd, "update")
+        raise _agent_state_timeout_error(cmd, "update")
 
     return connected_cluster
 

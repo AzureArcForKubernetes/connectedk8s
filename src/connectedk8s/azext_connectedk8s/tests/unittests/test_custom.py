@@ -91,11 +91,11 @@ def test_agent_state_timeout_reports_real_standardized_error(monkeypatch, operat
     mock_telemetry = MagicMock()
     monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
 
-    with pytest.raises(custom.CLIInternalError) as raised:
-        custom._raise_agent_state_timeout(_cmd_without_arm_id(), operation)
+    error = custom._agent_state_timeout_error(_cmd_without_arm_id(), operation)
 
-    assert str(raised.value).startswith("[AZK8S0506] AgentStateTimeout:")
-    assert f"during {operation}" in str(raised.value)
+    assert isinstance(error, custom.CLIInternalError)
+    assert str(error).startswith("[AZK8S0506] AgentStateTimeout:")
+    assert f"during {operation}" in str(error)
     _assert_standardized_telemetry(
         mock_telemetry, custom.errors.AGENT_STATE_TIMEOUT, False
     )
