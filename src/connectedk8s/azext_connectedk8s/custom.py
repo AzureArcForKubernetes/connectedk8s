@@ -2924,7 +2924,6 @@ def update_connected_cluster(
         kube_config,
         kube_context,
         helm_client_location,
-        cmd=cmd,
     )
 
     resolved_no_proxy = resolve_arc_proxy_bypass(
@@ -3528,7 +3527,6 @@ def validate_release_namespace(
     kube_config: str | None,
     kube_context: str | None,
     helm_client_location: str,
-    cmd: CLICommand | None = None,
 ) -> str:
     # Check Release Existance
     release_namespace = utils.get_release_namespace(
@@ -3816,7 +3814,6 @@ def enable_features(
         kube_config,
         kube_context,
         helm_client_location,
-        cmd=cmd,
     )
 
     kubernetes_properties = {
@@ -4030,7 +4027,6 @@ def disable_features(
         kube_config,
         kube_context,
         helm_client_location,
-        cmd=cmd,
     )
 
     kubernetes_properties = {
@@ -4960,7 +4956,6 @@ def troubleshoot(
             kube_config,
             kube_context,
             helm_client_location,
-            cmd=cmd,
         )
 
         # Checking the connection to kubernetes cluster.
