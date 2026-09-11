@@ -556,8 +556,9 @@ def _add_nonfatal_network_error_event(
     details: str,
     telemetry_properties: dict[str, Any] | None = None,
 ) -> str:
-    """Report a non-fatal network diagnostic and return its rendered message."""
+    """Emit a structured event without converting the diagnostic into a CLI error."""
     message = error.format(details=details)
+    # Preserve legacy onboarding properties while adding the canonical AZK8S fields.
     properties = (telemetry_properties or {}).copy()
     properties.update(
         {
@@ -567,6 +568,7 @@ def _add_nonfatal_network_error_event(
             consts.Telemetry_Error_Message_Key: message,
         }
     )
+    # The shared wrapper enriches the event with the connected-cluster ARM ID.
     add_connectedk8s_telemetry_event(cmd, properties)
     return message
 
@@ -978,6 +980,7 @@ def check_cluster_DNS(
             or "timed out" in formatted_dns_log
         ):
             dns_error = errors.DNS_TIMEOUT
+            # Prefer specific DNS responses when one log contains multiple signals.
             if "NXDOMAIN" in formatted_dns_log:
                 dns_error = errors.DNS_NXDOMAIN
             elif "SERVFAIL" in formatted_dns_log:
@@ -1096,7 +1099,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
             )
 
             if Cluster_Connect_Precheck_Endpoint_response_code != "000":
-                # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
+                # An HTTP response proves network reachability, even when it is 4xx/5xx.
                 if Cluster_Connect_Precheck_Endpoint_response_code.startswith(
                     ("4", "5")
                 ):
@@ -1183,7 +1186,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
 
             # Validating if outbound connectiivty is working or not and displaying proper result
             if Onboarding_Precheck_Endpoint_outbound_connectivity_response != "000":
-                # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
+                # An HTTP response proves network reachability, even when it is 4xx/5xx.
                 if Onboarding_Precheck_Endpoint_outbound_connectivity_response.startswith(
                     ("4", "5")
                 ):
@@ -1306,7 +1309,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                 return consts.Diagnostic_Check_Incomplete, storage_space_available
 
             if outbound_connectivity_response != "000":
-                # Emit informational telemetry for 4xx/5xx (e.g., proxy block)
+                # An HTTP response proves network reachability, even when it is 4xx/5xx.
                 if outbound_connectivity_response.startswith(("4", "5")):
                     details = (
                         f"The troubleshoot endpoint returned HTTP {outbound_connectivity_response}; "
@@ -1629,6 +1632,7 @@ def health_check_dp(cmd: CLICommand, config_dp_endpoint: str) -> bool:
             uri_parameters=uri_parameters,
             resource=resource,
         )
+    # Normalize every exhausted-retry/transport failure to the public DP error code.
     except Exception as e:  # pylint: disable=broad-exception-caught
         raise report_connectedk8s_error(
             cmd,
