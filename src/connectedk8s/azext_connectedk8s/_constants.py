@@ -171,6 +171,7 @@ Helm_Timeout_ImagePull_Fault_Type = "helm-timeout-image-pull-failure"
 Helm_Timeout_PendingOrUnschedulable_Fault_Type = "helm-timeout-pending-or-unschedulable"
 Helm_Timeout_ClusterIdentity_Fault_Type = "helm-timeout-cluster-identity-error"
 Helm_Timeout_Generic_Fault_Type = "helm-timeout-error"
+Helm_Client_Error_Type = "helm-client-error"
 Install_Prediagnostics_Fault_Type = "prediagnostics-failure"
 Install_Prediagnostics_Job_Execution_Error_Fault_Type = (
     "prediagnostics-job-execution-error"
@@ -689,7 +690,7 @@ Cluster_Diagnostic_Checks_Job_Log_Save_Failed_Fault_Type = (
     Cluster_Diagnostic_Checks_Job_Log_Save_Failed
 )
 AZ_CLI_ADAL_TO_MSAL_MIGRATE_VERSION = "2.30.0"
-CLIENT_PROXY_VERSION = "1.3.035022"
+CLIENT_PROXY_VERSION = "1.3.035302"
 CLIENT_PROXY_FOLDER = ".clientproxy"
 API_SERVER_PORT = 47011
 CLIENT_PROXY_PORT = 47010
