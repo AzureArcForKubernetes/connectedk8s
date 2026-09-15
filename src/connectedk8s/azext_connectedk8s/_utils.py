@@ -2652,7 +2652,10 @@ def sanitize_telemetry_exception(
 
     exception_type = type(exception)
     sanitized_type = type(exception_type.__name__, (Exception,), {})
-    return sanitized_type(sanitize_telemetry_text(str(exception)))
+    sanitized_exception: BaseException = sanitized_type(
+        sanitize_telemetry_text(str(exception))
+    )
+    return sanitized_exception
 
 
 def sanitize_telemetry_payload(value: Any) -> Any:
