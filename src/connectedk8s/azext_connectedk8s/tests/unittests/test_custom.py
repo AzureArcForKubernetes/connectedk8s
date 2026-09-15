@@ -237,6 +237,112 @@ def test_get_helm_client_location_reports_real_agc_not_installed_error(
     )
 
 
+def test_enable_features_reports_custom_locations_enable_failed(monkeypatch):
+    cmd = _cmd_without_arm_id()
+    connected_cluster = SimpleNamespace(kind=None, private_link_state="Disabled")
+    client = MagicMock()
+    client.get.return_value = connected_cluster
+    monkeypatch.setattr(
+        custom.utils, "validate_custom_token", MagicMock(return_value=(False, None))
+    )
+    monkeypatch.setattr(custom, "get_subscription_id", MagicMock(return_value="sub"))
+    monkeypatch.setattr(
+        custom,
+        "check_cl_registration_and_get_oid",
+        MagicMock(return_value=(False, "")),
+    )
+    reported_error = custom.CLIInternalError("reported")
+    report_error = MagicMock(return_value=reported_error)
+    monkeypatch.setattr(custom.utils, "report_connectedk8s_error", report_error)
+
+    with pytest.raises(custom.CLIInternalError) as raised:
+        custom.enable_features(
+            cmd,
+            client,
+            "resource-group",
+            "cluster",
+            ["custom-locations"],
+        )
+
+    assert raised.value is reported_error
+    assert report_error.call_args.args[:2] == (
+        cmd,
+        custom.errors.CUSTOM_LOCATIONS_ENABLE_FAILED,
+    )
+
+
+def test_get_custom_locations_oid_reports_empty_result(monkeypatch):
+    cmd = _cmd_without_arm_id()
+    graph_client = MagicMock()
+    graph_client.service_principal_list.return_value = []
+    monkeypatch.setattr(
+        custom, "graph_client_factory", MagicMock(return_value=graph_client)
+    )
+    report_diagnostic = MagicMock()
+    monkeypatch.setattr(
+        custom.utils, "report_connectedk8s_diagnostic", report_diagnostic
+    )
+
+    oid = custom.get_custom_locations_oid(cmd, None)
+
+    assert oid == ""
+    assert report_diagnostic.call_args.args == (
+        cmd,
+        custom.errors.CUSTOM_LOCATIONS_OID_FETCH_FAILED,
+    )
+    assert (
+        report_diagnostic.call_args.kwargs["fault_type"]
+        == custom.consts.Custom_Locations_OID_Fetch_Fault_Type_CLOid_None
+    )
+
+
+def test_get_custom_locations_oid_reports_exception_and_uses_manual_oid(monkeypatch):
+    cmd = _cmd_without_arm_id()
+    expected_error = RuntimeError("Microsoft Graph request failed")
+    monkeypatch.setattr(
+        custom, "graph_client_factory", MagicMock(side_effect=expected_error)
+    )
+    report_diagnostic = MagicMock()
+    monkeypatch.setattr(
+        custom.utils, "report_connectedk8s_diagnostic", report_diagnostic
+    )
+
+    oid = custom.get_custom_locations_oid(cmd, "manual-oid")
+
+    assert oid == "manual-oid"
+    assert report_diagnostic.call_args.args == (
+        cmd,
+        custom.errors.CUSTOM_LOCATIONS_OID_FETCH_FAILED,
+    )
+    assert (
+        report_diagnostic.call_args.kwargs["fault_type"]
+        == custom.consts.Custom_Locations_OID_Fetch_Fault_Type_Exception
+    )
+    assert report_diagnostic.call_args.kwargs["exception"] is expected_error
+
+
+def test_check_cl_registration_reports_standardized_error(monkeypatch):
+    cmd = _cmd_without_arm_id()
+    expected_error = RuntimeError("provider registration request failed")
+    monkeypatch.setattr(
+        custom, "resource_providers_client", MagicMock(side_effect=expected_error)
+    )
+    report_diagnostic = MagicMock()
+    monkeypatch.setattr(
+        custom.utils, "report_connectedk8s_diagnostic", report_diagnostic
+    )
+
+    enabled, oid = custom.check_cl_registration_and_get_oid(cmd, None, "sub")
+
+    assert enabled is False
+    assert oid == ""
+    assert report_diagnostic.call_args.args == (
+        cmd,
+        custom.errors.CUSTOM_LOCATIONS_REGISTRATION_CHECK_FAILED,
+    )
+    assert report_diagnostic.call_args.kwargs["exception"] is expected_error
+
+
 def create_node(
     provider_id: Optional[str] = None,
     labels: Optional[Dict[str, str]] = None,
