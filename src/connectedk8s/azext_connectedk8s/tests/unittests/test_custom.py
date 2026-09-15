@@ -645,6 +645,74 @@ def test_kubeconfig_lookup_error_keeps_command_context(monkeypatch, check):
     )
 
 
+def test_merge_kubernetes_configurations_does_not_rereport_az_cli_error(monkeypatch):
+    expected = FileOperationError("already reported")
+    report_error = MagicMock()
+    monkeypatch.setattr(
+        custom,
+        "load_kubernetes_configuration",
+        MagicMock(side_effect=expected),
+    )
+    monkeypatch.setattr(custom.utils, "report_connectedk8s_error", report_error)
+
+    with pytest.raises(FileOperationError) as raised:
+        custom.merge_kubernetes_configurations("existing", "addition", False)
+
+    assert raised.value is expected
+    report_error.assert_not_called()
+
+
+def test_client_side_proxy_does_not_rereport_merge_az_cli_error(monkeypatch):
+    expected = FileOperationError("already reported")
+    process = MagicMock()
+    response = MagicMock()
+    response.text = '{"kubeconfigs": [{"value": "YXBpVmVyc2lvbjogdjE="}]}'
+
+    monkeypatch.setattr(custom, "get_subscription_id", MagicMock(return_value="sub"))
+    monkeypatch.setattr(custom, "Popen", MagicMock(return_value=process))
+    monkeypatch.setattr(
+        custom.proxylogic,
+        "get_cluster_user_credentials",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        custom.clientproxyutils,
+        "prepare_clientproxy_data",
+        MagicMock(
+            return_value={"hybridConnectionConfig": {"expirationTime": 123}}
+        ),
+    )
+    monkeypatch.setattr(
+        custom.proxylogic,
+        "post_register_to_proxy",
+        MagicMock(return_value=response),
+    )
+    monkeypatch.setattr(
+        custom, "print_or_merge_credentials", MagicMock(side_effect=expected)
+    )
+    telemetry = MagicMock()
+    monkeypatch.setattr(custom, "telemetry", telemetry)
+
+    with pytest.raises(FileOperationError) as raised:
+        custom.client_side_proxy(
+            MagicMock(),
+            "tenant",
+            MagicMock(),
+            "rg",
+            "cluster",
+            custom.ProxyStatus.FirstRun,
+            ["clientproxy"],
+            47010,
+            47011,
+            False,
+            token="token",
+        )
+
+    assert raised.value is expected
+    process.terminate.assert_called_once()
+    telemetry.set_exception.assert_not_called()
+
+
 def create_node(
     provider_id: Optional[str] = None,
     labels: Optional[Dict[str, str]] = None,

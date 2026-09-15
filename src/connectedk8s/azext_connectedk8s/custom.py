@@ -4295,6 +4295,8 @@ def merge_kubernetes_configurations(
     try:
         existing = load_kubernetes_configuration(existing_file)
         addition = load_kubernetes_configuration(addition_file)
+    except AzCLIError:
+        raise
     except Exception as ex:
         raise utils.report_connectedk8s_error(
             None,
@@ -4782,6 +4784,9 @@ def client_side_proxy(
 
             print("Press Ctrl+C to close proxy.")
 
+        except AzCLIError:
+            clientproxy_process.terminate()
+            raise
         except Exception as e:
             telemetry.set_exception(
                 exception=e,
