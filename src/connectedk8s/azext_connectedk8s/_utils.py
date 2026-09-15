@@ -537,10 +537,7 @@ def set_connected_cluster_arm_id_telemetry_context(
 def add_connectedk8s_telemetry_event(
     cmd: CLICommand | None, properties: dict[str, Any]
 ) -> None:
-    event_properties = {
-        key: _sanitize_telemetry_text(value) if isinstance(value, str) else value
-        for key, value in properties.items()
-    }
+    event_properties = properties.copy()
     if cmd is not None:
         arm_id = cmd.cli_ctx.data.get(
             consts.Connected_Cluster_Arm_Id_Telemetry_Context_Key
@@ -549,16 +546,13 @@ def add_connectedk8s_telemetry_event(
             event_properties[consts.Connected_Cluster_Arm_Id_Telemetry_Property] = (
                 arm_id
             )
-    telemetry.add_extension_event("connectedk8s", event_properties)
-
-
-def _sanitize_telemetry_text(value: str) -> str:
-    # Azure CLI telemetry replaces apostrophes with quotes before parsing JSON.
-    return value.replace("'", "")
+    telemetry.add_extension_event(
+        "connectedk8s", sanitize_telemetry_payload(event_properties)
+    )
 
 
 def _sanitize_exception_for_telemetry(exception: BaseException) -> BaseException:
-    sanitized_message = _sanitize_telemetry_text(str(exception))
+    sanitized_message = sanitize_telemetry_text(str(exception))
     if sanitized_message == str(exception):
         return exception
 
@@ -605,7 +599,7 @@ def report_connectedk8s_diagnostic(
 ) -> str:
     """Report one standardized diagnostic to telemetry without raising it."""
     message = error.format(**context)
-    telemetry_message = _sanitize_telemetry_text(message)
+    telemetry_message = sanitize_telemetry_text(message)
     properties = (telemetry_properties or {}).copy()
     properties.update(
         {
@@ -2611,16 +2605,7 @@ def helm_install_release(
 
 
 def process_helm_error_detail(helm_error_detail: str) -> str:
-    helm_error_detail = remove_rsa_private_key(helm_error_detail)
-    helm_error_detail = scrub_proxy_url(helm_error_detail)
-    helm_error_detail = redact_base64_strings(helm_error_detail)
-    helm_error_detail = redact_sensitive_fields_from_string(helm_error_detail)
-    # Remove apostrophes/single quotes to prevent CLI telemetry client parse failures.
-    # The telemetry client's _parse_in_json does data.replace("'", '"') which corrupts
-    # JSON payloads containing apostrophes (e.g. "Couldn't" becomes invalid JSON).
-    helm_error_detail = helm_error_detail.replace("'", "")
-
-    return helm_error_detail
+    return sanitize_telemetry_text(helm_error_detail)
 
 
 def remove_rsa_private_key(input_text: str) -> str:
@@ -2661,6 +2646,34 @@ def redact_sensitive_fields_from_string(input_text: str) -> str:
 
     # Return the redacted text
     return input_text
+
+
+def sanitize_telemetry_text(value: str) -> str:
+    value = remove_rsa_private_key(value)
+    value = scrub_proxy_url(value)
+    value = redact_base64_strings(value)
+    value = redact_sensitive_fields_from_string(value)
+    # Azure CLI telemetry replaces apostrophes with double quotes while parsing JSON.
+    return value.replace("'", "")
+
+
+def sanitize_telemetry_payload(value: Any) -> Any:
+    if isinstance(value, str):
+        return sanitize_telemetry_text(value)
+    if isinstance(value, dict):
+        return {
+            key: (
+                item
+                if key == consts.Connected_Cluster_Arm_Id_Telemetry_Property
+                else sanitize_telemetry_payload(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [sanitize_telemetry_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(sanitize_telemetry_payload(item) for item in value)
+    return value
 
 
 def get_helm_major_version(helm_client_location: str) -> int:
