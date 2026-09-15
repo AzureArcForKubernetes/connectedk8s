@@ -546,7 +546,27 @@ def add_connectedk8s_telemetry_event(
             event_properties[consts.Connected_Cluster_Arm_Id_Telemetry_Property] = (
                 arm_id
             )
+    event_properties = {
+        key: _sanitize_telemetry_text(value) if isinstance(value, str) else value
+        for key, value in event_properties.items()
+    }
     telemetry.add_extension_event("connectedk8s", event_properties)
+
+
+def _sanitize_telemetry_text(value: str) -> str:
+    # Azure CLI telemetry replaces apostrophes with quotes before parsing JSON.
+    return value.replace("'", "")
+
+
+def _sanitize_exception_for_telemetry(exception: BaseException) -> BaseException:
+    sanitized_message = _sanitize_telemetry_text(str(exception))
+    if sanitized_message == str(exception):
+        return exception
+
+    telemetry_exception_type: type[Exception] = type(
+        exception.__class__.__name__, (Exception,), {}
+    )
+    return telemetry_exception_type(sanitized_message)
 
 
 def report_connectedk8s_diagnostic(
@@ -557,12 +577,11 @@ def report_connectedk8s_diagnostic(
     user_fault: bool = False,
     telemetry_properties: dict[str, Any] | None = None,
     fault_type: str | None = None,
-    recommendation: str | None = None,
     **context: object,
 ) -> str:
     """Report one standardized diagnostic to telemetry without raising it."""
     message = error.format(**context)
-    telemetry_message = message.replace("'", "")
+    telemetry_message = _sanitize_telemetry_text(message)
     properties = (telemetry_properties or {}).copy()
     properties.update(
         {
@@ -579,7 +598,11 @@ def report_connectedk8s_diagnostic(
     if user_fault:
         telemetry.set_user_fault()
     telemetry.set_exception(
-        exception=exception if exception is not None else Exception(message),
+        exception=(
+            _sanitize_exception_for_telemetry(exception)
+            if exception is not None
+            else Exception(telemetry_message)
+        ),
         fault_type=fault_type or error.fault_type,
         summary=telemetry_message,
     )
@@ -594,6 +617,7 @@ def report_connectedk8s_error(
     user_fault: bool = False,
     telemetry_properties: dict[str, Any] | None = None,
     fault_type: str | None = None,
+    recommendation: str | None = None,
     **context: object,
 ) -> AzCLIError:
     """Report one standardized error to telemetry and return its console exception."""
