@@ -149,7 +149,7 @@ Use a `consts.*_Fault_Type` constant in a definition rather than copying a
 string:
 
 ```python
-fault_type=consts.Install_HelmRelease_Fault_Type
+fault_type = consts.Install_HelmRelease_Fault_Type
 ```
 
 The field is typed as `str` because Azure CLI telemetry expects a string.
@@ -271,9 +271,7 @@ utils.add_connectedk8s_telemetry_event(
         consts.Telemetry_Error_Code_Key: errors.DNS_NXDOMAIN.code,
         consts.Telemetry_Error_Fault_Type_Key: errors.DNS_NXDOMAIN.fault_type,
         consts.Telemetry_Error_Name_Key: errors.DNS_NXDOMAIN.name,
-        consts.Telemetry_Error_Message_Key: errors.DNS_NXDOMAIN.format(
-            details=details
-        ),
+        consts.Telemetry_Error_Message_Key: errors.DNS_NXDOMAIN.format(details=details),
     },
 )
 ```
@@ -292,9 +290,7 @@ error = errors.get_error("AZK8S0506")
 Look up by an existing telemetry fault type:
 
 ```python
-error = errors.get_error_by_fault_type(
-    consts.Agent_State_Timeout_Fault_Type
-)
+error = errors.get_error_by_fault_type(consts.Agent_State_Timeout_Fault_Type)
 ```
 
 The fault-type lookup includes values listed in `fault_type_aliases`.

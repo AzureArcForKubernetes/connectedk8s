@@ -678,9 +678,7 @@ def test_client_side_proxy_does_not_rereport_merge_az_cli_error(monkeypatch):
     monkeypatch.setattr(
         custom.clientproxyutils,
         "prepare_clientproxy_data",
-        MagicMock(
-            return_value={"hybridConnectionConfig": {"expirationTime": 123}}
-        ),
+        MagicMock(return_value={"hybridConnectionConfig": {"expirationTime": 123}}),
     )
     monkeypatch.setattr(
         custom.proxylogic,
