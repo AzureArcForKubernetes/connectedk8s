@@ -1,4 +1,4 @@
 {
     "name": "connectedk8s",
-    "azext.minCliCoreVersion": "2.73.0"
+    "azext.minCliCoreVersion": "2.88.0"
 }
