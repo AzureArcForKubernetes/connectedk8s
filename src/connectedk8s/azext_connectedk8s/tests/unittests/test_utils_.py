@@ -44,6 +44,7 @@ from azext_connectedk8s._utils import (
     report_connectedk8s_diagnostic,
     report_connectedk8s_error,
     report_helm_timeout_error,
+    sanitize_telemetry_payload,
     scrub_proxy_url,
     should_use_secret_injection_flow,
 )
@@ -628,6 +629,7 @@ def test_report_connectedk8s_error_sanitizes_telemetry_apostrophes(monkeypatch):
     reported_error = report_connectedk8s_error(
         None,
         error,
+        exception=RuntimeError("Couldn't run 'helm version'"),
         details="Run 'helm version' to diagnose",
     )
 
@@ -640,8 +642,28 @@ def test_report_connectedk8s_error_sanitizes_telemetry_apostrophes(monkeypatch):
         "[AZK8S0009] TestError: Test message: Run helm version to diagnose"
     )
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == telemetry_message
+    assert (
+        str(mock_telemetry.set_exception.call_args.kwargs["exception"])
+        == "Couldnt run helm version"
+    )
     mock_telemetry.add_extension_event.assert_called_once()
     mock_telemetry.set_exception.assert_called_once()
+
+
+def test_sanitize_telemetry_payload_redacts_nested_sensitive_values():
+    proxy_url = _build_test_proxy_url("repo-user", "repo-password")
+    encoded_secret = "U2Vuc2l0aXZlVGVsZW1ldHJ5VmFsdWVGb3JUZXN0aW5nMTIzNDU2"
+    payload = {
+        "message": f"Couldn't connect to {proxy_url}",
+        "details": [f"token: {encoded_secret}", 5],
+    }
+
+    sanitized = sanitize_telemetry_payload(payload)
+
+    assert sanitized["message"] == (
+        "Couldnt connect to http://[REDACTED]:[REDACTED]@example.com:8080"
+    )
+    assert sanitized["details"] == ["token: [REDACTED]", 5]
 
 
 def test_report_connectedk8s_diagnostic_does_not_build_cli_exception(monkeypatch):
@@ -669,6 +691,8 @@ def test_report_connectedk8s_diagnostic_does_not_build_cli_exception(monkeypatch
     add_event.assert_called_once()
     mock_telemetry.set_exception.assert_called_once()
     mock_telemetry.set_user_fault.assert_called_once_with()
+
+
 def test_arm_exception_handler_reports_standardized_arm_error(monkeypatch):
     class ReportedError(Exception):
         pass
