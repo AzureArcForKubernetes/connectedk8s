@@ -579,11 +579,7 @@ def report_connectedk8s_diagnostic(
 
     if user_fault:
         telemetry.set_user_fault()
-    telemetry_exception = Exception(
-        sanitize_telemetry_text(str(exception))
-        if exception is not None
-        else telemetry_message
-    )
+    telemetry_exception = sanitize_telemetry_exception(exception, telemetry_message)
     telemetry.set_exception(
         exception=telemetry_exception,
         fault_type=fault_type or error.fault_type,
@@ -2489,6 +2485,17 @@ def sanitize_telemetry_text(value: str) -> str:
     value = redact_sensitive_fields_from_string(value)
     # Azure CLI telemetry replaces apostrophes with double quotes while parsing JSON.
     return value.replace("'", "")
+
+
+def sanitize_telemetry_exception(
+    exception: BaseException | None, fallback_message: str
+) -> BaseException:
+    if exception is None:
+        return Exception(sanitize_telemetry_text(fallback_message))
+
+    exception_type = type(exception)
+    sanitized_type = type(exception_type.__name__, (Exception,), {})
+    return sanitized_type(sanitize_telemetry_text(str(exception)))
 
 
 def sanitize_telemetry_payload(value: Any) -> Any:

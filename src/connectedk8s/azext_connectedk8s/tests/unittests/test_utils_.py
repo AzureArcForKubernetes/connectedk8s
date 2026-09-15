@@ -44,6 +44,7 @@ from azext_connectedk8s._utils import (
     report_connectedk8s_diagnostic,
     report_connectedk8s_error,
     report_helm_timeout_error,
+    sanitize_telemetry_exception,
     sanitize_telemetry_payload,
     scrub_proxy_url,
     should_use_secret_injection_flow,
@@ -646,6 +647,10 @@ def test_report_connectedk8s_error_sanitizes_telemetry_apostrophes(monkeypatch):
         str(mock_telemetry.set_exception.call_args.kwargs["exception"])
         == "Couldnt run helm version"
     )
+    assert (
+        mock_telemetry.set_exception.call_args.kwargs["exception"].__class__.__name__
+        == "RuntimeError"
+    )
     mock_telemetry.add_extension_event.assert_called_once()
     mock_telemetry.set_exception.assert_called_once()
 
@@ -664,6 +669,13 @@ def test_sanitize_telemetry_payload_redacts_nested_sensitive_values():
         "Couldnt connect to http://[REDACTED]:[REDACTED]@example.com:8080"
     )
     assert sanitized["details"] == ["token: [REDACTED]", 5]
+
+
+def test_sanitize_telemetry_exception_uses_fallback_for_missing_exception():
+    sanitized = sanitize_telemetry_exception(None, "Couldn't run 'helm version'")
+
+    assert sanitized.__class__ is Exception
+    assert str(sanitized) == "Couldnt run helm version"
 
 
 def test_report_connectedk8s_diagnostic_does_not_build_cli_exception(monkeypatch):
@@ -724,6 +736,34 @@ def test_arm_exception_handler_reports_standardized_arm_error(monkeypatch):
         user_fault=False,
         details="ARM request failed",
     )
+
+
+def test_arm_exception_handler_emits_one_fault_for_operation(monkeypatch):
+    class ArmOperationError(Exception):
+        pass
+
+    class ArmResponseError(Exception):
+        status_code = 500
+        error = SimpleNamespace(code="InternalServerError")
+
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+    monkeypatch.setattr(utils_module, "HttpOperationError", ArmOperationError)
+    monkeypatch.setattr(utils_module, "HttpResponseError", ArmResponseError)
+    monkeypatch.setattr(utils_module, "ResourceNotFoundError", ArmResponseError)
+
+    with pytest.raises(CLIInternalError):
+        arm_exception_handler(
+            ArmResponseError("ARM request failed"),
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED.fault_type,
+            "Unable to create connected cluster resource",
+            cmd=cmd,
+            error=errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+        )
+
+    mock_telemetry.set_exception.assert_called_once()
+    mock_telemetry.add_extension_event.assert_called_once()
 
 
 @pytest.mark.parametrize(
