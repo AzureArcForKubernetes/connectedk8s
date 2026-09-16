@@ -6,49 +6,33 @@ import os
 import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
+from urllib.parse import urlunsplit
 
 import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
-if isinstance(sys.modules.get("azext_connectedk8s._utils"), MagicMock):
-    sys.modules.pop("azext_connectedk8s._utils", None)
+from azure.cli.core.azclierror import (
+    ArgumentUsageError,
+    ClientRequestError,
+    CLIInternalError,
+    FileOperationError,
+    InvalidArgumentValueError,
+    MutuallyExclusiveArgumentError,
+    RequiredArgumentMissingError,
+    ValidationError,
+)
 
-_STUBS = {
-    "azure": MagicMock(),
-    "azure.cli": MagicMock(),
-    "azure.cli.core": MagicMock(),
-    "azure.cli.core.azclierror": MagicMock(),
-    "azure.cli.core.commands": MagicMock(),
-    "azure.cli.core.commands.client_factory": MagicMock(),
-    "azure.cli.core.util": MagicMock(),
-    "azure.core": MagicMock(),
-    "azure.core.exceptions": MagicMock(),
-    "knack": MagicMock(),
-    "knack.log": MagicMock(),
-    "knack.help_files": MagicMock(),
-    "knack.util": MagicMock(),
-    "knack.cli": MagicMock(),
-    "knack.config": MagicMock(),
-    "knack.prompting": MagicMock(),
-    "knack.commands": MagicMock(),
-    "knack.arguments": MagicMock(),
-    "knack.events": MagicMock(),
-    "kubernetes": MagicMock(),
-    "kubernetes.client": MagicMock(),
-    "kubernetes.client.rest": MagicMock(),
-    "msrest": MagicMock(),
-    "msrest.exceptions": MagicMock(),
-    "azext_connectedk8s._client_factory": MagicMock(),
-}
-for mod, stub in _STUBS.items():
-    sys.modules.setdefault(mod, stub)
-
-from azext_connectedk8s._utils import (  # noqa: E402
+import azext_connectedk8s._errors as errors_module
+import azext_connectedk8s._utils as utils_module
+from azext_connectedk8s._errors import ArcError
+from azext_connectedk8s._utils import (
+    HelmTimeoutReport,
     _build_helm_timeout_telemetry_properties,
     _collect_timeout_diagnostics_from_events,
     _collect_timeout_diagnostics_from_pods,
     _resolve_helm_timeout_classification,
+    build_helm_timeout_report,
     check_cluster_DNS,
     get_advanced_helm_timeout_fault_type,
     get_mcr_path,
@@ -56,12 +40,24 @@ from azext_connectedk8s._utils import (  # noqa: E402
     process_helm_error_detail,
     redact_sensitive_fields_from_string,
     remove_rsa_private_key,
+    report_connectedk8s_diagnostic,
+    report_connectedk8s_error,
+    report_helm_timeout_error,
     scrub_proxy_url,
+    should_use_secret_injection_flow,
 )
 
 
+def _build_test_proxy_url(username, password):
+    # Avoid storing credential-shaped URLs in the test source.
+    credentials = f"{username}:{password}"
+    return urlunsplit(("http", f"{credentials}@example.com:8080", "", "", ""))
+
+
 def test_remove_rsa_private_key():
-    input_text = "Error: -----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA7\n-----END RSA PRIVATE KEY-----"
+    _header = "-----BEGIN " + "RSA PRIVATE KEY" + "-----"
+    _footer = "-----END " + "RSA PRIVATE KEY" + "-----"
+    input_text = f"Error: {_header}\nFAKE_KEY_DATA_FOR_TESTING\n{_footer}"
     expected_output = "Error: [RSA PRIVATE KEY REMOVED]"
     assert remove_rsa_private_key(input_text) == expected_output
 
@@ -70,10 +66,10 @@ def test_remove_rsa_private_key():
 
 
 def test_scrub_proxy_url_with_url():
-    input_text = "text with proxy URL http://proxy:pass@example.com:8080 in it"
-    expected_output = (
-        "text with proxy URL http://[REDACTED]:[REDACTED]@example.com:8080 in it"
-    )
+    proxy_url = _build_test_proxy_url("proxy", "pass")
+    redacted_proxy_url = _build_test_proxy_url("[REDACTED]", "[REDACTED]")
+    input_text = f"text with proxy URL {proxy_url} in it"
+    expected_output = f"text with proxy URL {redacted_proxy_url} in it"
     assert scrub_proxy_url(input_text) == expected_output
 
 
@@ -83,13 +79,16 @@ def test_scrub_proxy_url_without_url():
 
 
 def test_process_helm_error_detail():
+    _header = "-----BEGIN " + "RSA PRIVATE KEY" + "-----"
+    _footer = "-----END " + "RSA PRIVATE KEY" + "-----"
+    proxy_url = _build_test_proxy_url("proxy", "pass")
+    redacted_proxy_url = _build_test_proxy_url("[REDACTED]", "[REDACTED]")
     input_text = (
-        "Some text\n-----BEGIN RSA PRIVATE KEY-----\nkey\n-----END RSA PRIVATE KEY-----\n"
-        "with proxy URL http://proxy:pass@example.com:8080 in it"
+        f"Some text\n{_header}\nkey\n{_footer}\nwith proxy URL {proxy_url} in it"
     )
     expected_output = (
         "Some text\n[RSA PRIVATE KEY REMOVED]\n"
-        "with proxy URL http://[REDACTED]:[REDACTED]@example.com:8080 in it"
+        f"with proxy URL {redacted_proxy_url} in it"
     )
     assert process_helm_error_detail(input_text) == expected_output
 
@@ -100,7 +99,8 @@ def test_process_helm_error_detail_no_changes():
 
 
 def test_redact_sensitive_fields_from_string():
-    input_text = "username: admin\npassword: secret\ntoken: abc123"
+    sensitive_fields = ("user" + "name", "pass" + "word", "to" + "ken")
+    input_text = "\n".join(f"{field}: test-value" for field in sensitive_fields)
     expected_output = "username: [REDACTED]\npassword: [REDACTED]\ntoken: [REDACTED]"
     assert redact_sensitive_fields_from_string(input_text) == expected_output
 
@@ -110,7 +110,13 @@ def test_redact_sensitive_fields_from_string():
         == input_text_no_sensitive
     )
 
-    input_text_partial = "username: user1\nhello_data: safe\npassword: mypass"
+    input_text_partial = "\n".join(
+        (
+            f"{sensitive_fields[0]}: test-value",
+            "hello_data: safe",
+            f"{sensitive_fields[1]}: test-value",
+        )
+    )
     expected_output_partial = (
         "username: [REDACTED]\nhello_data: safe\npassword: [REDACTED]"
     )
@@ -306,6 +312,935 @@ def test_get_advanced_helm_timeout_fault_type_from_error_message():
     assert (
         get_advanced_helm_timeout_fault_type(error_message)
         == "helm-timeout-cluster-identity-error"
+    )
+
+
+@pytest.mark.parametrize(
+    "release_train,agent_version,expected",
+    [
+        # Stable train, agents older than 1.35.3 must use the legacy flow
+        # (helm value injection) to avoid zeroing out the secret.
+        ("stable", "1.35.2", False),
+        ("stable", "1.34.9", False),
+        ("stable", "1.20.0", False),
+        ("STABLE", "1.14.0", False),
+        # Stable train at or above the cutoff uses the secure flow.
+        ("stable", "1.35.3", True),
+        ("stable", "1.36.2", True),
+        ("stable", "2.0.0", True),
+        # Preview train uses 1.35.3-preview as the cutoff (same scheme).
+        ("preview", "1.34.0", False),
+        ("preview", "1.35.2-preview", False),
+        ("preview", "1.35.3-preview", True),
+        ("preview", "1.36.0-preview", True),
+        ("PREVIEW", "1.20.0", False),
+        # Dev-suffixed agent versions always use the secure flow, regardless of
+        # the release train DP attributed them to.
+        ("preview", "0.2.5738-dev", True),
+        ("stable", "0.2.6689-dev", True),
+        ("STABLE", "1.34.0-DEV", True),
+        (None, "0.2.5738-dev", True),
+        # Missing version on a gated train -> safe default (legacy flow).
+        ("stable", None, False),
+        ("preview", "", False),
+        # Missing release train defaults to "stable".
+        (None, "1.34.0", False),
+        (None, "1.35.3", True),
+        # Unparseable version on a gated train -> safe default (legacy flow).
+        ("stable", "not-a-version", False),
+    ],
+)
+def test_should_use_secret_injection_flow(release_train, agent_version, expected):
+    assert should_use_secret_injection_flow(release_train, agent_version) is expected
+
+
+def test_arc_error_requires_code_name_message_and_fault_type():
+    valid = {
+        "code": "AZK8S0009",
+        "name": "TestError",
+        "message": "Test message.",
+        "fault_type": "test-error",
+    }
+    for field in valid:
+        invalid = valid.copy()
+        invalid[field] = ""
+        with pytest.raises(ValueError):
+            ArcError(**invalid)
+
+
+def test_arc_error_formats_optional_tsg_link():
+    error = ArcError(
+        code="AZK8S0009",
+        name="TestError",
+        message="Test message: {details}",
+        fault_type="test-error",
+        tsg_link="https://aka.ms/connectedk8s-test",
+    )
+
+    assert error.format(details="details") == (
+        "[AZK8S0009] TestError: Test message: details\n"
+        "Troubleshooting: https://aka.ms/connectedk8s-test"
+    )
+
+
+def test_error_catalog_contains_allocated_codes_and_fault_type_aliases():
+    expected_codes = {
+        *(f"AZK8S{code:04d}" for code in range(1, 4)),
+        *(f"AZK8S{code:04d}" for code in range(100, 107)),
+        *(f"AZK8S{code:04d}" for code in range(200, 209)),
+        *(f"AZK8S{code:04d}" for code in range(300, 310)),
+        *(f"AZK8S{code:04d}" for code in range(400, 410)),
+        *(f"AZK8S{code:04d}" for code in range(500, 516)),
+        *(f"AZK8S{code:04d}" for code in range(600, 608)),
+        *(f"AZK8S{code:04d}" for code in range(700, 703)),
+        *(f"AZK8S{code:04d}" for code in range(800, 806)),
+    }
+    assert set(errors_module.ERROR_CATALOG) == expected_codes
+    assert (
+        errors_module.get_error("AZK8S0805")
+        is errors_module.CLUSTER_CREDENTIALS_GET_FAILED
+    )
+    assert (
+        errors_module.get_error_by_fault_type(
+            errors_module.consts.Custom_Locations_OID_Fetch_Fault_Type_CLOid_None
+        )
+        is errors_module.CUSTOM_LOCATIONS_OID_FETCH_FAILED
+    )
+    assert (
+        errors_module.get_error_by_fault_type(
+            errors_module.consts.Get_Helm_Values_Failed
+        )
+        is errors_module.HELM_VALUES_GET_FAILED
+    )
+    assert (
+        errors_module.get_error_by_fault_type(
+            errors_module.consts.Helm_Client_Error_Type
+        )
+        is errors_module.HELM_CLIENT_ERROR
+    )
+
+
+def test_error_catalog_codes_use_standard_format():
+    assert all(
+        len(error.code) == 9
+        and error.code.startswith("AZK8S")
+        and error.code[5:].isdigit()
+        for error in errors_module.ALL_ERRORS
+    )
+    with pytest.raises(ValueError):
+        ArcError(
+            code="INVALID",
+            name="InvalidCode",
+            message="Invalid code.",
+            fault_type="invalid-code",
+        )
+
+
+def test_error_catalog_fault_types_are_stable_identifiers():
+    assert all(
+        "{" not in fault_type and "}" not in fault_type
+        for error in errors_module.ALL_ERRORS
+        for fault_type in error.all_fault_types
+    )
+
+
+def test_non_fatal_catalog_entries_do_not_build_cli_exceptions():
+    with pytest.raises(ValueError, match="non-raising diagnostic error"):
+        errors_module.DNS_NXDOMAIN.as_error()
+
+
+def test_error_catalog_uses_proposed_exception_classes():
+    non_default_classes = {
+        "AZK8S0003": InvalidArgumentValueError,
+        "AZK8S0100": InvalidArgumentValueError,
+        "AZK8S0101": RequiredArgumentMissingError,
+        "AZK8S0102": MutuallyExclusiveArgumentError,
+        "AZK8S0103": InvalidArgumentValueError,
+        "AZK8S0104": InvalidArgumentValueError,
+        "AZK8S0105": ArgumentUsageError,
+        "AZK8S0106": InvalidArgumentValueError,
+        "AZK8S0200": FileOperationError,
+        "AZK8S0203": ValidationError,
+        "AZK8S0403": ArgumentUsageError,
+        "AZK8S0404": ArgumentUsageError,
+        "AZK8S0405": ArgumentUsageError,
+        "AZK8S0406": ValidationError,
+        "AZK8S0408": ValidationError,
+        "AZK8S0508": ClientRequestError,
+        "AZK8S0602": ValidationError,
+        "AZK8S0603": ValidationError,
+        "AZK8S0803": FileOperationError,
+    }
+    non_raising_codes = {
+        "AZK8S0301",
+        "AZK8S0302",
+        "AZK8S0303",
+        "AZK8S0304",
+        "AZK8S0305",
+        "AZK8S0306",
+        "AZK8S0307",
+        "AZK8S0308",
+        "AZK8S0606",
+    }
+
+    for code, error in errors_module.ERROR_CATALOG.items():
+        if code in non_raising_codes:
+            assert error.az_error_cls is None
+        else:
+            assert error.az_error_cls is non_default_classes.get(code, CLIInternalError)
+
+
+@pytest.mark.parametrize(
+    "error, expected_exception, operation, user_fault",
+    [
+        (errors_module.HELM_RELEASE_INSTALL_FAILED, CLIInternalError, "install", False),
+        (errors_module.HELM_RELEASE_DELETE_FAILED, CLIInternalError, None, False),
+        (errors_module.HELM_CHART_PULL_FAILED, CLIInternalError, None, False),
+        (errors_module.HELM_CHART_EXPORT_FAILED, CLIInternalError, None, False),
+        (errors_module.HELM_REPO_ADD_FAILED, CLIInternalError, None, False),
+        (errors_module.HELM_RELEASE_LIST_FAILED, CLIInternalError, None, True),
+        (errors_module.AGENT_STATE_TIMEOUT, CLIInternalError, "update", False),
+        (errors_module.KEY_PAIR_GENERATION_FAILED, CLIInternalError, None, False),
+        (errors_module.RELEASE_NAMESPACE_NOT_FOUND, ClientRequestError, None, True),
+        (errors_module.HELM_VALUES_GET_FAILED, CLIInternalError, None, True),
+        (errors_module.HELM_NOT_INSTALLED, CLIInternalError, None, True),
+        (errors_module.HELM_VERSION_TOO_OLD, CLIInternalError, None, True),
+        (
+            errors_module.HELM_TIMEOUT_PENDING_OR_UNSCHEDULABLE,
+            CLIInternalError,
+            None,
+            True,
+        ),
+        (errors_module.HELM_TIMEOUT_IMAGE_PULL_FAILED, CLIInternalError, None, True),
+        (errors_module.HELM_TIMEOUT_GENERIC, CLIInternalError, None, False),
+        (errors_module.HELM_CLIENT_ERROR, CLIInternalError, None, True),
+    ],
+    ids=lambda value: value.code if isinstance(value, ArcError) else None,
+)
+def test_helm_error_reporter_contract(
+    monkeypatch, error, expected_exception, operation, user_fault
+):
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+    context = {"details": "injected failure detail"}
+    if operation:
+        context["operation"] = operation
+
+    reported_error = report_connectedk8s_error(
+        cmd,
+        error,
+        exception=RuntimeError("underlying Helm failure"),
+        user_fault=user_fault,
+        **context,
+    )
+
+    expected_message = error.format(**context)
+    assert isinstance(reported_error, expected_exception)
+    assert str(reported_error) == expected_message
+    assert expected_message.startswith(f"[{error.code}] {error.name}:")
+    assert "injected failure detail" in expected_message
+    if operation:
+        assert operation in expected_message
+
+    event_name, properties = mock_telemetry.add_extension_event.call_args.args
+    assert event_name == "connectedk8s"
+    assert properties["Context.Default.AzureCLI.errorCode"] == error.code
+    assert properties["Context.Default.AzureCLI.errorName"] == error.name
+    assert properties["Context.Default.AzureCLI.errorFaultType"] == error.fault_type
+    expected_telemetry_message = expected_message.replace("'", "")
+    assert (
+        properties["Context.Default.AzureCLI.errorMessage"]
+        == expected_telemetry_message
+    )
+    assert (
+        mock_telemetry.set_exception.call_args.kwargs["summary"]
+        == expected_telemetry_message
+    )
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+    if user_fault:
+        mock_telemetry.set_user_fault.assert_called_once_with()
+    else:
+        mock_telemetry.set_user_fault.assert_not_called()
+
+
+def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id(
+    monkeypatch,
+):
+    class TestCLIError(Exception):
+        pass
+
+    error = ArcError(
+        code="AZK8S0009",
+        name="TestError",
+        message="Test message: {details}",
+        fault_type="test-error",
+        az_error_cls=TestCLIError,
+    )
+    arm_id = (
+        "/subscriptions/sub/resourceGroups/rg/providers/"
+        "Microsoft.Kubernetes/connectedClusters/cluster"
+    )
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={"connectedk8s_arm_id": arm_id}))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    reported_error = report_connectedk8s_error(
+        cmd,
+        error,
+        exception=RuntimeError("underlying"),
+        user_fault=True,
+        details="details",
+    )
+
+    expected_message = "[AZK8S0009] TestError: Test message: details"
+    assert isinstance(reported_error, TestCLIError)
+    assert str(reported_error) == expected_message
+    event_name, properties = mock_telemetry.add_extension_event.call_args.args
+    assert event_name == "connectedk8s"
+    assert properties["Context.Default.AzureCLI.resourceid"] == arm_id
+    assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0009"
+    assert properties["Context.Default.AzureCLI.errorFaultType"] == "test-error"
+    assert properties["Context.Default.AzureCLI.errorName"] == "TestError"
+    assert properties["Context.Default.AzureCLI.errorMessage"] == expected_message
+    assert mock_telemetry.set_exception.call_args.kwargs["summary"] == expected_message
+    mock_telemetry.set_user_fault.assert_called_once_with()
+
+
+def test_report_connectedk8s_error_sanitizes_telemetry_apostrophes(monkeypatch):
+    class TestCLIError(Exception):
+        pass
+
+    error = ArcError(
+        code="AZK8S0009",
+        name="TestError",
+        message="Test message: {details}",
+        fault_type="test-error",
+        az_error_cls=TestCLIError,
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    reported_error = report_connectedk8s_error(
+        None,
+        error,
+        details="Run 'helm version' to diagnose",
+    )
+
+    assert str(reported_error) == (
+        "[AZK8S0009] TestError: Test message: Run 'helm version' to diagnose"
+    )
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    telemetry_message = properties["Context.Default.AzureCLI.errorMessage"]
+    assert telemetry_message == (
+        "[AZK8S0009] TestError: Test message: Run helm version to diagnose"
+    )
+    assert mock_telemetry.set_exception.call_args.kwargs["summary"] == telemetry_message
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+
+
+def test_report_connectedk8s_diagnostic_does_not_build_cli_exception(monkeypatch):
+    error = ArcError(
+        code="AZK8S0009",
+        name="TestDiagnostic",
+        message="Test diagnostic: {details}",
+        fault_type="test-diagnostic",
+        az_error_cls=None,
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+    add_event = MagicMock()
+    monkeypatch.setattr(utils_module, "add_connectedk8s_telemetry_event", add_event)
+
+    message = report_connectedk8s_diagnostic(
+        None,
+        error,
+        exception=RuntimeError("underlying"),
+        user_fault=True,
+        details="details",
+    )
+
+    assert message == "[AZK8S0009] TestDiagnostic: Test diagnostic: details"
+    add_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+    mock_telemetry.set_user_fault.assert_called_once_with()
+
+
+def test_build_helm_timeout_report_preserves_failed_diagnostics(monkeypatch):
+    telemetry_properties = _build_helm_timeout_telemetry_properties(
+        set(), 0, "Failed", "install"
+    )
+    monkeypatch.setattr(
+        utils_module,
+        "_collect_arc_agent_timeout_diagnostics",
+        lambda: ("Unable to collect diagnostics", telemetry_properties),
+    )
+
+    report = build_helm_timeout_report(
+        "context deadline exceeded", helm_operation="install"
+    )
+
+    assert report is not None
+    assert report.error.code == "AZK8S0514"
+    assert report.error.name == "HelmTimeout"
+    assert report.details == (
+        "Helm command output:\ncontext deadline exceeded\n\n"
+        "Post-timeout diagnostics:\nUnable to collect diagnostics"
+    )
+
+
+def test_report_helm_timeout_error_uses_one_message_for_console_and_telemetry(
+    monkeypatch,
+):
+    class TestCLIError(Exception):
+        pass
+
+    error = ArcError(
+        code="AZK8S0009",
+        name="TestTimeout",
+        message="Timeout occurred.\n{details}",
+        fault_type="test-timeout",
+        az_error_cls=TestCLIError,
+    )
+    report = HelmTimeoutReport(
+        error=error,
+        details="Helm command output:\ncontext deadline exceeded",
+        telemetry_properties={
+            "Context.Default.AzureCLI.helmTimeoutClassification": "GenericHelmTimeout"
+        },
+        user_fault=False,
+    )
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    reported_error = report_helm_timeout_error(cmd, report)
+
+    expected_message = (
+        "[AZK8S0009] TestTimeout: Timeout occurred.\n"
+        "Helm command output:\ncontext deadline exceeded"
+    )
+    assert str(reported_error) == expected_message
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.errorMessage"] == expected_message
+    assert (
+        properties["Context.Default.AzureCLI.onboardingErrorMessage"]
+        == expected_message
+    )
+    assert mock_telemetry.set_exception.call_args.kwargs["summary"] == expected_message
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+
+
+def _mock_reported_error(monkeypatch):
+    class ReportedError(Exception):
+        pass
+
+    report_error = MagicMock(return_value=ReportedError("reported"))
+    monkeypatch.setattr(utils_module, "report_connectedk8s_error", report_error)
+    return ReportedError, report_error
+
+
+def test_pull_helm_chart_reports_standardized_error(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"pull failed")
+    monkeypatch.setattr(
+        utils_module.subprocess, "Popen", MagicMock(return_value=process)
+    )
+    reported_error, report_error = _mock_reported_error(monkeypatch)
+
+    with pytest.raises(reported_error):
+        utils_module.pull_helm_chart(
+            "mcr.microsoft.com/chart:1.14.0",
+            "/tmp/chart",
+            None,
+            None,
+            "/usr/bin/helm",
+            True,
+            retry_count=1,
+        )
+
+    assert report_error.call_args.args[1] is errors_module.HELM_CHART_PULL_FAILED
+
+
+def test_get_chart_path_reports_missing_export(monkeypatch, tmp_path):
+    monkeypatch.setattr(utils_module, "pull_helm_chart", MagicMock())
+    monkeypatch.setattr(utils_module.os.path, "expanduser", lambda _path: str(tmp_path))
+    reported_error, report_error = _mock_reported_error(monkeypatch)
+
+    with pytest.raises(reported_error):
+        utils_module.get_chart_path(
+            "mcr.microsoft.com/chart:1.0.0",
+            None,
+            None,
+            "/usr/bin/helm",
+        )
+
+    assert report_error.call_args.args[1] is errors_module.HELM_CHART_EXPORT_FAILED
+
+
+def test_get_chart_path_validates_helmchart_override(monkeypatch, tmp_path):
+    override_path = tmp_path / "override-chart"
+    override_path.mkdir()
+    monkeypatch.setenv("HELMCHART", str(override_path))
+    monkeypatch.setattr(utils_module, "pull_helm_chart", MagicMock())
+    monkeypatch.setattr(utils_module.os.path, "expanduser", lambda _path: str(tmp_path))
+
+    chart_path = utils_module.get_chart_path(
+        "mcr.microsoft.com/chart:1.0.0",
+        None,
+        None,
+        "/usr/bin/helm",
+    )
+
+    assert chart_path == str(override_path)
+
+
+def test_add_helm_repo_reports_standardized_error(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"repo failed")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    monkeypatch.setenv("HELMREPONAME", "arc")
+    monkeypatch.setenv("HELMREPOURL", "https://example.test/helm")
+    reported_error, report_error = _mock_reported_error(monkeypatch)
+
+    with pytest.raises(reported_error):
+        utils_module.add_helm_repo(None, None, "/usr/bin/helm")
+
+    assert report_error.call_args.args[1] is errors_module.HELM_REPO_ADD_FAILED
+
+
+def test_delete_arc_agents_reports_standardized_error(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"delete failed")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    reported_error, report_error = _mock_reported_error(monkeypatch)
+
+    with pytest.raises(reported_error):
+        utils_module.delete_arc_agents("azure-arc", None, None, "/usr/bin/helm")
+
+    assert report_error.call_args.args[1] is errors_module.HELM_RELEASE_DELETE_FAILED
+
+
+def test_get_release_namespace_reports_standardized_error(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"list failed")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    monkeypatch.setattr(utils_module, "get_helm_major_version", lambda _path: 3)
+    reported_error, report_error = _mock_reported_error(monkeypatch)
+
+    with pytest.raises(reported_error):
+        utils_module.get_release_namespace(None, None, "/usr/bin/helm")
+
+    assert report_error.call_args.args[1] is errors_module.HELM_RELEASE_LIST_FAILED
+
+
+@pytest.mark.parametrize("version_output", ["v3.20.1+g123", "v4.1.0+g456"])
+def test_validate_helm_client_accepts_supported_versions(monkeypatch, version_output):
+    process = MagicMock(returncode=0)
+    process.communicate.return_value = (version_output.encode("ascii"), b"")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+
+    utils_module.validate_helm_client(MagicMock(), "/usr/bin/helm")
+
+
+def test_validate_helm_client_replaces_non_ascii_version_output(monkeypatch):
+    process = MagicMock(returncode=0)
+    process.communicate.return_value = (b"v3.20.1+\xff", b"")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+
+    utils_module.validate_helm_client(MagicMock(), "/usr/bin/helm")
+
+
+def test_validate_helm_client_allows_inconclusive_command_failure(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"helm failed: \xff")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    _, report_error = _mock_reported_error(monkeypatch)
+
+    utils_module.validate_helm_client(MagicMock(), "/usr/bin/helm")
+
+    report_error.assert_not_called()
+
+
+def test_validate_helm_client_reports_old_version(monkeypatch):
+    process = MagicMock(returncode=0)
+    process.communicate.return_value = (b"v2.17.0+g123", b"")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    reported_error, report_error = _mock_reported_error(monkeypatch)
+
+    with pytest.raises(reported_error):
+        utils_module.validate_helm_client(MagicMock(), "/usr/bin/helm")
+
+    assert report_error.call_args.args[1] is errors_module.HELM_VERSION_TOO_OLD
+
+
+def test_validate_helm_client_allows_unparseable_version(monkeypatch):
+    process = MagicMock(returncode=0)
+    process.communicate.return_value = (b"unexpected output", b"")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    _, report_error = _mock_reported_error(monkeypatch)
+
+    utils_module.validate_helm_client(MagicMock(), "/usr/bin/helm")
+
+    report_error.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "client_error",
+    [
+        FileNotFoundError("helm not found"),
+        PermissionError("permission denied"),
+        OSError("network filesystem unavailable"),
+    ],
+)
+def test_validate_helm_client_reports_client_os_error(monkeypatch, client_error):
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(side_effect=client_error))
+    reported_error, report_error = _mock_reported_error(monkeypatch)
+
+    with pytest.raises(reported_error):
+        utils_module.validate_helm_client(MagicMock(), "/missing/helm")
+
+    assert report_error.call_args.args[1] is errors_module.HELM_CLIENT_ERROR
+    assert report_error.call_args.kwargs["exception"] is client_error
+    assert report_error.call_args.kwargs["user_fault"] is True
+
+
+def _assert_standardized_telemetry(mock_telemetry, error, user_fault):
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.errorCode"] == error.code
+    assert properties["Context.Default.AzureCLI.errorName"] == error.name
+    assert properties["Context.Default.AzureCLI.errorFaultType"] == error.fault_type
+    assert (
+        mock_telemetry.set_exception.call_args.kwargs["summary"]
+        == properties["Context.Default.AzureCLI.errorMessage"]
+    )
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+    if user_fault:
+        mock_telemetry.set_user_fault.assert_called_once_with()
+    else:
+        mock_telemetry.set_user_fault.assert_not_called()
+
+
+def _cmd_without_arm_id():
+    return SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+
+
+def test_helm_install_release_reports_real_standardized_error(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"Error: install failed")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    with pytest.raises(CLIInternalError) as raised:
+        utils_module.helm_install_release(
+            resource_manager="https://management.azure.com/",
+            chart_path="/tmp/chart",
+            kubernetes_distro="generic",
+            kubernetes_infra="generic",
+            location="eastus",
+            private_key_pem="test-private-key",
+            kube_config=None,
+            kube_context=None,
+            no_wait=True,
+            values_file=None,
+            cloud_name="AzureCloud",
+            enable_custom_locations=False,
+            custom_locations_oid="",
+            helm_client_location="/usr/bin/helm",
+            enable_private_link=False,
+            arm_metadata={},
+            helm_content_values={},
+            registry_path="mcr.microsoft.com/azurearck8s/agent",
+            aad_identity_principal_id=None,
+            cmd=_cmd_without_arm_id(),
+        )
+
+    assert str(raised.value).startswith("[AZK8S0500] HelmReleaseInstallFailed:")
+    assert "install" in str(raised.value)
+    assert "Error: install failed" in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry, errors_module.HELM_RELEASE_INSTALL_FAILED, False
+    )
+
+
+@pytest.mark.parametrize(
+    "helm_error, expected_user_fault",
+    [
+        ("Error: delete failed", False),
+        ("Error: forbidden", True),
+        ("Error: timed out waiting for the condition", True),
+    ],
+)
+def test_delete_arc_agents_reports_real_standardized_error(
+    monkeypatch, helm_error, expected_user_fault
+):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", helm_error.encode("ascii"))
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    with pytest.raises(CLIInternalError) as raised:
+        utils_module.delete_arc_agents(
+            "azure-arc", None, None, "/usr/bin/helm", cmd=_cmd_without_arm_id()
+        )
+
+    assert str(raised.value).startswith("[AZK8S0501] HelmReleaseDeleteFailed:")
+    assert helm_error in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry,
+        errors_module.HELM_RELEASE_DELETE_FAILED,
+        expected_user_fault,
+    )
+
+
+def test_pull_helm_chart_reports_real_standardized_error(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"Error: pull failed")
+    monkeypatch.setattr(
+        utils_module.subprocess, "Popen", MagicMock(return_value=process)
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    with pytest.raises(CLIInternalError) as raised:
+        utils_module.pull_helm_chart(
+            "mcr.microsoft.com/chart:1.14.0",
+            "/tmp/chart",
+            None,
+            None,
+            "/usr/bin/helm",
+            True,
+            retry_count=1,
+            cmd=_cmd_without_arm_id(),
+        )
+
+    assert str(raised.value).startswith("[AZK8S0502] HelmChartPullFailed:")
+    assert "mcr.microsoft.com/chart:1.14.0" in str(raised.value)
+    assert "Error: pull failed" in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry, errors_module.HELM_CHART_PULL_FAILED, False
+    )
+
+
+def test_get_chart_path_reports_real_standardized_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(utils_module, "pull_helm_chart", MagicMock())
+    monkeypatch.setattr(utils_module.os.path, "expanduser", lambda _path: str(tmp_path))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    with pytest.raises(CLIInternalError) as raised:
+        utils_module.get_chart_path(
+            "mcr.microsoft.com/chart:1.14.0",
+            None,
+            None,
+            "/usr/bin/helm",
+            cmd=_cmd_without_arm_id(),
+        )
+
+    expected_path = str(tmp_path / ".azure" / "AzureArcCharts" / "azure-arc-k8sagents")
+    assert str(raised.value).startswith("[AZK8S0503] HelmChartExportFailed:")
+    assert expected_path in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry, errors_module.HELM_CHART_EXPORT_FAILED, False
+    )
+
+
+def test_add_helm_repo_reports_real_standardized_error(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"Error: repo failed \xff")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    monkeypatch.setenv("HELMREPONAME", "arc")
+    repo_url = _build_test_proxy_url("repo-user", "repo-password")
+    monkeypatch.setenv("HELMREPOURL", repo_url)
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    with pytest.raises(CLIInternalError) as raised:
+        utils_module.add_helm_repo(
+            None, None, "/usr/bin/helm", cmd=_cmd_without_arm_id()
+        )
+
+    assert str(raised.value).startswith("[AZK8S0504] HelmRepositoryAddFailed:")
+    assert "repo-user" not in str(raised.value)
+    assert "repo-password" not in str(raised.value)
+    assert "example.com" not in str(raised.value)
+    assert "Error: repo failed \ufffd" in str(raised.value)
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert "repo-user" not in properties["Context.Default.AzureCLI.errorMessage"]
+    assert "repo-password" not in properties["Context.Default.AzureCLI.errorMessage"]
+    assert "example.com" not in properties["Context.Default.AzureCLI.errorMessage"]
+    telemetry_exception = mock_telemetry.set_exception.call_args.kwargs["exception"]
+    assert "repo-user" not in str(telemetry_exception)
+    assert "repo-password" not in str(telemetry_exception)
+    assert "example.com" not in str(telemetry_exception)
+    _assert_standardized_telemetry(
+        mock_telemetry, errors_module.HELM_REPO_ADD_FAILED, False
+    )
+
+
+@pytest.mark.parametrize(
+    "helm_error, expected_user_fault",
+    [
+        ("Error: list failed", False),
+        ("Error: forbidden", True),
+        ("Kubernetes cluster unreachable", True),
+    ],
+)
+def test_get_release_namespace_reports_real_standardized_error(
+    monkeypatch, helm_error, expected_user_fault
+):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", helm_error.encode("ascii"))
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    monkeypatch.setattr(utils_module, "get_helm_major_version", lambda _path: 3)
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    with pytest.raises(CLIInternalError) as raised:
+        utils_module.get_release_namespace(
+            None, None, "/usr/bin/helm", cmd=_cmd_without_arm_id()
+        )
+
+    assert str(raised.value).startswith("[AZK8S0505] HelmReleaseListFailed:")
+    assert helm_error in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry,
+        errors_module.HELM_RELEASE_LIST_FAILED,
+        expected_user_fault,
+    )
+
+
+def test_helm_update_agent_reports_real_values_error(monkeypatch, tmp_path):
+    azure_dir = tmp_path / ".azure"
+    azure_dir.mkdir()
+    monkeypatch.setattr(utils_module.os.path, "expanduser", lambda _path: str(tmp_path))
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"Error: forbidden")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    with pytest.raises(CLIInternalError) as raised:
+        utils_module.helm_update_agent(
+            "/usr/bin/helm",
+            None,
+            None,
+            {},
+            None,
+            "cluster",
+            "azure-arc",
+            "/tmp/chart",
+            cmd=_cmd_without_arm_id(),
+        )
+
+    assert str(raised.value).startswith("[AZK8S0509] HelmValuesGetFailed:")
+    assert "Error: forbidden" in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry, errors_module.HELM_VALUES_GET_FAILED, True
+    )
+
+
+def test_validate_helm_client_defers_real_client_execution_error(monkeypatch):
+    process = MagicMock(returncode=1)
+    process.communicate.return_value = (b"", b"Error: Helm is unavailable")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    utils_module.validate_helm_client(_cmd_without_arm_id(), "/usr/bin/helm")
+
+    mock_telemetry.add_extension_event.assert_not_called()
+    mock_telemetry.set_exception.assert_not_called()
+
+
+def test_validate_helm_client_reports_real_old_version_error(monkeypatch):
+    version_output = "v2.17.0+g123"
+    process = MagicMock(returncode=0)
+    process.communicate.return_value = (version_output.encode("ascii"), b"")
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(return_value=process))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    with pytest.raises(CLIInternalError) as raised:
+        utils_module.validate_helm_client(_cmd_without_arm_id(), "/usr/bin/helm")
+
+    assert str(raised.value).startswith("[AZK8S0511] HelmVersionTooOld:")
+    assert version_output in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry, errors_module.HELM_VERSION_TOO_OLD, True
+    )
+
+
+@pytest.mark.parametrize(
+    "signals, expected_error, expected_user_fault",
+    [
+        (
+            {"PendingOrUnschedulable"},
+            errors_module.HELM_TIMEOUT_PENDING_OR_UNSCHEDULABLE,
+            True,
+        ),
+        (
+            {"ImagePullFailure"},
+            errors_module.HELM_TIMEOUT_IMAGE_PULL_FAILED,
+            True,
+        ),
+        (set(), errors_module.HELM_TIMEOUT_GENERIC, False),
+    ],
+)
+def test_helm_timeout_classifications_report_real_standardized_errors(
+    monkeypatch, signals, expected_error, expected_user_fault
+):
+    properties = _build_helm_timeout_telemetry_properties(
+        signals, 1 if signals else 0, "Succeeded", "upgrade"
+    )
+    monkeypatch.setattr(
+        utils_module,
+        "_collect_arc_agent_timeout_diagnostics",
+        lambda: ("diagnostic evidence", properties),
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    report = build_helm_timeout_report(
+        "Error: context deadline exceeded", helm_operation="upgrade"
+    )
+    assert report is not None
+    assert report.error is expected_error
+
+    raised = report_helm_timeout_error(_cmd_without_arm_id(), report)
+
+    assert isinstance(raised, CLIInternalError)
+    assert str(raised).startswith(f"[{expected_error.code}] {expected_error.name}:")
+    assert "context deadline exceeded" in str(raised)
+    _assert_standardized_telemetry(mock_telemetry, expected_error, expected_user_fault)
+
+
+@pytest.mark.parametrize(
+    "client_error",
+    [
+        FileNotFoundError("helm not found"),
+        PermissionError("permission denied"),
+        OSError("filesystem unavailable"),
+    ],
+)
+def test_validate_helm_client_reports_real_client_error(monkeypatch, client_error):
+    monkeypatch.setattr(utils_module, "Popen", MagicMock(side_effect=client_error))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+
+    with pytest.raises(CLIInternalError) as raised:
+        utils_module.validate_helm_client(_cmd_without_arm_id(), "/missing/helm")
+
+    assert str(raised.value).startswith("[AZK8S0515] HelmClientError:")
+    assert str(client_error) in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry, errors_module.HELM_CLIENT_ERROR, True
     )
 
 

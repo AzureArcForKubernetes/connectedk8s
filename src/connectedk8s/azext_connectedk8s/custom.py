@@ -57,6 +57,7 @@ from kubernetes.config.kube_config import KubeConfigMerger
 from packaging import version
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._errors as errors
 import azext_connectedk8s._precheckutils as precheckutils
 import azext_connectedk8s._troubleshootutils as troubleshootutils
 import azext_connectedk8s._utils as utils
@@ -101,6 +102,26 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _get_kubernetes_client_locations(
+    cmd: CLICommand, azure_cloud: str
+) -> tuple[str, str]:
+    try:
+        kubectl_client_location = get_kubectl_client_location(
+            cmd, azure_cloud=azure_cloud
+        )
+        helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
+        return kubectl_client_location, helm_client_location
+    except AzCLIError:
+        raise
+    except Exception as ex:
+        raise CLIInternalError(
+            "An exception has occured while trying to perform kubectl or helm "
+            f"install: {ex}"
+        ) from ex
+    except KeyboardInterrupt as ex:
+        raise ManualInterrupt("Process terminated externally.") from ex
+
+
 def _telemetry_catch_all(func: Callable[..., Any]) -> Callable[..., Any]:
     """Catch-all that ensures unhandled exceptions are logged to telemetry
     with proper ExceptionName before reaching the CLI framework."""
@@ -112,14 +133,63 @@ def _telemetry_catch_all(func: Callable[..., Any]) -> Callable[..., Any]:
         except AzCLIError:
             raise  # Already properly classified
         except Exception as ex:
-            telemetry.set_exception(
+            cmd = args[0] if args and hasattr(args[0], "cli_ctx") else kwargs.get("cmd")
+            if cmd is not None and not hasattr(cmd, "cli_ctx"):
+                cmd = None
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.UNEXPECTED_ERROR,
                 exception=ex,
                 fault_type=f"unhandled-exception-in-{func.__name__}",
-                summary=f"Unhandled {type(ex).__name__} in {func.__name__}",
-            )
-            raise CLIInternalError(f"An unexpected error occurred: {ex}") from ex
+                operation=func.__name__,
+                details=str(ex),
+            ) from ex
 
     return wrapper
+
+
+def _generate_key_pair(cmd: CLICommand) -> Any:
+    try:
+        return RSA.generate(4096)
+    except Exception as ex:
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.KEY_PAIR_GENERATION_FAILED,
+            exception=ex,
+            details=str(ex),
+        ) from ex
+
+
+def _agent_state_timeout_error(cmd: CLICommand, operation: str) -> AzCLIError:
+    return utils.report_connectedk8s_error(
+        cmd,
+        errors.AGENT_STATE_TIMEOUT,
+        exception=Exception(
+            "Timed out waiting for Agent State to reach terminal state"
+        ),
+        operation=operation,
+    )
+
+
+def _cleanup_stale_arc_agents(
+    cmd: CLICommand,
+    kubectl_client_location: str,
+    kube_config: str | None,
+    kube_context: str | None,
+    release_namespace: str,
+    helm_client_location: str,
+    is_arm64_cluster: bool,
+) -> None:
+    crd_cleanup_force_delete(cmd, kubectl_client_location, kube_config, kube_context)
+    utils.delete_arc_agents(
+        release_namespace,
+        kube_config,
+        kube_context,
+        helm_client_location,
+        is_arm64_cluster,
+        True,
+        cmd=cmd,
+    )
 
 
 # pylint: disable=unused-argument,too-many-locals,too-many-branches
@@ -205,13 +275,8 @@ def create_connectedk8s(
         if custom_token_passed is True
         else get_subscription_id(cmd.cli_ctx)
     )
-
-    resource_id = (
-        f"/subscriptions/{subscription_id}/resourcegroups/{resource_group_name}/providers/Microsoft.\
-        Kubernetes/connectedClusters/{cluster_name}/location/{location}"
-    )
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.resourceid": resource_id}
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name, subscription_id
     )
 
     # Send cloud information to telemetry
@@ -332,18 +397,9 @@ def create_connectedk8s(
         azure_local_disconnected = True
 
     # Install kubectl and helm
-    try:
-        kubectl_client_location = get_kubectl_client_location(
-            cmd, azure_cloud=azure_cloud
-        )
-        helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
-    except Exception as e:
-        raise CLIInternalError(
-            f"An exception has occured while trying to perform kubectl or helm install: {e}"
-        ) from e
-    # Handling the user manual interrupt
-    except KeyboardInterrupt as exc:
-        raise ManualInterrupt("Process terminated externally.") from exc
+    kubectl_client_location, helm_client_location = _get_kubernetes_client_locations(
+        cmd, azure_cloud
+    )
 
     # Pre onboarding checks
     diagnostic_checks = "Failed"
@@ -412,20 +468,22 @@ def create_connectedk8s(
                     "diagnostic check logs on your device"
                 )
 
+    # Preserve errors already assigned a specific AZK8S code, such as AZK8S0607
+    # for Helm installation failures, instead of reclassifying them below.
+    except AzCLIError:
+        raise
+
     except Exception as e:
-        precheckutils.send_prediagnostic_job_execution_error_telemetry(reason=str(e))
-        ex_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
-        summ_msg = f"An exception occured while trying to execute pre-onboarding diagnostic checks : {e}"
-        telemetry.set_exception(
+        precheckutils.send_prediagnostic_job_execution_error_telemetry(
+            reason=str(e), cmd=cmd
+        )
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.PREDIAGNOSTICS_FAILED,
             exception=e,
             fault_type=consts.Pre_Onboarding_Diagnostic_Checks_Execution_Failed,
-            summary=summ_msg,
-        )
-        err_msg = (
-            "An exception has occured while trying to execute pre-onboarding diagnostic checks : "
-            f"{e}"
-        )
-        raise CLIInternalError(err_msg) from e
+            details=str(e),
+        ) from e
 
     # Handling the user manual interrupt
     except KeyboardInterrupt as exc:
@@ -457,6 +515,7 @@ def create_connectedk8s(
             precheckutils.send_prediagnostic_check_failure_telemetry(
                 precheckutils.prediagnostic_dns_check,
                 precheckutils.prediagnostic_outbound_check,
+                cmd=cmd,
             )
         if storage_space_available:
             logger.warning(
@@ -465,32 +524,27 @@ def create_connectedk8s(
                 filepath_with_timestamp,
             )
         if diagnostic_checks == consts.Diagnostic_Check_Incomplete:
-            telemetry.set_exception(
-                exception=Exception("Cluster Diagnostic Prechecks Incomplete"),
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.PREDIAGNOSTICS_INCOMPLETE,
                 fault_type=consts.Cluster_Diagnostic_Prechecks_Incomplete,
-                summary="Cluster Diagnostic Prechecks didnt complete in the cluster",
+                details=(
+                    "Execution of pre-onboarding checks failed. Not proceeding with cluster onboarding. "
+                    f"Please meet the prerequisites at {consts.Doc_Onboarding_PreRequisites_Url} "
+                    f"and try onboarding again.{precheck_failure_summary_msg}"
+                ),
             )
-            err_msg = (
-                "Execution of pre-onboarding checks failed. So not proceeding with cluster onboarding. Please "
-                "meet the prerequisites - "
-                + consts.Doc_Onboarding_PreRequisites_Url
-                + " and try onboarding again."
-                + precheck_failure_summary_msg
-            )
-            raise ValidationError(err_msg)
 
         # if diagnostic_checks != consts.Diagnostic_Check_Incomplete
-        telemetry.set_exception(
-            exception=Exception("Cluster Diagnostic Prechecks Failed"),
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.POST_DIAGNOSTIC_PRECHECK_FAILED,
             fault_type=consts.Cluster_Diagnostic_Prechecks_Failed,
-            summary="Cluster Diagnostic Prechecks Failed in the cluster",
+            details=(
+                "One or more pre-onboarding diagnostic checks failed; cluster onboarding will not proceed. "
+                f"Resolve the reported issues and try onboarding again.{precheck_failure_summary_msg}"
+            ),
         )
-        err_msg = (
-            "One or more pre-onboarding diagnostic checks failed and hence not proceeding with "
-            "cluster onboarding. Please resolve them and try onboarding again."
-            + precheck_failure_summary_msg
-        )
-        raise ValidationError(err_msg)
 
     if not azure_local_disconnected and not lowbandwidth:
         print(
@@ -514,6 +568,7 @@ def create_connectedk8s(
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             check_name="LinuxNodeExists",
             reason="Could not find any node on the kubernetes cluster with the OS linux",
+            cmd=cmd,
         )
         logger.warning(
             "Please ensure that this Kubernetes cluster has any nodes with OS 'linux', for scheduling the "
@@ -536,6 +591,7 @@ def create_connectedk8s(
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             check_name="ClusterRoleBindings",
             reason=ex_msg,
+            cmd=cmd,
         )
         err_msg = (
             "Your credentials doesn't have permission to create clusterrolebindings on this "
@@ -566,7 +622,7 @@ def create_connectedk8s(
         "Context.Default.AzureCLI.KubernetesDistro": kubernetes_distro,
         "Context.Default.AzureCLI.KubernetesInfra": kubernetes_infra,
     }
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Checking if it is an AKS cluster
     is_aks_cluster = check_aks_cluster(kube_config, kube_context)
@@ -637,7 +693,7 @@ def create_connectedk8s(
         f"Step: {utils.get_utctimestring()}: Check if an earlier azure-arc release exists"
     )
     release_namespace = utils.get_release_namespace(
-        kube_config, kube_context, helm_client_location
+        kube_config, kube_context, helm_client_location, cmd=cmd
     )
 
     if release_namespace:
@@ -794,14 +850,18 @@ def create_connectedk8s(
 
                 # Get azure-arc agent version for telemetry
                 azure_arc_agent_version = registry_path.split(":")[1]
-                telemetry.add_extension_event(
-                    "connectedk8s",
+                utils.add_connectedk8s_telemetry_event(
+                    cmd,
                     {"Context.Default.AzureCLI.AgentVersion": azure_arc_agent_version},
                 )
 
                 # Get helm chart path
                 chart_path = utils.get_chart_path(
-                    registry_path, kube_config, kube_context, helm_client_location
+                    registry_path,
+                    kube_config,
+                    kube_context,
+                    helm_client_location,
+                    cmd=cmd,
                 )
 
                 helm_content_values = helm_values_dp["helmValuesContent"]
@@ -825,6 +885,7 @@ def create_connectedk8s(
                     cluster_name,
                     release_namespace,
                     chart_path,
+                    cmd,
                 )
             return cc_response
 
@@ -832,18 +893,14 @@ def create_connectedk8s(
         logger.warning(
             "Cleaning up the stale arc agents present on the cluster before starting new onboarding."
         )
-        # Explicit CRD Deletion
-        crd_cleanup_force_delete(
-            cmd, kubectl_client_location, kube_config, kube_context
-        )
-        # Cleaning up the cluster
-        utils.delete_arc_agents(
-            release_namespace,
+        _cleanup_stale_arc_agents(
+            cmd,
+            kubectl_client_location,
             kube_config,
             kube_context,
+            release_namespace,
             helm_client_location,
             is_arm64_cluster,
-            True,
         )
 
     else:
@@ -895,18 +952,7 @@ def create_connectedk8s(
 
     print(f"Step: {utils.get_utctimestring()}: Generating Public-Private Key pair")
 
-    # Generate public-private key pair
-    try:
-        key_pair = RSA.generate(4096)
-    except Exception as e:
-        telemetry.set_exception(
-            exception=e,
-            fault_type=consts.KeyPair_Generate_Fault_Type,
-            summary="Failed to generate public-private key pair",
-        )
-        raise CLIInternalError(
-            f"Failed to generate public-private key pair: {e}"
-        ) from e
+    key_pair = _generate_key_pair(cmd)
     try:
         public_key = get_public_key(key_pair)
     except Exception as e:
@@ -1066,14 +1112,18 @@ def create_connectedk8s(
 
     # Get azure-arc agent version for telemetry
     azure_arc_agent_version = registry_path.split(":")[1]
-    telemetry.add_extension_event(
-        "connectedk8s",
+    utils.add_connectedk8s_telemetry_event(
+        cmd,
         {"Context.Default.AzureCLI.AgentVersion": azure_arc_agent_version},
     )
 
     # Get helm chart path
     chart_path = utils.get_chart_path(
-        registry_path, kube_config, kube_context, helm_client_location
+        registry_path,
+        kube_config,
+        kube_context,
+        helm_client_location,
+        cmd=cmd,
     )
 
     helm_content_values = helm_values_dp["helmValuesContent"]
@@ -1090,6 +1140,44 @@ def create_connectedk8s(
     print(
         f"Step: {utils.get_utctimestring()}: Starting to install Azure arc agents on the Kubernetes cluster."
     )
+
+    # Decide which onboarding flow to use. Stable agents below 1.35.3 still need
+    # the legacy flow (private key in helm values), because their helm chart
+    # always renders the privatekey secret from helm values and would zero it
+    # out on install otherwise. Newer agents (and any non-stable build) get the
+    # secure flow: we pre-create the namespace + secret directly via the
+    # Kubernetes API so the private key never appears in helm values.
+    use_secret_injection_flow = utils.should_use_secret_injection_flow(
+        release_train, azure_arc_agent_version
+    )
+    telemetry.add_extension_event(
+        "connectedk8s",
+        {
+            "Context.Default.AzureCLI.OnboardingFlow": (
+                "secret-injection"
+                if use_secret_injection_flow
+                else "helm-values-legacy"
+            )
+        },
+    )
+
+    if use_secret_injection_flow:
+        # Inject the private key BEFORE running helm so that the cluster always
+        # has the onboarding secret available - even if the subsequent helm
+        # install/CLI is interrupted - preventing a stuck-disconnected state.
+        try:
+            utils.inject_onboarding_private_key_secret(private_key_pem)
+        except Exception as e:
+            telemetry.set_exception(
+                exception=e,
+                fault_type=consts.Inject_PrivateKey_Secret_Fault_Type,
+                summary="Failed to pre-create onboarding private key secret",
+            )
+            raise CLIInternalError(
+                "Failed to pre-create onboarding private key secret on the "
+                f"Kubernetes cluster: {e}"
+            )
+
     # Install azure-arc agents
     utils.helm_install_release(
         cmd.cli_ctx.cloud.endpoints.resource_manager,
@@ -1112,6 +1200,8 @@ def create_connectedk8s(
         registry_path,
         aad_identity_principal_id,
         onboarding_timeout,
+        inject_private_key_via_helm=not use_secret_injection_flow,
+        cmd=cmd,
     )
 
     # Long Running Operation for Agent State
@@ -1136,14 +1226,7 @@ def create_connectedk8s(
             )
             return connected_cluster
 
-        telemetry.set_exception(
-            exception="Timed out waiting for Agent State to reach terminal state",
-            fault_type=consts.Agent_State_Timeout_Fault_Type,
-            summary="Agent state did not reach terminal state within timeout during create",
-        )
-        raise CLIInternalError(
-            "Timed out waiting for Agent State to reach terminal state."
-        )
+        raise _agent_state_timeout_error(cmd, "create")
     if cl_oid and enable_custom_locations and cl_oid == custom_locations_oid:
         logger.warning(consts.Manual_Custom_Location_Oid_Warning)
     return put_cc_response
@@ -1233,8 +1316,8 @@ def validate_existing_provisioned_cluster_for_reput(
 
 
 def send_cloud_telemetry(cmd: CLICommand) -> str:
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AzureCloud": cmd.cli_ctx.cloud.name}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AzureCloud": cmd.cli_ctx.cloud.name}
     )
     cloud_name: str = cmd.cli_ctx.cloud.name.upper()
     # Setting cloud name to format that is understood by golang SDK.
@@ -1524,8 +1607,8 @@ def install_helm_client(cmd: CLICommand) -> str:
     arch = "arm64" if machine_type.lower() in ("aarch64", "arm64") else "amd64"
 
     # Send machine telemetry
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.MachineType": machine_type}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.MachineType": machine_type}
     )
     # Set helm binary download & install locations
     if operating_system == "windows":
@@ -1674,7 +1757,7 @@ def get_cloud_based_domain(cmd: CLICommand) -> str:
         "."
     )
     # default for public, mc, ff clouds
-    cloud_based_domain = active_directory_array[2]
+    cloud_based_domain: str = active_directory_array[2]
     # special cases for USSec/USNat clouds
     if len(active_directory_array) == 4:
         cloud_based_domain = active_directory_array[2] + "." + active_directory_array[3]
@@ -2138,6 +2221,9 @@ def get_connectedk8s(
     resource_group_name: str,
     cluster_name: str,
 ) -> ConnectedCluster:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     return client.get(resource_group_name, cluster_name)
 
 
@@ -2166,6 +2252,9 @@ def delete_connectedk8s(
     skip_ssl_verification: bool = False,
     yes: bool = False,
 ) -> None:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     # The force delete prompt is added because it can be used in the case where the config map is missing
     # so we cannot check if the user context is pointing to the cluster that he intends to delete
     if not force_delete:
@@ -2216,7 +2305,7 @@ def delete_connectedk8s(
 
     # Check Release Existance
     release_namespace = utils.get_release_namespace(
-        kube_config, kube_context, helm_client_location
+        kube_config, kube_context, helm_client_location, cmd=cmd
     )
 
     print(f"Step: {utils.get_utctimestring()}: Do node validations")
@@ -2248,6 +2337,7 @@ def delete_connectedk8s(
                 helm_client_location,
                 is_arm64_cluster,
                 True,
+                cmd=cmd,
             )
 
         return
@@ -2332,6 +2422,7 @@ def delete_connectedk8s(
         kube_context,
         helm_client_location,
         is_arm64_cluster,
+        cmd=cmd,
     )
 
     print(f"Step: {utils.get_utctimestring()}: Delete of Connected Cluster ended.")
@@ -2473,6 +2564,9 @@ def update_connected_cluster(
     configuration_settings: dict[str, Any] | None = None,
     configuration_protected_settings: dict[str, Any] | None = None,
 ) -> ConnectedCluster:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     # Prompt for confirmation for few parameters
     if azure_hybrid_benefit == "True":
         confirmation_message = (
@@ -2631,6 +2725,7 @@ def update_connected_cluster(
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
     release_namespace = validate_release_namespace(
+        cmd,
         client,
         cluster_name,
         resource_group_name,
@@ -2672,7 +2767,7 @@ def update_connected_cluster(
             kubernetes_infra
         )
 
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Get the connected cluster resource using latest api version and generate reput request payload
     connected_cluster = client.get(resource_group_name, cluster_name)
@@ -2767,7 +2862,7 @@ def update_connected_cluster(
 
     # Adding helm repo
     if os.getenv("HELMREPONAME") and os.getenv("HELMREPOURL"):
-        utils.add_helm_repo(kube_config, kube_context, helm_client_location)
+        utils.add_helm_repo(kube_config, kube_context, helm_client_location, cmd=cmd)
 
     config_dp_endpoint, release_train = get_config_dp_endpoint(
         cmd, connected_cluster.location, values_file
@@ -2817,13 +2912,17 @@ def update_connected_cluster(
 
     check_operation_support("update (properties)", agent_version)
 
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AgentVersion": agent_version}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AgentVersion": agent_version}
     )
 
     # Get Helm chart path
     chart_path = utils.get_chart_path(
-        registry_path, kube_config, kube_context, helm_client_location
+        registry_path,
+        kube_config,
+        kube_context,
+        helm_client_location,
+        cmd=cmd,
     )
 
     print(
@@ -2839,18 +2938,12 @@ def update_connected_cluster(
         cluster_name,
         release_namespace,
         chart_path,
+        cmd,
     )
 
     # If we didn't see a terminal agent state, now's the time to throw an error.
     if not terminal_agent_state:
-        telemetry.set_exception(
-            exception="Timed out waiting for Agent State to reach terminal state",
-            fault_type=consts.Agent_State_Timeout_Fault_Type,
-            summary="Agent state did not reach terminal state within timeout during update",
-        )
-        raise CLIInternalError(
-            "Timed out waiting for Agent State to reach terminal state."
-        )
+        raise _agent_state_timeout_error(cmd, "update")
 
     return connected_cluster
 
@@ -2867,6 +2960,9 @@ def upgrade_agents(
     arc_agent_version: str | None = None,
     upgrade_timeout: str = "600",
 ) -> str:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     # Check if cluster supports upgrading
     connected_cluster = client.get(resource_group_name, cluster_name)
 
@@ -2911,7 +3007,7 @@ def upgrade_agents(
 
     # Check Release Existence
     release_namespace = utils.get_release_namespace(
-        kube_config, kube_context, helm_client_location
+        kube_config, kube_context, helm_client_location, cmd=cmd
     )
     if release_namespace:
         # Loading config map
@@ -2994,26 +3090,20 @@ def upgrade_agents(
             raise ClientRequestError(err_msg, recommendation=reco_msg)
 
     else:
-        summary_msg = (
+        details = (
             "The azure-arc release namespace couldn't be retrieved, which implies that the kubernetes "
-            "cluster has not been onboarded to azure-arc."
+            "cluster has not been onboarded to azure-arc. Run 'az connectedk8s connect "
+            "-n <connected-cluster-name> -g <resource-group-name>' to onboard it."
         )
-        telemetry.set_exception(
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.RELEASE_NAMESPACE_NOT_FOUND,
             exception=Exception(
                 "The azure-arc release namespace could not be retrieved"
             ),
-            fault_type=consts.Release_Namespace_Not_Found,
-            summary=summary_msg,
+            user_fault=True,
+            details=details,
         )
-        err_msg = (
-            "The azure-arc release namespace couldn't be retrieved, which implies that the kubernetes cluster "
-            "has not been onboarded to azure-arc."
-        )
-        reco_msg = (
-            "Please run 'az connectedk8s connect -n <connected-cluster-name> -g "
-            "<resource-group-name>' to onboard the cluster"
-        )
-        raise ClientRequestError(err_msg, recommendation=reco_msg)
 
     # Fetch Connected Cluster for agent version
     connected_cluster = client.get(resource_group_name, cluster_name)
@@ -3038,11 +3128,11 @@ def upgrade_agents(
             kubernetes_infra
         )
 
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Adding helm repo
     if os.getenv("HELMREPONAME") and os.getenv("HELMREPOURL"):
-        utils.add_helm_repo(kube_config, kube_context, helm_client_location)
+        utils.add_helm_repo(kube_config, kube_context, helm_client_location, cmd=cmd)
 
     config_dp_endpoint, release_train = get_config_dp_endpoint(
         cmd, connected_cluster.location, values_file
@@ -3060,13 +3150,17 @@ def upgrade_agents(
         agent_version = arc_agent_version
         registry_path = reg_path_array[0] + ":" + agent_version
 
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AgentVersion": agent_version}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AgentVersion": agent_version}
     )
 
     # Get Helm chart path
     chart_path = utils.get_chart_path(
-        registry_path, kube_config, kube_context, helm_client_location
+        registry_path,
+        kube_config,
+        kube_context,
+        helm_client_location,
+        cmd=cmd,
     )
 
     cmd_helm_values = [
@@ -3085,17 +3179,21 @@ def upgrade_agents(
     response_helm_values_get = Popen(cmd_helm_values, stdout=PIPE, stderr=PIPE)
     output_helm_values, error_helm_get_values = response_helm_values_get.communicate()
     if response_helm_values_get.returncode != 0:
-        error = error_helm_get_values.decode("ascii")
-        if "forbidden" in error or "timed out waiting for the condition" in error:
-            telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(error),
-            fault_type=consts.Get_Helm_Values_Failed,
-            summary="Error while doing helm get values azure-arc",
+        error = utils.process_helm_error_detail(
+            error_helm_get_values.decode("ascii", errors="replace")
         )
-        raise CLIInternalError(str.format(consts.Upgrade_Agent_Failure, error))
+        is_user_fault = (
+            "forbidden" in error or "timed out waiting for the condition" in error
+        )
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.HELM_VALUES_GET_FAILED,
+            exception=Exception(error),
+            user_fault=is_user_fault,
+            details=error,
+        )
 
-    output_helm_values_str = output_helm_values.decode("ascii")
+    output_helm_values_str = output_helm_values.decode("ascii", errors="replace")
 
     try:
         existing_user_values = yaml.safe_load(output_helm_values_str)
@@ -3159,29 +3257,32 @@ def upgrade_agents(
     _, error_helm_upgrade = response_helm_upgrade.communicate()
 
     if response_helm_upgrade.returncode != 0:
-        helm_upgrade_error_message = utils.append_timeout_diagnostics(
-            utils.process_helm_error_detail(error_helm_upgrade.decode("ascii")),
-            helm_operation="upgrade",
+        helm_upgrade_error_message = utils.process_helm_error_detail(
+            error_helm_upgrade.decode("ascii", errors="replace")
         )
-        if not utils.is_advanced_helm_timeout_diagnostics(helm_upgrade_error_message):
-            if any(
-                message in helm_upgrade_error_message
-                for message in consts.Helm_Install_Release_Userfault_Messages
-            ):
-                telemetry.set_user_fault()
-            telemetry.set_exception(
-                exception=Exception(helm_upgrade_error_message),
-                fault_type=consts.Install_HelmRelease_Fault_Type,
-                summary="Unable to install helm release",
-            )
-        raise CLIInternalError(
-            str.format(consts.Upgrade_Agent_Failure, helm_upgrade_error_message)
+        timeout_report = utils.build_helm_timeout_report(
+            helm_upgrade_error_message, helm_operation="upgrade"
+        )
+        if timeout_report:
+            raise utils.report_helm_timeout_error(cmd, timeout_report)
+        is_user_fault = any(
+            message in helm_upgrade_error_message
+            for message in consts.Helm_Install_Release_Userfault_Messages
+        )
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.HELM_RELEASE_OPERATION_FAILED,
+            exception=Exception(helm_upgrade_error_message),
+            user_fault=is_user_fault,
+            operation="upgrade",
+            details=helm_upgrade_error_message,
         )
 
     return str.format(consts.Upgrade_Agent_Success, connected_cluster.name)
 
 
 def validate_release_namespace(
+    cmd: CLICommand,
     client: ConnectedClusterOperations,
     cluster_name: str,
     resource_group_name: str,
@@ -3191,7 +3292,7 @@ def validate_release_namespace(
 ) -> str:
     # Check Release Existance
     release_namespace = utils.get_release_namespace(
-        kube_config, kube_context, helm_client_location
+        kube_config, kube_context, helm_client_location, cmd=cmd
     )
     if release_namespace:
         # Loading config map
@@ -3247,26 +3348,25 @@ def validate_release_namespace(
             )
             raise ClientRequestError(err_msg, recommendation=reco_msg)
     else:
-        err_msg = (
+        details = (
             "The azure-arc release namespace couldn't be retrieved, which implies that the kubernetes "
-            "cluster has not been onboarded to azure-arc."
+            "cluster has not been onboarded to azure-arc. Run 'az connectedk8s connect "
+            "-n <connected-cluster-name> -g <resource-group-name>' to onboard it."
         )
-        telemetry.set_exception(
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.RELEASE_NAMESPACE_NOT_FOUND,
             exception=Exception(
                 "The azure-arc release namespace could not be retrieved"
             ),
-            fault_type=consts.Release_Namespace_Not_Found,
-            summary=err_msg,
+            user_fault=True,
+            details=details,
         )
-        reco_msg = (
-            "Please run 'az connectedk8s connect -n <connected-cluster-name> -g "
-            "<resource-group-name>' to onboard the cluster"
-        )
-        raise ClientRequestError(err_msg, recommendation=reco_msg)
     return release_namespace
 
 
 def get_all_helm_values(
+    cmd: CLICommand,
     release_namespace: str,
     kube_config: str | None,
     kube_context: str | None,
@@ -3289,19 +3389,18 @@ def get_all_helm_values(
     response_helm_values_get = Popen(cmd_helm_values, stdout=PIPE, stderr=PIPE)
     output_helm_values, error_helm_get_values = response_helm_values_get.communicate()
     if response_helm_values_get.returncode != 0:
-        error = error_helm_get_values.decode("ascii")
-        if "forbidden" in error:
-            telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(error),
-            fault_type=consts.Get_Helm_Values_Failed,
-            summary="Error while doing helm get values azure-arc",
+        error = utils.process_helm_error_detail(
+            error_helm_get_values.decode("ascii", errors="replace")
         )
-        raise CLIInternalError(
-            f"Error while getting the helm values in the azure-arc namespace: {error}"
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.HELM_VALUES_GET_FAILED,
+            exception=Exception(error),
+            user_fault="forbidden" in error,
+            details=error,
         )
 
-    output_helm_values_str = output_helm_values.decode("ascii")
+    output_helm_values_str = output_helm_values.decode("ascii", errors="replace")
 
     try:
         existing_values: dict[str, Any] = yaml.safe_load(output_helm_values_str)
@@ -3313,6 +3412,43 @@ def get_all_helm_values(
             summary="Problem loading the helm existing values",
         )
         raise CLIInternalError(f"Problem loading the helm existing values: {e}") from e
+
+
+def _validate_cluster_connect_disable(
+    cmd: CLICommand,
+    release_namespace: str,
+    kube_config: str | None,
+    kube_context: str | None,
+    helm_client_location: str,
+    disable_cl: bool,
+) -> None:
+    helm_values = get_all_helm_values(
+        cmd,
+        release_namespace,
+        kube_config,
+        kube_context,
+        helm_client_location,
+    )
+    try:
+        cl_enabled = (
+            helm_values.get("systemDefaultValues")  # type: ignore[union-attr]
+            .get("customLocations")
+            .get("enabled")
+        )
+        cl_oid = (
+            helm_values.get("systemDefaultValues")  # type: ignore[union-attr]
+            .get("customLocations")
+            .get("oid")
+        )
+        if not disable_cl and cl_enabled is True and cl_oid != "":
+            raise ClientRequestError(
+                "Disabling 'cluster-connect' feature is not allowed when "
+                "'custom-locations' feature is enabled"
+            )
+    except AttributeError:
+        pass
+    except Exception as ex:
+        raise ArgumentUsageError(str(ex)) from ex
 
 
 def enable_features(
@@ -3332,6 +3468,15 @@ def enable_features(
     # Validate custom token operation
     custom_token_passed, _ = utils.validate_custom_token(
         cmd, resource_group_name, "dummyLocation"
+    )
+
+    subscription_id = (
+        os.getenv("AZURE_SUBSCRIPTION_ID")
+        if custom_token_passed is True
+        else get_subscription_id(cmd.cli_ctx)
+    )
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name, subscription_id
     )
 
     features = [x.lower() for x in features]
@@ -3382,11 +3527,6 @@ def enable_features(
         azrbac_skip_authz_check = escape_proxy_settings(azrbac_skip_authz_check)
 
     if enable_cl:
-        subscription_id = (
-            os.getenv("AZURE_SUBSCRIPTION_ID")
-            if custom_token_passed is True
-            else get_subscription_id(cmd.cli_ctx)
-        )
         final_enable_cl, custom_locations_oid = check_cl_registration_and_get_oid(
             cmd, cl_oid, subscription_id
         )
@@ -3426,6 +3566,7 @@ def enable_features(
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
     release_namespace = validate_release_namespace(
+        cmd,
         client,
         cluster_name,
         resource_group_name,
@@ -3454,11 +3595,11 @@ def enable_features(
             kubernetes_infra
         )
 
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Adding helm repo
     if os.getenv("HELMREPONAME") and os.getenv("HELMREPOURL"):
-        utils.add_helm_repo(kube_config, kube_context, helm_client_location)
+        utils.add_helm_repo(kube_config, kube_context, helm_client_location, cmd=cmd)
 
     config_dp_endpoint, release_train = get_config_dp_endpoint(
         cmd, connected_cluster.location, values_file
@@ -3479,13 +3620,17 @@ def enable_features(
 
     check_operation_support("enable-features", agent_version)
 
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AgentVersion": agent_version}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AgentVersion": agent_version}
     )
 
     # Get Helm chart path
     chart_path = utils.get_chart_path(
-        registry_path, kube_config, kube_context, helm_client_location
+        registry_path,
+        kube_config,
+        kube_context,
+        helm_client_location,
+        cmd=cmd,
     )
 
     cmd_helm_upgrade = [
@@ -3540,19 +3685,25 @@ def enable_features(
     response_helm_upgrade = Popen(cmd_helm_upgrade, stdout=PIPE, stderr=PIPE)
     _, error_helm_upgrade = response_helm_upgrade.communicate()
     if response_helm_upgrade.returncode != 0:
-        helm_upgrade_error_message = error_helm_upgrade.decode("ascii")
-        if any(
+        helm_upgrade_error_message = utils.process_helm_error_detail(
+            error_helm_upgrade.decode("ascii", errors="replace")
+        )
+        timeout_report = utils.build_helm_timeout_report(
+            helm_upgrade_error_message, helm_operation="enable features"
+        )
+        if timeout_report:
+            raise utils.report_helm_timeout_error(cmd, timeout_report)
+        is_user_fault = any(
             message in helm_upgrade_error_message
             for message in consts.Helm_Install_Release_Userfault_Messages
-        ):
-            telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(error_helm_upgrade.decode("ascii")),
-            fault_type=consts.Install_HelmRelease_Fault_Type,
-            summary="Unable to install helm release",
         )
-        raise CLIInternalError(
-            str.format(consts.Error_enabling_Features, helm_upgrade_error_message)
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.HELM_RELEASE_OPERATION_FAILED,
+            exception=Exception(helm_upgrade_error_message),
+            user_fault=is_user_fault,
+            operation="enable features",
+            details=helm_upgrade_error_message,
         )
     if cl_oid and final_enable_cl and cl_oid == custom_locations_oid:
         logger.warning(consts.Manual_Custom_Location_Oid_Warning)
@@ -3572,6 +3723,9 @@ def disable_features(
     yes: bool = False,
     skip_ssl_verification: bool = False,
 ) -> str:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     features = [x.lower() for x in features]
     confirmation_message = (
         "Disabling few of the features may adversely impact dependent resources. Learn more "
@@ -3625,6 +3779,7 @@ def disable_features(
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
     release_namespace = validate_release_namespace(
+        cmd,
         client,
         cluster_name,
         resource_group_name,
@@ -3653,29 +3808,17 @@ def disable_features(
             kubernetes_infra
         )
 
-    telemetry.add_extension_event("connectedk8s", kubernetes_properties)
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     if disable_clstr_connect:
-        try:
-            helm_values = get_all_helm_values(
-                release_namespace, kube_config, kube_context, helm_client_location
-            )
-            cl_enabled = (
-                helm_values.get("systemDefaultValues")  # type: ignore[union-attr]
-                .get("customLocations")
-                .get("enabled")
-            )
-            cl_oid = (
-                helm_values.get("systemDefaultValues").get("customLocations").get("oid")  # type: ignore[union-attr]
-            )
-            if not disable_cl and cl_enabled is True and cl_oid != "":
-                raise ClientRequestError(
-                    "Disabling 'cluster-connect' feature is not allowed when 'custom-locations' feature is enabled"
-                )
-        except AttributeError:
-            pass
-        except Exception as ex:
-            raise ArgumentUsageError(str(ex)) from ex
+        _validate_cluster_connect_disable(
+            cmd,
+            release_namespace,
+            kube_config,
+            kube_context,
+            helm_client_location,
+            disable_cl,
+        )
 
     if disable_cl:
         logger.warning(
@@ -3685,7 +3828,7 @@ def disable_features(
 
     # Adding helm repo
     if os.getenv("HELMREPONAME") and os.getenv("HELMREPOURL"):
-        utils.add_helm_repo(kube_config, kube_context, helm_client_location)
+        utils.add_helm_repo(kube_config, kube_context, helm_client_location, cmd=cmd)
 
     get_chart_and_disable_features(
         cmd,
@@ -3736,13 +3879,17 @@ def get_chart_and_disable_features(
 
     check_operation_support("disable-features", agent_version)
 
-    telemetry.add_extension_event(
-        "connectedk8s", {"Context.Default.AzureCLI.AgentVersion": agent_version}
+    utils.add_connectedk8s_telemetry_event(
+        cmd, {"Context.Default.AzureCLI.AgentVersion": agent_version}
     )
 
     # Get Helm chart path
     chart_path = utils.get_chart_path(
-        registry_path, kube_config, kube_context, helm_client_location
+        registry_path,
+        kube_config,
+        kube_context,
+        helm_client_location,
+        cmd=cmd,
     )
 
     cmd_helm_upgrade = [
@@ -3778,19 +3925,25 @@ def get_chart_and_disable_features(
     response_helm_upgrade = Popen(cmd_helm_upgrade, stdout=PIPE, stderr=PIPE)
     _, error_helm_upgrade = response_helm_upgrade.communicate()
     if response_helm_upgrade.returncode != 0:
-        helm_upgrade_error_message = error_helm_upgrade.decode("ascii")
-        if any(
+        helm_upgrade_error_message = utils.process_helm_error_detail(
+            error_helm_upgrade.decode("ascii", errors="replace")
+        )
+        timeout_report = utils.build_helm_timeout_report(
+            helm_upgrade_error_message, helm_operation="disable features"
+        )
+        if timeout_report:
+            raise utils.report_helm_timeout_error(cmd, timeout_report)
+        is_user_fault = any(
             message in helm_upgrade_error_message
             for message in consts.Helm_Install_Release_Userfault_Messages
-        ):
-            telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(error_helm_upgrade.decode("ascii")),
-            fault_type=consts.Install_HelmRelease_Fault_Type,
-            summary="Unable to install helm release",
         )
-        raise CLIInternalError(
-            str.format(consts.Error_disabling_Features, helm_upgrade_error_message)
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.HELM_RELEASE_OPERATION_FAILED,
+            exception=Exception(helm_upgrade_error_message),
+            user_fault=is_user_fault,
+            operation="disable features",
+            details=helm_upgrade_error_message,
         )
 
 
@@ -4015,6 +4168,9 @@ def client_side_proxy_wrapper(
     context_name: str | None = None,
     api_server_port: int = consts.API_SERVER_PORT,
 ) -> None:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     cloud = send_cloud_telemetry(cmd)
     profile = Profile()
     tenant_id = profile.get_subscription()["tenantId"]
@@ -4512,6 +4668,9 @@ def troubleshoot(
     no_wait: bool = False,
     tags: dict[str, str] | None = None,
 ) -> None:
+    utils.set_connected_cluster_arm_id_telemetry_context(
+        cmd, resource_group_name, cluster_name
+    )
     try:
         logger.warning("Diagnoser running. This may take a while ...\n")
         absolute_path = os.path.abspath(os.path.dirname(__file__))
@@ -4550,6 +4709,7 @@ def troubleshoot(
         )
         helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
         release_namespace = validate_release_namespace(
+            cmd,
             client,
             cluster_name,
             resource_group_name,
@@ -4699,7 +4859,9 @@ def troubleshoot(
 
             # Adding helm repo
             if os.getenv("HELMREPONAME") and os.getenv("HELMREPOURL"):
-                utils.add_helm_repo(kube_config, kube_context, helm_client_location)
+                utils.add_helm_repo(
+                    kube_config, kube_context, helm_client_location, cmd=cmd
+                )
 
             config_dp_endpoint, release_train = get_config_dp_endpoint(
                 cmd, connected_cluster.location, values_file
@@ -4741,6 +4903,7 @@ def troubleshoot(
                 diagnostic_checks[consts.KAP_Security_Policy_Check],
                 kube_config,
                 kube_context,
+                cmd,
             )
         )
 
@@ -5119,12 +5282,21 @@ def get_helm_client_location(
         logger.info("Skipping helm install for AGC. Expecting it to be pre-installed.")
         helm_client_location = shutil.which("helm")
         if not helm_client_location:
-            raise CLIInternalError(
-                "helm not found in PATH for AGC environment. Please install it or add to PATH."
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.HELM_NOT_INSTALLED,
+                exception=FileNotFoundError("helm was not found in PATH"),
+                user_fault=True,
+                details=(
+                    "Helm was not found in PATH for the AGC environment. Install Helm "
+                    "version 3 or later and add it to PATH."
+                ),
             )
+        utils.validate_helm_client(cmd, helm_client_location)
         return helm_client_location
 
     helm_client_location = install_helm_client(cmd)
+    utils.validate_helm_client(cmd, helm_client_location)
     logger.debug("Using helm binary: %s", helm_client_location)
     return helm_client_location
 

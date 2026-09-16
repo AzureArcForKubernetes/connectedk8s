@@ -1,0 +1,47 @@
+name: Sync Upstream Main
+
+on:
+  schedule:
+    - cron: '0 17 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Update sync/upstream-main
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Fetch and push upstream main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git remote add upstream https://github.com/Azure/azure-cli-extensions.git
+          git fetch --no-tags upstream \
+            refs/heads/main:refs/remotes/upstream/main
+          git fetch --no-tags origin \
+            refs/heads/sync/upstream-main:refs/remotes/origin/sync/upstream-main
+
+          upstream_sha="$(git rev-parse upstream/main)"
+          sync_sha="$(git rev-parse origin/sync/upstream-main)"
+
+          if [[ "$upstream_sha" == "$sync_sha" ]]; then
+            echo "sync/upstream-main is already current at $upstream_sha."
+            exit 0
+          fi
+
+          git push \
+            --force-with-lease="refs/heads/sync/upstream-main:$sync_sha" \
+            origin \
+            upstream/main:refs/heads/sync/upstream-main

@@ -26,30 +26,28 @@ jobs:
     inputs:
       versionSpec: 3.13
 
-  - bash: |
-      set -ev
-      echo "Building extension ${EXTENSION_NAME}..."
-      # prepare and activate virtualenv
-      pip install virtualenv
-      python3 -m venv env/
-      source env/bin/activate
-      # clone azure-cli
-      git clone -q --single-branch -b dev https://github.com/Azure/azure-cli.git ../azure-cli
-      pip install --upgrade pip
-      pip install -q azdev
-      ls $(CLI_REPO_PATH)
-      azdev --version
-      azdev setup -c ../azure-cli -r $(CLI_REPO_PATH) -e $(EXTENSION_NAME)
-      azdev extension build $(EXTENSION_NAME)
-    workingDirectory: $(CLI_REPO_PATH)
-    displayName: "Setup and Build Extension with azdev"
+  - download: current
+    artifact: connectedk8s-wheel
+    displayName: "Download ConnectedK8s Wheel"
 
   - bash: |
-      K8S_CONFIG_VERSION=$(ls ${EXTENSION_FILE_NAME}* | cut -d "-" -f2)
+      set -euo pipefail
+      mapfile -t wheels < <(
+        find "$(Pipeline.Workspace)/connectedk8s-wheel" \
+          -type f -name "${EXTENSION_FILE_NAME}-*.whl"
+      )
+      if [ "${#wheels[@]}" -ne 1 ]; then
+        echo "Expected exactly one connectedk8s wheel, found ${#wheels[@]}."
+        exit 1
+      fi
+
+      wheel_path="${wheels[0]}"
+      wheel_name="$(basename "$wheel_path")"
+      K8S_CONFIG_VERSION="${wheel_name#${EXTENSION_FILE_NAME}-}"
+      K8S_CONFIG_VERSION="${K8S_CONFIG_VERSION%%-*}"
       echo "##vso[task.setvariable variable=K8S_CONFIG_VERSION]$K8S_CONFIG_VERSION"
-      cp * $(TEST_PATH)/bin
-    workingDirectory: $(CLI_REPO_PATH)/dist
-    displayName: "Copy the Built .whl to Extension Test Path"
+      cp "$wheel_path" "$(TEST_PATH)/bin/"
+    displayName: "Copy the Wheel to the Extension Test Path"
 
   - bash: |
         RAND_STR=$RANDOM

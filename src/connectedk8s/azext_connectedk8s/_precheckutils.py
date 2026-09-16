@@ -34,13 +34,18 @@ from typing import TYPE_CHECKING, Any
 
 from azure.cli.core import telemetry
 from azure.cli.core.azclierror import (
-    CLIInternalError,
+    AzCLIError,
 )
 from knack.log import get_logger
 from kubernetes import config, watch
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._errors as errors
 import azext_connectedk8s._utils as azext_utils
+from azext_connectedk8s._logutils import (
+    normalize_container_log,
+    split_container_log,
+)
 
 if TYPE_CHECKING:
     from knack.commands import CLICommand
@@ -78,11 +83,9 @@ def _parse_entra_check_result(entra_check_log: str) -> str:
 
     The diagnostic container outputs a line like:
       "Entra Authentication Endpoint Connectivity Check Result : https://login.microsoftonline.com : 200"
-    A 200 or 404 response means the endpoint is reachable. 404 is expected because the
-    diagnostic container curls the base login.microsoftonline.com path without a valid
-    tenant/resource URL suffix (e.g. /{tenant-id}/oauth2/v2.0/token), so the server
-    returns 404 — but receiving any HTTP response confirms network reachability.
-    Any other response code indicates a connectivity failure.
+    Any HTTP response (200, 302, 403, 404, etc.) confirms network reachability — the
+    endpoint was reached. Only response code 000 (curl failed to connect at all) indicates a
+    genuine connectivity failure. This aligns with the diagnostic chart's own pass/fail logic.
     """
     if not entra_check_log:
         # Entra check not present in logs — older helm chart version, not applicable
@@ -92,7 +95,7 @@ def _parse_entra_check_result(entra_check_log: str) -> str:
     parts = entra_check_log.strip().split(" : ")
     if len(parts) >= 3:
         entra_response_code = parts[-1].strip()
-        if entra_response_code in ("200", "404"):
+        if entra_response_code != "000":
             return consts.Diagnostic_Check_Passed
         diagnoser_output.append(
             f"Error: Entra authentication endpoint connectivity check failed. "
@@ -193,7 +196,9 @@ def _attach_error_details(components: list[dict[str, Any]]) -> None:
             component["error"] = " ; ".join(chosen)
 
 
-def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
+def send_prediagnostic_job_execution_error_telemetry(
+    reason: str = "", cmd: CLICommand | None = None
+) -> None:
     """Send telemetry when prediagnostic job execution fails.
 
     Encodes the job status into the fault_type so ADX queries can distinguish
@@ -209,7 +214,7 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
         consts.Telemetry_Onboarding_Error_Type_Key: consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type,
         consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg).replace("'", ""),
     }
-    telemetry.add_extension_event("connectedk8s", props)
+    azext_utils.add_connectedk8s_telemetry_event(cmd, props)
 
     # Encode job status into fault_type for ADX visibility
     status_slug = prediagnostic_job_execution_status.replace(" ", "-").lower()
@@ -224,8 +229,31 @@ def send_prediagnostic_job_execution_error_telemetry(reason: str = "") -> None:
     _send_onboarding_telemetry_event(fault_type, summary)
 
 
+def _report_prediagnostic_log_save_failure(
+    cmd: CLICommand, exception: BaseException
+) -> None:
+    message = errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.format(details=str(exception))
+    azext_utils.add_connectedk8s_telemetry_event(
+        cmd,
+        {
+            consts.Telemetry_Error_Code_Key: errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.code,
+            consts.Telemetry_Error_Fault_Type_Key: consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
+            consts.Telemetry_Error_Name_Key: errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.name,
+            consts.Telemetry_Error_Message_Key: message,
+        },
+    )
+    telemetry.set_exception(
+        exception=exception,
+        fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
+        summary=message,
+    )
+    logger.warning(message)
+
+
 def send_prediagnostic_check_failure_telemetry(
-    dns_check: str, outbound_connectivity_check: str
+    dns_check: str,
+    outbound_connectivity_check: str,
+    cmd: CLICommand | None = None,
 ) -> None:
     """Send telemetry when prediagnostic checks fail (job completed but checks did not pass).
 
@@ -253,7 +281,7 @@ def send_prediagnostic_check_failure_telemetry(
             "'", ""
         ),
     }
-    telemetry.add_extension_event("connectedk8s", props)
+    azext_utils.add_connectedk8s_telemetry_event(cmd, props)
 
     # Build the encoded fault_type (survives to context.default.azurecli.faulttype)
     def _short(result: str) -> str:
@@ -291,7 +319,7 @@ def send_prediagnostic_check_failure_telemetry(
 
 
 def send_post_diagnostic_precheck_failure_telemetry(
-    check_name: str, reason: str
+    check_name: str, reason: str, cmd: CLICommand | None = None
 ) -> None:
     """Send telemetry for individual precheck failures that occur after the diagnostic job."""
     # Build structured message for add_extension_event
@@ -301,7 +329,7 @@ def send_post_diagnostic_precheck_failure_telemetry(
         consts.Telemetry_Onboarding_Error_Type_Key: consts.Post_Diagnostic_Precheck_Fault_Type,
         consts.Telemetry_Onboarding_Error_Message_Key: json.dumps(msg).replace("'", ""),
     }
-    telemetry.add_extension_event("connectedk8s", props)
+    azext_utils.add_connectedk8s_telemetry_event(cmd, props)
 
     # Also send via set_exception for ADX fault_type encoding
     fault_type = f"{consts.Post_Diagnostic_Precheck_Fault_Type}-{check_name}"
@@ -385,14 +413,13 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                 f"dnsCheck={prediagnostic_dns_check}; outboundConnectivityCheck={prediagnostic_outbound_check}; "
                 f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
             )
-            send_prediagnostic_job_execution_error_telemetry()
+            send_prediagnostic_job_execution_error_telemetry(cmd=cmd)
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
         if cluster_diagnostic_checks_container_log != "":
-            cluster_diagnostic_checks_container_log_list = (
-                cluster_diagnostic_checks_container_log.split("\n")
+            cluster_diagnostic_checks_container_log_list = split_container_log(
+                cluster_diagnostic_checks_container_log
             )
-            cluster_diagnostic_checks_container_log_list.pop(-1)
             dns_check_log = ""
             outbound_connectivity_check_log = ""
             entra_check_log = ""
@@ -430,11 +457,27 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                     filepath_with_timestamp,
                     storage_space_available,
                     diagnoser_output,
+                    cmd=cmd,
                 )
             )
             prediagnostic_outbound_check = outbound_connectivity_check
 
             prediagnostic_entra_check = _parse_entra_check_result(entra_check_log)
+            # If a proxy is configured, the diagnostic pod may not have HTTPS_PROXY/HTTP_PROXY
+            # injected as container env vars (chart-side gap in clusterdiagnosticchecks >=1.36.1).
+            # A failed Entra check in that scenario is a false positive: the cluster may be
+            # perfectly able to reach login.microsoftonline.com through the proxy once the Arc
+            # agent is installed. Downgrade to Not_Applicable to avoid blocking onboarding, but
+            # emit a warning so it is known that the check was skipped.
+            if prediagnostic_entra_check == consts.Diagnostic_Check_Failed and (
+                https_proxy or http_proxy
+            ):
+                logger.warning(
+                    "Skipping Entra connectivity check: the pre-onboarding diagnostic pod does not have "
+                    "access to the configured proxy. Please verify that your cluster can reach "
+                    "login.microsoftonline.com through your proxy."
+                )
+                prediagnostic_entra_check = consts.Diagnostic_Check_Not_Applicable
             prediagnostic_crd_check = _parse_crd_check_result(crd_check_log)
         else:
             # Empty log — if job didn't complete (e.g., pod never scheduled), treat as Incomplete not Passed
@@ -450,7 +493,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                     f"dnsCheck={prediagnostic_dns_check}; outboundConnectivityCheck={prediagnostic_outbound_check}; "
                     f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
                 )
-                send_prediagnostic_job_execution_error_telemetry()
+                send_prediagnostic_job_execution_error_telemetry(cmd=cmd)
                 return consts.Diagnostic_Check_Incomplete, storage_space_available
             return consts.Diagnostic_Check_Passed, storage_space_available
 
@@ -489,7 +532,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
             or prediagnostic_crd_check == consts.Diagnostic_Check_Failed
         ):
             send_prediagnostic_check_failure_telemetry(
-                dns_check, outbound_connectivity_check
+                dns_check, outbound_connectivity_check, cmd=cmd
             )
             return consts.Diagnostic_Check_Failed, storage_space_available
 
@@ -503,13 +546,18 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
         # All checks passed or not applicable
         return consts.Diagnostic_Check_Passed, storage_space_available
 
+    # Preserve errors already assigned a specific AZK8S code, such as AZK8S0607
+    # for Helm installation failures, instead of reclassifying them below.
+    except AzCLIError:
+        raise
+
     # To handle any exception that may occur during the execution
     except Exception as e:  # pylint: disable=broad-exception-caught
         logger.exception(
             "An exception has occured while trying to execute cluster diagnostic checks "
             "container on the cluster."
         )
-        send_prediagnostic_job_execution_error_telemetry(reason=str(e))
+        send_prediagnostic_job_execution_error_telemetry(reason=str(e), cmd=cmd)
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Cluster_Diagnostic_Checks_Execution_Failed_Fault_Type,
@@ -522,6 +570,65 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
 # ---------------------------------------------------------------------------
 # Job execution — deploys the diagnostic helm chart, watches the Job, fetches logs
 # ---------------------------------------------------------------------------
+
+
+def _get_incomplete_job_diagnostic(  # pylint: disable=too-many-return-statements
+    pod: Any,
+) -> str:
+    """Return actionable guidance for a diagnostic pod that did not finish."""
+    pod_status = getattr(pod, "status", None)
+    if pod_status is None:
+        return "Review the saved pod description and retry the operation."
+
+    for container_status in getattr(pod_status, "container_statuses", None) or []:
+        state = getattr(container_status, "state", None)
+        waiting = getattr(state, "waiting", None)
+        waiting_reason = getattr(waiting, "reason", None)
+        if waiting_reason in ("ErrImagePull", "ImagePullBackOff"):
+            return (
+                f"Pod reason: {waiting_reason}. The diagnostic image could not be pulled. "
+                "Verify connectivity to MCR and proxy settings, then retry."
+            )
+        if waiting_reason == "CrashLoopBackOff":
+            return (
+                "Pod reason: CrashLoopBackOff. The diagnostic container repeatedly failed. "
+                "Review the saved container logs, then retry."
+            )
+
+        terminated = getattr(state, "terminated", None)
+        terminated_reason = getattr(terminated, "reason", None)
+        exit_code = getattr(terminated, "exit_code", None)
+        if terminated_reason == "OOMKilled":
+            return (
+                "Pod reason: OOMKilled. The diagnostic container exceeded its memory limit. "
+                "Ensure the cluster has sufficient memory, then retry."
+            )
+        if terminated is not None and exit_code not in (None, 0):
+            reason = terminated_reason or "ContainerFailed"
+            return (
+                f"Pod reason: {reason} (exit code {exit_code}). The diagnostic container failed. "
+                "Review the saved container logs, then retry."
+            )
+
+    for condition in getattr(pod_status, "conditions", None) or []:
+        if (
+            getattr(condition, "type", None) == "PodScheduled"
+            and getattr(condition, "status", None) == "False"
+        ):
+            reason = getattr(condition, "reason", None) or "Unschedulable"
+            return (
+                f"Pod reason: {reason}. The diagnostic pod could not be scheduled. "
+                "Verify node resources, taints, and namespace quotas, then retry."
+            )
+
+    pod_reason = getattr(pod_status, "reason", None)
+    if pod_reason:
+        return (
+            f"Pod reason: {pod_reason}. Review the saved pod description and container logs, "
+            "then retry."
+        )
+
+    return "Review the saved pod description and container logs, then retry."
 
 
 def executing_cluster_diagnostic_checks_job(
@@ -552,7 +659,11 @@ def executing_cluster_diagnostic_checks_job(
     # Setting the log output as Empty
     cluster_diagnostic_checks_container_log = ""
     release_namespace = azext_utils.get_release_namespace(
-        kube_config, kube_context, helm_client_location, "cluster-diagnostic-checks"
+        kube_config,
+        kube_context,
+        helm_client_location,
+        "cluster-diagnostic-checks",
+        cmd=cmd,
     )
     cmd_helm_delete = [
         helm_client_location,
@@ -620,6 +731,7 @@ def executing_cluster_diagnostic_checks_job(
             consts.Pre_Onboarding_Helm_Charts_Folder_Name,
             consts.Pre_Onboarding_Helm_Charts_Release_Name,
             False,
+            cmd,
         )
 
         logger.debug(
@@ -632,6 +744,7 @@ def executing_cluster_diagnostic_checks_job(
             azext_utils.get_utctimestring(),
         )
         helm_install_release_cluster_diagnostic_checks(
+            cmd,
             chart_path,
             location,
             http_proxy,
@@ -645,7 +758,7 @@ def executing_cluster_diagnostic_checks_job(
             mcr_url,
         )
 
-        # Watch the Job for up to 60s waiting for it to reach Complete or Failed (3 retries) state
+        # Watch the Job for up to 180s waiting for it to reach Complete or Failed (3 retries) state
         w = watch.Watch()
         is_job_complete = False
         is_job_scheduled = False
@@ -654,7 +767,7 @@ def executing_cluster_diagnostic_checks_job(
             batchv1_api_instance.list_namespaced_job,
             namespace="azure-arc-release",
             label_selector="",
-            timeout_seconds=60,
+            timeout_seconds=180,
         ):
             logger.debug(
                 "Watching Cluster Diagnostic Checks Job to reach completed state"
@@ -711,16 +824,26 @@ def executing_cluster_diagnostic_checks_job(
         # 2. Job never scheduled (pod couldn't be created) → cleanup and return None
         if is_job_scheduled is False:
             prediagnostic_job_execution_status = consts.Job_Status_Not_Scheduled
+            details = (
+                "Possible causes include a security policy, SecurityContextConstraint (SCC), or "
+                "ResourceQuota blocking pod creation in the 'azure-arc-release' namespace."
+            )
+            message = errors.PREDIAGNOSTICS_JOB_NOT_SCHEDULED.format(details=details)
+            azext_utils.add_connectedk8s_telemetry_event(
+                cmd,
+                {
+                    consts.Telemetry_Error_Code_Key: errors.PREDIAGNOSTICS_JOB_NOT_SCHEDULED.code,
+                    consts.Telemetry_Error_Fault_Type_Key: consts.Cluster_Diagnostic_Checks_Job_Not_Scheduled,
+                    consts.Telemetry_Error_Name_Key: errors.PREDIAGNOSTICS_JOB_NOT_SCHEDULED.name,
+                    consts.Telemetry_Error_Message_Key: message,
+                },
+            )
             telemetry.set_exception(
-                exception="Could not schedule Cluster Diagnostic Checks Job in the cluster",
+                exception=Exception(message),
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Scheduled,
-                summary="Could not schedule Cluster Diagnostic Checks Job in the cluster",
+                summary=message,
             )
-            logger.warning(
-                "Unable to schedule the Cluster Diagnostic Checks Job in the kubernetes cluster. The "
-                "possible reasons can be presence of a security policy or security context constraint "
-                "(SCC) or it may happen becuase of lack of ResourceQuota.\n"
-            )
+            logger.warning(message)
             logger.debug(
                 "Cluster diagnostic Job couldn't be scheduled.  Deleting the helm release in the cluster"
             )
@@ -730,6 +853,9 @@ def executing_cluster_diagnostic_checks_job(
         # 3. Job was scheduled but didn't complete (e.g. OOMKilled, timeout) → fetch partial logs
         if is_job_complete is False:
             prediagnostic_job_execution_status = consts.Job_Status_Not_Completed
+            incomplete_job_diagnostic = (
+                "Review the saved pod description and container logs, then retry."
+            )
             # Job was scheduled successfully, but didn't complete. We will fetch the logs and delete helm release.
             logger.debug(
                 "Cluster Diagnostic Checks Job Failed.  Fetch results and delete Helm release in the cluster"
@@ -746,19 +872,32 @@ def executing_cluster_diagnostic_checks_job(
             )
             if matching_pods:
                 each_pod = matching_pods[0]
+                incomplete_job_diagnostic = _get_incomplete_job_diagnostic(each_pod)
                 # Fetching the current Pod name and creating a folder with that name inside the timestamp folder
                 pod_name = each_pod.metadata.name
 
                 # Creating a text file with the name of the container and adding that containers logs in it
-                cluster_diagnostic_checks_container_log = (
-                    corev1_api_instance.read_namespaced_pod_log(
-                        name=pod_name,
-                        container="cluster-diagnostic-checks-container",
-                        namespace="azure-arc-release",
-                    )
-                )
+                pod_logs_available = True
                 try:
-                    if storage_space_available:
+                    cluster_diagnostic_checks_container_log = (
+                        corev1_api_instance.read_namespaced_pod_log(
+                            name=pod_name,
+                            container="cluster-diagnostic-checks-container",
+                            namespace="azure-arc-release",
+                        )
+                    )
+                    cluster_diagnostic_checks_container_log = normalize_container_log(
+                        cluster_diagnostic_checks_container_log
+                    )
+                except Exception:  # pylint: disable=broad-exception-caught
+                    pod_logs_available = False
+                    logger.debug(
+                        "Diagnostic pod logs are not available yet for pod %s",
+                        pod_name,
+                        exc_info=True,
+                    )
+                try:
+                    if storage_space_available and pod_logs_available:
                         dns_check_path = os.path.join(
                             filepath_with_timestamp,
                             "cluster_diagnostic_checks_job_log.txt",
@@ -775,39 +914,29 @@ def executing_cluster_diagnostic_checks_job(
                         )
                         shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
                     else:
-                        logger.exception(
-                            "An exception has occured while saving the Cluster "
-                            "Diagnostic Checks Job logs in the local machine."
-                        )
-                        telemetry.set_exception(
-                            exception=e,
-                            fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-                            summary="Error occured while saving the cluster diagnostic "
-                            "checks job logs in the local machine",
-                        )
+                        _report_prediagnostic_log_save_failure(cmd, e)
 
                 # To handle any exception that may occur during the execution
                 except (ValueError, TypeError) as e:
-                    logger.exception(
-                        "An exception has occured while saving the Cluster "
-                        "Diagnostic Checks Job logs in the local machine."
-                    )
-                    telemetry.set_exception(
-                        exception=e,
-                        fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-                        summary="Error occured while saving the cluster diagnostic checks "
-                        "job logs in the local machine",
-                    )
+                    _report_prediagnostic_log_save_failure(cmd, e)
 
+            details = incomplete_job_diagnostic
+            message = errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.format(details=details)
+            azext_utils.add_connectedk8s_telemetry_event(
+                cmd,
+                {
+                    consts.Telemetry_Error_Code_Key: errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.code,
+                    consts.Telemetry_Error_Fault_Type_Key: consts.Cluster_Diagnostic_Checks_Job_Not_Complete,
+                    consts.Telemetry_Error_Name_Key: errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.name,
+                    consts.Telemetry_Error_Message_Key: message,
+                },
+            )
             telemetry.set_exception(
-                exception="Could not complete Cluster Diagnostic Checks Job after scheduling in the cluster",
+                exception=Exception(message),
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Complete,
-                summary="Could not complete Cluster Diagnostic Checks Job after scheduling in the cluster",
+                summary=message,
             )
-            logger.warning(
-                "Cluster diagnostics job didn't reach completed state in the kubernetes cluster. The "
-                "possible reasons can be resource constraints on the cluster.\n"
-            )
+            logger.warning(message)
 
         # 4. Job completed successfully → fetch logs for result parsing
         if is_job_complete:
@@ -830,12 +959,15 @@ def executing_cluster_diagnostic_checks_job(
                             namespace="azure-arc-release",
                         )
                     )
+                    cluster_diagnostic_checks_container_log = normalize_container_log(
+                        cluster_diagnostic_checks_container_log
+                    )
                     if storage_space_available:
                         log_path = os.path.join(
                             filepath_with_timestamp,
                             "cluster_diagnostic_checks_job_log.txt",
                         )
-                        with open(log_path, "w+") as f:
+                        with open(log_path, "w+", encoding="utf-8") as f:
                             f.write(cluster_diagnostic_checks_container_log)
                 except OSError as e:
                     if "[Errno 28]" in str(e):
@@ -847,25 +979,29 @@ def executing_cluster_diagnostic_checks_job(
                         )
                         shutil.rmtree(filepath_with_timestamp, ignore_errors=False)
                     else:
-                        logger.exception(
-                            "An exception has occured while saving the Cluster "
-                            "Diagnostic Checks Job logs in the local machine."
-                        )
-                except Exception:  # pylint: disable=broad-exception-caught
-                    logger.exception(
-                        "An exception has occured while saving the Cluster "
-                        "Diagnostic Checks Job logs in the local machine."
-                    )
+                        _report_prediagnostic_log_save_failure(cmd, e)
+                except (ValueError, TypeError) as e:
+                    _report_prediagnostic_log_save_failure(cmd, e)
 
         # Clearing all the resources after fetching the cluster diagnostic checks container logs
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
+
+    # Preserve errors already assigned a specific AZK8S code, such as AZK8S0607
+    # for Helm installation failures, instead of reclassifying them below.
+    except AzCLIError:
+        prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
+        Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
+        raise
 
     # To handle any exception that may occur during the execution
     except Exception as e:  # pylint: disable=broad-exception-caught
         prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
-        raise CLIInternalError(
-            f"Failed to execute Cluster Diagnostic Checks Job: {e}"
+        raise azext_utils.report_connectedk8s_error(
+            cmd,
+            errors.PREDIAGNOSTICS_JOB_EXECUTION_FAILED,
+            exception=e,
+            details=str(e),
         ) from e
     if is_job_complete:
         prediagnostic_job_execution_status = consts.Job_Status_Completed
@@ -874,6 +1010,7 @@ def executing_cluster_diagnostic_checks_job(
 
 
 def helm_install_release_cluster_diagnostic_checks(
+    cmd: CLICommand,
     chart_path: str,
     location: str | None,
     http_proxy: str,
@@ -925,18 +1062,17 @@ def helm_install_release_cluster_diagnostic_checks(
     response_helm_install = Popen(cmd_helm_install, stdout=PIPE, stderr=PIPE)
     _, error_helm_install = response_helm_install.communicate()
     if response_helm_install.returncode != 0:
-        error = error_helm_install.decode("ascii")
+        error = error_helm_install.decode("ascii", errors="replace")
         error = azext_utils.process_helm_error_detail(error)
-        if "forbidden" in error or "timed out waiting for the condition" in error:
-            telemetry.set_user_fault()
 
-        telemetry.set_exception(
+        raise azext_utils.report_connectedk8s_error(
+            cmd,
+            errors.PREDIAGNOSTICS_HELM_INSTALL_FAILED,
             exception=Exception(error),
-            fault_type=consts.Cluster_Diagnostic_Checks_Helm_Install_Failed_Fault_Type,
-            summary="Unable to install cluster diagnostic checks helm release",
-        )
-        raise CLIInternalError(
-            f"Unable to install cluster diagnostic checks helm release: {error}"
+            user_fault=(
+                "forbidden" in error or "timed out waiting for the condition" in error
+            ),
+            details=error,
         )
 
 
@@ -957,8 +1093,9 @@ def fetching_cli_output_logs(
                 with open(
                     cli_output_logger_path, "w+", encoding="utf-8"
                 ) as cli_output_writer:
-                    for output in diagnoser_output:
-                        cli_output_writer.write(output + "\n")
+                    cli_output_writer.writelines(
+                        output + "\n" for output in diagnoser_output
+                    )
                     # If flag is 0 that means that process was terminated using the Keyboard Interrupt so adding that
                     # also to the text file
                     if flag == 0:
