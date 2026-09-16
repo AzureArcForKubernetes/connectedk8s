@@ -251,9 +251,8 @@ def test_enable_features_reports_custom_locations_enable_failed(monkeypatch):
         "check_cl_registration_and_get_oid",
         MagicMock(return_value=(False, "")),
     )
-    reported_error = custom.CLIInternalError("reported")
-    report_error = MagicMock(return_value=reported_error)
-    monkeypatch.setattr(custom.utils, "report_connectedk8s_error", report_error)
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
 
     with pytest.raises(custom.CLIInternalError) as raised:
         custom.enable_features(
@@ -264,10 +263,14 @@ def test_enable_features_reports_custom_locations_enable_failed(monkeypatch):
             ["custom-locations"],
         )
 
-    assert raised.value is reported_error
-    assert report_error.call_args.args[:2] == (
-        cmd,
-        custom.errors.CUSTOM_LOCATIONS_ENABLE_FAILED,
+    assert str(raised.value).startswith("[AZK8S0700] CustomLocationsEnableFailed:")
+    _assert_standardized_telemetry(
+        mock_telemetry, custom.errors.CUSTOM_LOCATIONS_ENABLE_FAILED, False
+    )
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties[custom.consts.Connected_Cluster_Arm_Id_Telemetry_Property] == (
+        "/subscriptions/sub/resourceGroups/resource-group/providers/"
+        "Microsoft.Kubernetes/connectedClusters/cluster"
     )
 
 
@@ -278,22 +281,21 @@ def test_get_custom_locations_oid_reports_empty_result(monkeypatch):
     monkeypatch.setattr(
         custom, "graph_client_factory", MagicMock(return_value=graph_client)
     )
-    report_diagnostic = MagicMock()
-    monkeypatch.setattr(
-        custom.utils, "report_connectedk8s_diagnostic", report_diagnostic
-    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
 
     oid = custom.get_custom_locations_oid(cmd, None)
 
     assert oid == ""
-    assert report_diagnostic.call_args.args == (
-        cmd,
-        custom.errors.CUSTOM_LOCATIONS_OID_FETCH_FAILED,
-    )
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0701"
     assert (
-        report_diagnostic.call_args.kwargs["fault_type"]
+        properties["Context.Default.AzureCLI.errorFaultType"]
         == custom.consts.Custom_Locations_OID_Fetch_Fault_Type_CLOid_None
     )
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+    mock_telemetry.set_user_fault.assert_not_called()
 
 
 def test_get_custom_locations_oid_reports_exception_and_uses_manual_oid(monkeypatch):
@@ -302,23 +304,22 @@ def test_get_custom_locations_oid_reports_exception_and_uses_manual_oid(monkeypa
     monkeypatch.setattr(
         custom, "graph_client_factory", MagicMock(side_effect=expected_error)
     )
-    report_diagnostic = MagicMock()
-    monkeypatch.setattr(
-        custom.utils, "report_connectedk8s_diagnostic", report_diagnostic
-    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
 
     oid = custom.get_custom_locations_oid(cmd, "manual-oid")
 
     assert oid == "manual-oid"
-    assert report_diagnostic.call_args.args == (
-        cmd,
-        custom.errors.CUSTOM_LOCATIONS_OID_FETCH_FAILED,
-    )
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0701"
     assert (
-        report_diagnostic.call_args.kwargs["fault_type"]
+        properties["Context.Default.AzureCLI.errorFaultType"]
         == custom.consts.Custom_Locations_OID_Fetch_Fault_Type_Exception
     )
-    assert report_diagnostic.call_args.kwargs["exception"] is expected_error
+    assert mock_telemetry.set_exception.call_args.kwargs["exception"] is expected_error
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+    mock_telemetry.set_user_fault.assert_not_called()
 
 
 def test_check_cl_registration_reports_standardized_error(monkeypatch):
@@ -327,20 +328,19 @@ def test_check_cl_registration_reports_standardized_error(monkeypatch):
     monkeypatch.setattr(
         custom, "resource_providers_client", MagicMock(side_effect=expected_error)
     )
-    report_diagnostic = MagicMock()
-    monkeypatch.setattr(
-        custom.utils, "report_connectedk8s_diagnostic", report_diagnostic
-    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
 
     enabled, oid = custom.check_cl_registration_and_get_oid(cmd, None, "sub")
 
     assert enabled is False
     assert oid == ""
-    assert report_diagnostic.call_args.args == (
-        cmd,
-        custom.errors.CUSTOM_LOCATIONS_REGISTRATION_CHECK_FAILED,
-    )
-    assert report_diagnostic.call_args.kwargs["exception"] is expected_error
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.errorCode"] == "AZK8S0702"
+    assert mock_telemetry.set_exception.call_args.kwargs["exception"] is expected_error
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+    mock_telemetry.set_user_fault.assert_not_called()
 
 
 def create_node(
