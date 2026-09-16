@@ -1497,12 +1497,12 @@ def escape_proxy_settings(proxy_setting: str | None) -> str:
 
 
 def get_arc_proxy_skip_range_endpoints(cmd: CLICommand) -> list[str]:
-    # Arc private-link data-plane hosts to bypass the proxy. Leading-dot form matches
+    # Arc service data-plane hosts to bypass the proxy. Leading-dot form matches
     # every region; suffix is derived so it works across public and sovereign clouds.
     cloud_based_domain = get_cloud_based_domain(cmd)
     return [
         endpoint.format(cloud_based_domain=cloud_based_domain)
-        for endpoint in consts.Arc_Private_Link_Endpoints
+        for endpoint in consts.Arc_Service_Endpoints
     ]
 
 

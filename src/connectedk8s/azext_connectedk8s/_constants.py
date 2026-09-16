@@ -260,8 +260,8 @@ No_Param_Error = "No parameters were specified with update command. Please run a
 Gateway_ArmId_Is_Invalid = "The provided Gateway ArmID in --gateway-resource-id  {} is invalid. Please provide a valid Gateway ArmID."
 EnableProxy_Conflict_Error = "Conflict detected: --disable-proxy can not be set with --https-proxy, --http-proxy, --proxy-skip-range, --proxy-cert and --add-proxy-bypass at the same time. Please run az connectedk8s update --help for more information about the parameters"
 
-# Arc private-link endpoint host suffixes that are bypassed when Arc bypass is requested.
-Arc_Private_Link_Endpoints = [
+# Arc service endpoint host suffixes that are bypassed when Arc bypass is requested.
+Arc_Service_Endpoints = [
     ".his.arc.azure.{cloud_based_domain}",
     ".dp.kubernetesconfiguration.azure.{cloud_based_domain}",
     ".guestconfiguration.azure.{cloud_based_domain}",
@@ -271,22 +271,24 @@ Arc_Private_Link_Endpoints = [
 Proxy_Bypass_Arc_Keyword = "Arc"
 # Announces the Arc bypass, which is kept until cleared, and names the command that clears it.
 Proxy_Bypass_Arc_Applied_Message = (
-    "Bypassing the proxy for the Azure Arc private-link endpoints. This is kept when "
-    "--proxy-skip-range is changed later. Run 'az connectedk8s update --clear-proxy-bypass Arc' to stop bypassing them."
+    "Bypassing the proxy for the Azure Arc service endpoints. This is kept when "
+    "--proxy-skip-range is changed later. Run 'az connectedk8s update -n <connected-cluster-name> "
+    "-g <resource-group-name> --clear-proxy-bypass Arc' to stop bypassing them."
 )
 # Names the carry-over, so keeping a bypass the command did not mention is not a surprise.
 Proxy_Bypass_Arc_Preserved_Warning = (
-    "Azure Arc private-link endpoints were found in the proxy skip range and have been "
-    "kept. Run 'az connectedk8s update --clear-proxy-bypass Arc' to stop bypassing them."
+    "Azure Arc service endpoints were found in the proxy skip range and have been "
+    "kept. Run 'az connectedk8s update -n <connected-cluster-name> -g <resource-group-name> "
+    "--clear-proxy-bypass Arc' to stop bypassing them."
 )
 # Confirms the clear, so removing the bypass is announced just like applying it.
 Proxy_Bypass_Arc_Cleared_Message = (
-    "Removing the Azure Arc private-link endpoints from the proxy skip range, so the "
+    "Removing the Azure Arc service endpoints from the proxy skip range, so the "
     "proxy is no longer bypassed for them"
 )
 # Reports a clear that found nothing, so a no-op is not mistaken for a change.
 Proxy_Bypass_Arc_Nothing_To_Clear_Warning = (
-    "No Azure Arc private-link endpoints were found in the proxy skip range; there is "
+    "No Azure Arc service endpoints were found in the proxy skip range; there is "
     "nothing to clear."
 )
 
@@ -297,9 +299,16 @@ Proxy_Bypass_Enum_Values = [
     Proxy_Bypass_Arc_Keyword,
     Proxy_Bypass_ContainerInsights_Extension_Type,
 ]
+# Rendered once for the error that lists what the flags accept.
+Proxy_Bypass_Allowed_Values = ", ".join(Proxy_Bypass_Enum_Values)
+# Lower-cased lookup, so a keyword is matched however the user typed it.
+Proxy_Bypass_Allowed_Keywords = frozenset(
+    value.lower() for value in Proxy_Bypass_Enum_Values
+)
 # Names the command that clears the Container Insights bypass, so each message says how to undo it.
 Proxy_Bypass_ContainerInsights_Clear = (
-    "Run 'az connectedk8s update --clear-proxy-bypass "
+    "Run 'az connectedk8s update -n <connected-cluster-name> -g <resource-group-name> "
+    "--clear-proxy-bypass "
     f"{Proxy_Bypass_ContainerInsights_Extension_Type}' to stop bypassing the proxy for "
     "Container Insights."
 )
@@ -351,6 +360,17 @@ CI_ConfigMap_Removal_Failed_Warning = (
 # Names the rollback, so undoing the bypass is not mistaken for a requested change.
 CI_ConfigMap_Rollback_Warning = (
     "Reverting the Container Insights proxy bypass applied by this command."
+)
+# Reported when an explicit clear finds no ConfigMap, so a no-op is not mistaken for a change.
+CI_ConfigMap_Nothing_To_Clear_Warning = (
+    f"No Container Insights proxy bypass was found in the '{CI_ConfigMap_Name}' ConfigMap in the "
+    f"'{CI_ConfigMap_Namespace}' namespace; there is nothing to clear."
+)
+# Reported when an explicit clear finds a setting this CLI did not add, so it is left untouched.
+CI_ConfigMap_Not_Managed_Warning = (
+    f"The '{CI_ConfigMap_Proxy_Bypass_Setting}' setting in the '{CI_ConfigMap_Name}' ConfigMap in "
+    f"the '{CI_ConfigMap_Namespace}' namespace was not added by this CLI, so it has been left "
+    "unchanged."
 )
 
 Manual_Upgrade_Called_In_Auto_Update_Enabled = (

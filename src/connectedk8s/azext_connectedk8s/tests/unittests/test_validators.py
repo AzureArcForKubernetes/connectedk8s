@@ -136,8 +136,13 @@ def test_validate_accepts_a_namespace_without_the_flags():
     validate_proxy_bypass(Namespace())
 
 
-def test_validate_accepts_different_keywords_on_each_flag():
-    validate_proxy_bypass(_namespace(added=ARC, cleared=CONTAINER_INSIGHTS))
+@pytest.mark.parametrize(
+    "added,cleared",
+    [(ARC, CONTAINER_INSIGHTS), (CONTAINER_INSIGHTS, ARC)],
+    ids=["add-arc", "add-extension-type"],
+)
+def test_validate_accepts_different_keywords_on_each_flag(added, cleared):
+    validate_proxy_bypass(_namespace(added=added, cleared=cleared))
 
 
 @pytest.mark.parametrize(

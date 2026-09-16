@@ -35,8 +35,6 @@ def has_proxy_bypass_keyword(proxy_bypass: str | None, keyword: str) -> bool:
 def validate_proxy_bypass(namespace: Namespace) -> None:
     # get_enum_type rejects comma-separated lists, so each keyword is checked here.
     # --clear-proxy-bypass is update-only, so both flags are read defensively.
-    allowed_values = ", ".join(consts.Proxy_Bypass_Enum_Values)
-    allowed_keywords = {value.lower() for value in consts.Proxy_Bypass_Enum_Values}
     added = getattr(namespace, "add_proxy_bypass", None)
     cleared = getattr(namespace, "clear_proxy_bypass", None)
     for flag, value in (
@@ -46,12 +44,12 @@ def validate_proxy_bypass(namespace: Namespace) -> None:
         invalid = [
             keyword
             for keyword in parse_proxy_bypass_keywords(value)
-            if keyword.lower() not in allowed_keywords
+            if keyword.lower() not in consts.Proxy_Bypass_Allowed_Keywords
         ]
         if invalid:
             err_msg = (
                 f"Invalid value for {flag}: {', '.join(invalid)}. "
-                f"Allowed values are {allowed_values}."
+                f"Allowed values are {consts.Proxy_Bypass_Allowed_Values}."
             )
             raise ArgumentUsageError(err_msg)
 

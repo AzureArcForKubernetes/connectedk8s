@@ -257,9 +257,11 @@ def create_container_insights_proxy_bypass_configmap(
 def remove_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
     raise_on_failure: bool = True,
+    announce_skip: bool = False,
 ) -> None:
     # Undo the bypass only where the annotation shows this CLI added it. A setting without that
     # annotation is customer-configured and is left untouched.
+    # announce_skip is on only for an explicit clear.
     try:
         existing = api_instance.read_namespaced_config_map(
             name=consts.CI_ConfigMap_Name,
@@ -268,6 +270,8 @@ def remove_container_insights_proxy_bypass_configmap(
     except Exception as e:  # pylint: disable=broad-exception-caught
         # No ConfigMap means there is no setting to undo; never create one here.
         if getattr(e, "status", None) == 404:
+            if announce_skip:
+                logger.warning(consts.CI_ConfigMap_Nothing_To_Clear_Warning)
             return
         report_container_insights_configmap_failure(
             e,
@@ -282,6 +286,8 @@ def remove_container_insights_proxy_bypass_configmap(
     metadata = existing.metadata
     annotations = (metadata.annotations or {}) if metadata else {}
     if consts.CI_ConfigMap_Proxy_Bypass_Annotation not in annotations:
+        if announce_skip:
+            logger.warning(consts.CI_ConfigMap_Not_Managed_Warning)
         return
 
     data = existing.data or {}
@@ -326,4 +332,6 @@ def sync_container_insights_proxy_bypass_configmap(
     if requested:
         ensure_container_insights_proxy_bypass_configmap(api_instance)
     else:
-        remove_container_insights_proxy_bypass_configmap(api_instance)
+        remove_container_insights_proxy_bypass_configmap(
+            api_instance, announce_skip=True
+        )
