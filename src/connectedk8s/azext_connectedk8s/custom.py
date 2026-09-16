@@ -301,13 +301,10 @@ def create_connectedk8s(
     requested_no_proxy = no_proxy
 
     # Apply the Arc bypass before escaping, so the separator added here is escaped too.
-    if validators.has_proxy_bypass_keyword(
+    arc_bypass_requested = validators.has_proxy_bypass_keyword(
         add_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
-    ):
-        print(
-            f"Step: {utils.get_utctimestring()}: "
-            f"{consts.Proxy_Bypass_Arc_Applied_Message}"
-        )
+    )
+    if arc_bypass_requested:
         no_proxy = add_arc_proxy_skip_range_endpoints(cmd, no_proxy)
 
     print(f"Step: {utils.get_utctimestring()}: Escape Proxy Settings, if passed in")
@@ -765,12 +762,15 @@ def create_connectedk8s(
                 logger.warning(consts.Cluster_Already_Onboarded_Error)
                 raise ArgumentUsageError(err_msg)
 
+            # The agents are not updated here, so the bypass would never reach them.
+            if add_proxy_bypass:
+                raise ArgumentUsageError(consts.Proxy_Bypass_Already_Onboarded_Error)
+
             # connect does not take --clear-proxy-bypass.
             clear_proxy_bypass = ""
 
-            # Re-resolve the skip range against the existing release. It was built
-            # from this run's arguments alone, so a reconnect that only adds the bypass
-            # would otherwise overwrite the skip range already on the cluster.
+            # --proxy-skip-range replaces the whole skip range, so re-apply the bypass
+            # the cluster already has.
             resolved_no_proxy = resolve_arc_proxy_bypass(
                 cmd,
                 requested_no_proxy,
@@ -838,14 +838,6 @@ def create_connectedk8s(
             )
             dp_request_payload = cc_poller.result()
             cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(cc_poller)
-
-            # Only touch the ConfigMap when Container Insights was named on this run.
-            if validators.has_proxy_bypass_keyword(
-                add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
-            ):
-                containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
-                    api_instance, True
-                )
 
             # Disabling cluster-connect if private link is getting enabled
             if enable_private_link is True:
@@ -991,6 +983,13 @@ def create_connectedk8s(
         # cleanup of stuck CRD if release namespace is not present/deleted
         crd_cleanup_force_delete(
             cmd, kubectl_client_location, kube_config, kube_context
+        )
+
+    # An already connected cluster raises above, so this only prints on onboarding.
+    if arc_bypass_requested:
+        print(
+            f"Step: {utils.get_utctimestring()}: "
+            f"{consts.Proxy_Bypass_Arc_Applied_Message}"
         )
 
     print(
