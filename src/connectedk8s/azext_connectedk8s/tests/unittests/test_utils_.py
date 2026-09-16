@@ -1337,6 +1337,8 @@ class TestCheckClusterDNS:
             mock_telemetry.set_exception.call_args.kwargs["fault_type"]
             == expected_fault_type
         )
+        mock_telemetry.add_extension_event.assert_called_once()
+        mock_telemetry.set_exception.assert_called_once()
 
 
 def _run_outbound_check(monkeypatch, log):
@@ -1364,6 +1366,9 @@ def test_cluster_connect_failure_emits_azk8s0307_and_remains_nonfatal(monkeypatc
     assert result == consts.Diagnostic_Check_Passed
     _, properties = mock_telemetry.add_extension_event.call_args.args
     assert properties[consts.Telemetry_Error_Code_Key] == "AZK8S0307"
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+    mock_telemetry.set_user_fault.assert_called_once()
 
 
 def test_onboarding_failure_emits_azk8s0306_and_fails_check(monkeypatch):
@@ -1377,6 +1382,9 @@ def test_onboarding_failure_emits_azk8s0306_and_fails_check(monkeypatch):
     assert result == consts.Diagnostic_Check_Failed
     _, properties = mock_telemetry.add_extension_event.call_args.args
     assert properties[consts.Telemetry_Error_Code_Key] == "AZK8S0306"
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+    mock_telemetry.set_user_fault.assert_called_once()
 
 
 def test_non2xx_response_emits_informational_azk8s0308(monkeypatch):
@@ -1390,7 +1398,9 @@ def test_non2xx_response_emits_informational_azk8s0308(monkeypatch):
     assert result == consts.Diagnostic_Check_Passed
     _, properties = mock_telemetry.add_extension_event.call_args.args
     assert properties[consts.Telemetry_Error_Code_Key] == "AZK8S0308"
-    mock_telemetry.set_exception.assert_not_called()
+    mock_telemetry.add_extension_event.assert_called_once()
+    mock_telemetry.set_exception.assert_called_once()
+    mock_telemetry.set_user_fault.assert_not_called()
 
 
 def test_data_plane_health_failure_raises_azk8s0300(monkeypatch):
