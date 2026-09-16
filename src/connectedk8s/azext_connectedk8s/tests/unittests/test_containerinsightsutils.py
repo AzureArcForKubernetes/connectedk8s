@@ -11,11 +11,14 @@ import sys
 from unittest.mock import MagicMock
 
 import pytest
+from azure.cli.core.azclierror import ValidationError
 from kubernetes.client.models import V1ConfigMap, V1ObjectMeta
+from kubernetes.client.rest import ApiException
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 import azext_connectedk8s._constants as consts
 import azext_connectedk8s._containerinsightsutils as ciutils
+import azext_connectedk8s._errors as errors
 from azext_connectedk8s._containerinsightsutils import (
     create_container_insights_proxy_bypass_configmap,
     ensure_container_insights_proxy_bypass_configmap,
@@ -233,7 +236,7 @@ def test_ensure_reports_a_read_failure(monkeypatch):
 
     ensure_container_insights_proxy_bypass_configmap(api)
 
-    assert report.call_args.args[1] == consts.Read_ConfigMap_Fault_Type
+    assert report.call_args.args[1] is errors.CONFIGMAP_READ_FAILED
     api.create_namespaced_config_map.assert_not_called()
     api.replace_namespaced_config_map.assert_not_called()
 
@@ -246,7 +249,7 @@ def test_ensure_reports_a_write_failure(monkeypatch):
 
     ensure_container_insights_proxy_bypass_configmap(api)
 
-    assert report.call_args.args[1] == consts.Create_ConfigMap_Fault_Type
+    assert report.call_args.args[1] is errors.CONFIGMAP_WRITE_FAILED
 
 
 # ---------------- Tests for create_container_insights_proxy_bypass_configmap ----------------
@@ -271,7 +274,7 @@ def test_create_merges_when_the_configmap_appears_concurrently(monkeypatch):
 
     create_container_insights_proxy_bypass_configmap(api)
 
-    ensure.assert_called_once_with(api)
+    ensure.assert_called_once_with(api, cmd=None)
 
 
 def test_create_reports_a_failure(monkeypatch):
@@ -282,7 +285,7 @@ def test_create_reports_a_failure(monkeypatch):
 
     create_container_insights_proxy_bypass_configmap(api)
 
-    assert report.call_args.args[1] == consts.Create_ConfigMap_Fault_Type
+    assert report.call_args.args[1] is errors.CONFIGMAP_WRITE_FAILED
 
 
 # ---------------- Tests for remove_container_insights_proxy_bypass_configmap ----------------
@@ -342,7 +345,7 @@ def test_remove_passes_the_raise_flag_to_the_reporter(monkeypatch, raise_on_fail
 
     remove_container_insights_proxy_bypass_configmap(api, raise_on_failure)
 
-    assert report.call_args.args[1] == consts.Read_ConfigMap_Fault_Type
+    assert report.call_args.args[1] is errors.CONFIGMAP_READ_FAILED
     assert report.call_args.args[3] is raise_on_failure
 
 
@@ -354,7 +357,7 @@ def test_remove_reports_a_write_failure(monkeypatch):
 
     remove_container_insights_proxy_bypass_configmap(api, False)
 
-    assert report.call_args.args[1] == consts.Create_ConfigMap_Fault_Type
+    assert report.call_args.args[1] is errors.CONFIGMAP_WRITE_FAILED
     assert report.call_args.args[3] is False
 
 
@@ -379,38 +382,45 @@ def test_sync_dispatches_on_whether_the_bypass_was_requested(monkeypatch, reques
 
 # ---------------- Tests for report_container_insights_configmap_failure ----------------
 def test_report_failure_warns_without_raising_when_not_fatal(monkeypatch):
-    handler = MagicMock()
-    set_exception = MagicMock()
-    monkeypatch.setattr(ciutils.utils, "kubernetes_exception_handler", handler)
-    monkeypatch.setattr(ciutils.telemetry, "set_exception", set_exception)
+    diagnostic = MagicMock()
+    monkeypatch.setattr(ciutils.utils, "report_connectedk8s_diagnostic", diagnostic)
 
     report_container_insights_configmap_failure(
-        Exception("boom"), "fault", "summary", raise_on_failure=False
+        Exception("boom"),
+        errors.CONFIGMAP_WRITE_FAILED,
+        "update",
+        raise_on_failure=False,
     )
 
-    handler.assert_not_called()
-    assert set_exception.call_args.kwargs["fault_type"] == "fault"
+    assert diagnostic.call_args.args[1] is errors.CONFIGMAP_WRITE_FAILED
+    assert diagnostic.call_args.kwargs["operation"] == "update"
 
 
 def test_report_failure_raises_by_default(monkeypatch):
-    def _raise(*args, **kwargs):
-        raise RuntimeError("handled")
+    reporter = MagicMock(return_value=ValidationError("handled"))
+    monkeypatch.setattr(ciutils.utils, "report_connectedk8s_error", reporter)
 
-    monkeypatch.setattr(ciutils.utils, "kubernetes_exception_handler", _raise)
-
-    with pytest.raises(RuntimeError):
+    with pytest.raises(ValidationError):
         report_container_insights_configmap_failure(
-            Exception("boom"), "fault", "summary"
+            Exception("boom"), errors.CONFIGMAP_WRITE_FAILED, "update"
         )
+
+    assert reporter.call_args.args[1] is errors.CONFIGMAP_WRITE_FAILED
+    assert reporter.call_args.kwargs["user_fault"] is True
 
 
 def test_report_failure_names_the_permission_that_is_missing(monkeypatch):
-    handler = MagicMock()
-    monkeypatch.setattr(ciutils.utils, "kubernetes_exception_handler", handler)
-
-    report_container_insights_configmap_failure(Exception("boom"), "fault", "summary")
-
-    assert (
-        handler.call_args.kwargs["message_for_unauthorized_request"]
-        == consts.CI_ConfigMap_Unauthorized_Message
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        ciutils.utils,
+        "report_connectedk8s_error",
+        MagicMock(return_value=ValidationError("handled")),
     )
+    monkeypatch.setattr(ciutils.logger, "warning", lambda msg, *a, **k: warnings.append(msg))
+
+    with pytest.raises(ValidationError):
+        report_container_insights_configmap_failure(
+            ApiException(status=403), errors.CONFIGMAP_WRITE_FAILED, "update"
+        )
+
+    assert consts.CI_ConfigMap_Unauthorized_Message in warnings

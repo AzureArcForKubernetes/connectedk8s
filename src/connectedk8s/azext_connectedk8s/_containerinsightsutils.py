@@ -34,12 +34,18 @@ customer owns are left alone.
 
 from __future__ import annotations
 
-from azure.cli.core import telemetry
+from typing import TYPE_CHECKING
+
 from knack.log import get_logger
 from kubernetes import client as kube_client
+from kubernetes.client.rest import ApiException
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._errors as errors
 import azext_connectedk8s._utils as utils
+
+if TYPE_CHECKING:
+    from knack.commands import CLICommand
 
 logger = get_logger(__name__)
 
@@ -117,30 +123,47 @@ def remove_proxy_bypass_from_agent_settings(agent_settings: str) -> str:
 
 def report_container_insights_configmap_failure(
     e: Exception,
-    fault_type: str,
-    summary: str,
+    error: errors.ArcError,
+    operation: str,
     raise_on_failure: bool = True,
     error_message: str = consts.CI_ConfigMap_Error_Message,
     warning_message: str = consts.CI_ConfigMap_Removal_Failed_Warning,
+    cmd: CLICommand | None = None,
 ) -> None:
     # True raises so the command stops here; False logs a warning and returns.
     if not raise_on_failure:
         logger.warning(warning_message)
         logger.debug("Kubernetes Exception: ", exc_info=True)
-        telemetry.set_exception(exception=e, fault_type=fault_type, summary=summary)
+        utils.report_connectedk8s_diagnostic(
+            cmd, error, exception=e, operation=operation, details=str(e)
+        )
         return
 
-    utils.kubernetes_exception_handler(
-        e,
-        fault_type,
-        summary,
-        error_message=error_message,
-        message_for_unauthorized_request=consts.CI_ConfigMap_Unauthorized_Message,
-    )
+    # Mirrors kubernetes_exception_handler, so the likely cause is still named before failing.
+    if isinstance(e, ApiException):
+        if e.status == 403:
+            logger.warning(consts.CI_ConfigMap_Unauthorized_Message)
+        elif e.status == 404:
+            logger.warning(consts.CI_ConfigMap_Not_Found_Message)
+        else:
+            logger.debug("Kubernetes Exception: ", exc_info=True)
+        details = f"{error_message}\nError Response: {e.body}"
+    else:
+        details = f"{error_message}\nError: {e}"
+
+    raise utils.report_connectedk8s_error(
+        cmd,
+        error,
+        exception=e,
+        user_fault=True,
+        operation=operation,
+        details=details,
+    ) from e
 
 
 def ensure_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
+    cmd: CLICommand | None = None,
 ) -> None:
     # Create the ConfigMap when absent, otherwise merge the bypass into the existing one.
     # Runs before the cluster resource and the helm upgrade, so a failure stops the command.
@@ -157,12 +180,13 @@ def ensure_container_insights_proxy_bypass_configmap(
     except Exception as e:  # pylint: disable=broad-exception-caught
         # An absent ConfigMap is not a failure; it is created with just the bypass setting.
         if getattr(e, "status", None) == 404:
-            create_container_insights_proxy_bypass_configmap(api_instance)
+            create_container_insights_proxy_bypass_configmap(api_instance, cmd=cmd)
             return
         report_container_insights_configmap_failure(
             e,
-            consts.Read_ConfigMap_Fault_Type,
-            "Unable to read Container Insights proxy-bypass ConfigMap",
+            errors.CONFIGMAP_READ_FAILED,
+            "read",
+            cmd=cmd,
         )
         return
 
@@ -203,13 +227,15 @@ def ensure_container_insights_proxy_bypass_configmap(
     except Exception as e:  # pylint: disable=broad-exception-caught
         report_container_insights_configmap_failure(
             e,
-            consts.Create_ConfigMap_Fault_Type,
-            "Unable to update Container Insights proxy-bypass ConfigMap",
+            errors.CONFIGMAP_WRITE_FAILED,
+            "update",
+            cmd=cmd,
         )
 
 
 def create_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
+    cmd: CLICommand | None = None,
 ) -> None:
     # Seed only the proxy-bypass setting; the Container Insights solution fills in the rest.
     configmap = kube_client.V1ConfigMap(
@@ -245,12 +271,13 @@ def create_container_insights_proxy_bypass_configmap(
                 consts.CI_ConfigMap_Name,
                 consts.CI_ConfigMap_Namespace,
             )
-            ensure_container_insights_proxy_bypass_configmap(api_instance)
+            ensure_container_insights_proxy_bypass_configmap(api_instance, cmd=cmd)
             return
         report_container_insights_configmap_failure(
             e,
-            consts.Create_ConfigMap_Fault_Type,
-            "Unable to create Container Insights proxy-bypass ConfigMap",
+            errors.CONFIGMAP_WRITE_FAILED,
+            "create",
+            cmd=cmd,
         )
 
 
@@ -258,6 +285,7 @@ def remove_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
     raise_on_failure: bool = True,
     announce_skip: bool = False,
+    cmd: CLICommand | None = None,
 ) -> None:
     # Undo the bypass only where the annotation shows this CLI added it. A setting without that
     # annotation is customer-configured and is left untouched.
@@ -275,10 +303,11 @@ def remove_container_insights_proxy_bypass_configmap(
             return
         report_container_insights_configmap_failure(
             e,
-            consts.Read_ConfigMap_Fault_Type,
-            "Unable to read Container Insights proxy-bypass ConfigMap",
+            errors.CONFIGMAP_READ_FAILED,
+            "read",
             raise_on_failure,
             error_message=consts.CI_ConfigMap_Removal_Error_Message,
+            cmd=cmd,
         )
         return
 
@@ -315,23 +344,25 @@ def remove_container_insights_proxy_bypass_configmap(
     except Exception as e:  # pylint: disable=broad-exception-caught
         report_container_insights_configmap_failure(
             e,
-            consts.Create_ConfigMap_Fault_Type,
-            "Unable to remove the Container Insights proxy-bypass setting",
+            errors.CONFIGMAP_WRITE_FAILED,
+            "remove the bypass from",
             raise_on_failure,
             error_message=consts.CI_ConfigMap_Removal_Error_Message,
+            cmd=cmd,
         )
 
 
 def sync_container_insights_proxy_bypass_configmap(
     api_instance: kube_client.CoreV1Api,
     requested: bool,
+    cmd: CLICommand | None = None,
 ) -> None:
     # Single entry point for connect and update, so the two cannot drift apart. Callers only reach
     # here when --add-proxy-bypass or --clear-proxy-bypass was passed, so a failure is always fatal.
     # Apply the bypass when requested, otherwise remove it.
     if requested:
-        ensure_container_insights_proxy_bypass_configmap(api_instance)
+        ensure_container_insights_proxy_bypass_configmap(api_instance, cmd=cmd)
     else:
         remove_container_insights_proxy_bypass_configmap(
-            api_instance, announce_skip=True
+            api_instance, announce_skip=True, cmd=cmd
         )

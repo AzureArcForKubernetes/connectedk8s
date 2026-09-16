@@ -844,7 +844,7 @@ def create_connectedk8s(
                 add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
             ):
                 containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
-                    api_instance, True
+                    api_instance, True, cmd=cmd
                 )
 
             # Disabling cluster-connect if private link is getting enabled
@@ -957,7 +957,7 @@ def create_connectedk8s(
         )
         # Check if an earlier instance left a Container Insights proxy bypass behind.
         containerinsightsutils.remove_container_insights_proxy_bypass_configmap(
-            api_instance
+            api_instance, cmd=cmd
         )
         _cleanup_stale_arc_agents(
             cmd,
@@ -1074,7 +1074,7 @@ def create_connectedk8s(
         add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
     ):
         containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
-            kube_client.CoreV1Api(), True
+            kube_client.CoreV1Api(), True, cmd=cmd
         )
 
     print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
@@ -1289,7 +1289,7 @@ def create_connectedk8s(
         ):
             logger.warning(consts.CI_ConfigMap_Rollback_Warning)
             containerinsightsutils.remove_container_insights_proxy_bypass_configmap(
-                kube_client.CoreV1Api(), raise_on_failure=False
+                kube_client.CoreV1Api(), raise_on_failure=False, cmd=cmd
             )
         raise
 
@@ -2471,7 +2471,7 @@ def delete_connectedk8s(
     # Undo the bypass before anything is deleted, so a failure here stops the command
     # instead of deboarding the cluster and leaving the setting behind.
     containerinsightsutils.remove_container_insights_proxy_bypass_configmap(
-        api_instance
+        api_instance, cmd=cmd
     )
 
     # Check forced delete flag
@@ -3152,7 +3152,7 @@ def update_connected_cluster(
     )
     if ci_requested or ci_cleared:
         containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
-            kube_client.CoreV1Api(), ci_requested
+            kube_client.CoreV1Api(), ci_requested, cmd=cmd
         )
 
     return connected_cluster

@@ -344,6 +344,8 @@ CI_ConfigMap_Unauthorized_Message = (
     f"Insights proxy bypass. Please ensure you have permissions to get, create and update "
     f"ConfigMaps in the '{CI_ConfigMap_Namespace}' namespace."
 )
+# Carries the wording kubernetes_exception_handler used, so a missing resource still reads the same.
+CI_ConfigMap_Not_Found_Message = "The requested kubernetes resource was not found."
 # Removal failures stop the command, so the message says why and how to get past it.
 CI_ConfigMap_Removal_Error_Message = (
     f"Unable to remove the Container Insights proxy bypass from the '{CI_ConfigMap_Name}' "
