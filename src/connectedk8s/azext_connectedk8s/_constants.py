@@ -305,6 +305,13 @@ Proxy_Bypass_Allowed_Values = ", ".join(Proxy_Bypass_Enum_Values)
 Proxy_Bypass_Allowed_Keywords = frozenset(
     value.lower() for value in Proxy_Bypass_Enum_Values
 )
+# Sends the user to update, because connect does not apply the bypass to a connected cluster.
+Proxy_Bypass_Already_Onboarded_Error = (
+    "This cluster is already connected to Azure, and 'az connectedk8s connect' does not "
+    "update the agents running on it. Run 'az connectedk8s update -n "
+    "<connected-cluster-name> -g <resource-group-name> --add-proxy-bypass <keyword>' to "
+    "change the proxy bypass on a connected cluster."
+)
 # Names the command that clears the Container Insights bypass, so each message says how to undo it.
 Proxy_Bypass_ContainerInsights_Clear = (
     "Run 'az connectedk8s update -n <connected-cluster-name> -g <resource-group-name> "
