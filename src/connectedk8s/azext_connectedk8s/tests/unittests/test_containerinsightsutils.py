@@ -416,7 +416,9 @@ def test_report_failure_names_the_permission_that_is_missing(monkeypatch):
         "report_connectedk8s_error",
         MagicMock(return_value=ValidationError("handled")),
     )
-    monkeypatch.setattr(ciutils.logger, "warning", lambda msg, *a, **k: warnings.append(msg))
+    monkeypatch.setattr(
+        ciutils.logger, "warning", lambda msg, *a, **k: warnings.append(msg)
+    )
 
     with pytest.raises(ValidationError):
         report_container_insights_configmap_failure(

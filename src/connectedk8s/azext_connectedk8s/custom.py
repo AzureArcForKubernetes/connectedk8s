@@ -1089,8 +1089,8 @@ def create_connectedk8s(
         )
 
         # Checking if custom locations rp is registered and fetching oid if it is registered
-        enable_custom_locations, custom_locations_oid = check_cl_registration_and_get_oid(
-            cmd, cl_oid, subscription_id
+        enable_custom_locations, custom_locations_oid = (
+            check_cl_registration_and_get_oid(cmd, cl_oid, subscription_id)
         )
 
         # Associate gateway with connected cluster if enabled
@@ -1186,7 +1186,9 @@ def create_connectedk8s(
         registry_path = os.getenv("HELMREGISTRY") or helm_values_dp["repositoryPath"]
 
         if registry_path == "":
-            registry_path = utils.get_helm_registry(cmd, config_dp_endpoint, release_train)
+            registry_path = utils.get_helm_registry(
+                cmd, config_dp_endpoint, release_train
+            )
 
         # Get azure-arc agent version for telemetry
         azure_arc_agent_version = registry_path.split(":")[1]
@@ -1566,7 +1568,7 @@ def resolve_arc_proxy_bypass(
         # Read the skip range the agents run with today; helm returns it unescaped. It is
         # the base when the bypass is added without a new skip range, so entries survive.
         helm_values = get_all_helm_values(
-            release_namespace, kube_config, kube_context, helm_client_location
+            cmd, release_namespace, kube_config, kube_context, helm_client_location
         )
         current_no_proxy = str(utils.flatten(helm_values).get("global.noProxy") or "")
 

@@ -6,7 +6,7 @@ import os
 import sys
 from types import SimpleNamespace
 from typing import Dict, Optional
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, create_autospec
 
 import pytest
 
@@ -436,7 +436,11 @@ def test_remove_arc_endpoints(no_proxy, expected):
 
 # ---------------- Tests for resolve_arc_proxy_bypass ----------------
 def _resolve(monkeypatch, no_proxy="", add="", clear="", cluster="", announce=True):
-    helm = MagicMock(return_value={"global": {"noProxy": cluster}})
+    # Autospec so a call that does not match the real signature fails here instead of
+    # silently passing, which is how a missing 'cmd' argument once reached the CLI.
+    helm = create_autospec(
+        custom.get_all_helm_values, return_value={"global": {"noProxy": cluster}}
+    )
     monkeypatch.setattr(custom, "get_all_helm_values", helm)
     result = resolve_arc_proxy_bypass(
         _proxy_cmd(),
