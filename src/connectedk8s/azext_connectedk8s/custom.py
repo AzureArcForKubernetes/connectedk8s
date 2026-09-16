@@ -23,7 +23,7 @@ import time
 from base64 import b64decode, b64encode
 from concurrent.futures import ThreadPoolExecutor
 from subprocess import DEVNULL, PIPE, Popen
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal
 
 import oras.client  # type: ignore[import-untyped]
 import yaml
@@ -834,13 +834,14 @@ def create_connectedk8s(
                 arc_agentry_configurations,
                 arc_agent_profile,
             )
-            dp_request_payload, cc_response = replace_cc_resource(
+            dp_request_payload, cc_response = put_cc_resource(
                 cmd,
                 client,
                 resource_group_name,
                 cluster_name,
                 cc,
                 no_wait,
+                operation="update",
             )
 
             # Only touch the ConfigMap when Container Insights was named on this run.
@@ -1085,13 +1086,14 @@ def create_connectedk8s(
     print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
     # Create connected cluster resource
     try:
-        dp_request_payload, put_cc_response = create_cc_resource(
+        dp_request_payload, put_cc_response = put_cc_resource(
             cmd,
             client,
             resource_group_name,
             cluster_name,
             cc,
             no_wait,
+            operation="create",
         )
 
         # Checking if custom locations rp is registered and fetching oid if it is registered
@@ -1134,11 +1136,12 @@ def create_connectedk8s(
                 print(
                     f"Step: {utils.get_utctimestring()}: Updating Connected Cluster resource with Gateway configuration"
                 )
-                connected_cluster = get_cc_resource_for_update(
+                connected_cluster = get_cc_resource(
                     cmd,
                     client,
                     resource_group_name,
                     cluster_name,
+                    operation="update",
                 )
 
                 # Generate updated payload with gateway configuration
@@ -1152,13 +1155,14 @@ def create_connectedk8s(
                 )
 
                 # Update the connected cluster resource
-                dp_request_payload, put_cc_response = replace_cc_resource(
+                dp_request_payload, put_cc_response = put_cc_resource(
                     cmd,
                     client,
                     resource_group_name,
                     cluster_name,
                     cc,
                     False,
+                    operation="update",
                 )
 
                 logger.info(
@@ -2448,11 +2452,12 @@ def delete_connectedk8s(
     logger.warning("This operation might take a while ...\n")
 
     # Check if the cluster is of supported type for deletion
-    cluster_resource = get_cc_resource_for_delete(
+    cluster_resource = get_cc_resource(
         cmd,
         client,
         resource_group_name,
         cluster_name,
+        operation="delete",
     )
     if (cluster_resource.kind is not None) and (
         cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind
@@ -2634,14 +2639,21 @@ def delete_connectedk8s(
     print(f"Step: {utils.get_utctimestring()}: Delete of Connected Cluster ended.")
 
 
-def create_cc_resource(
+def put_cc_resource(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
     resource_group_name: str,
     cluster_name: str,
     cc: ConnectedCluster,
     no_wait: bool,
+    *,
+    operation: Literal["create", "update"],
 ) -> tuple[ConnectedCluster, ConnectedCluster]:
+    operation_error = (
+        errors.CONNECTED_CLUSTER_CREATE_FAILED
+        if operation == "create"
+        else errors.CONNECTED_CLUSTER_UPDATE_FAILED
+    )
     try:
         poller: LROPoller[ConnectedCluster] = sdk_no_wait(
             no_wait,
@@ -2656,81 +2668,37 @@ def create_cc_resource(
     except Exception as e:
         utils.arm_exception_handler(
             e,
-            consts.Create_ConnectedCluster_Fault_Type,
-            "Unable to create connected cluster resource",
+            operation_error.fault_type,
+            f"Unable to {operation} connected cluster resource",
             cmd=cmd,
-            error=errors.CONNECTED_CLUSTER_CREATE_FAILED,
+            error=operation_error,
         )
 
     assert False
 
 
-def replace_cc_resource(
+def get_cc_resource(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
     resource_group_name: str,
     cluster_name: str,
-    cc: ConnectedCluster,
-    no_wait: bool,
-) -> tuple[ConnectedCluster, ConnectedCluster]:
-    try:
-        poller: LROPoller[ConnectedCluster] = sdk_no_wait(
-            no_wait,
-            client.begin_create_or_replace,
-            resource_group_name=resource_group_name,
-            cluster_name=cluster_name,
-            connected_cluster=cc,
-        )
-        dp_request_payload = poller.result()
-        response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(poller)
-        return dp_request_payload, response
-    except Exception as e:
-        utils.arm_exception_handler(
-            e,
-            consts.Update_ConnectedCluster_Fault_Type,
-            "Unable to replace connected cluster resource",
-            cmd=cmd,
-            error=errors.CONNECTED_CLUSTER_UPDATE_FAILED,
-        )
-
-    assert False
-
-
-def get_cc_resource_for_update(
-    cmd: CLICommand,
-    client: ConnectedClusterOperations,
-    resource_group_name: str,
-    cluster_name: str,
+    *,
+    operation: Literal["update", "delete"],
 ) -> ConnectedCluster:
+    operation_error = (
+        errors.CONNECTED_CLUSTER_UPDATE_FAILED
+        if operation == "update"
+        else errors.CONNECTED_CLUSTER_DELETE_FAILED
+    )
     try:
         return client.get(resource_group_name, cluster_name)
     except Exception as e:
         utils.arm_exception_handler(
             e,
-            consts.Update_ConnectedCluster_Fault_Type,
-            "Unable to get connected cluster resource for update",
+            operation_error.fault_type,
+            f"Unable to get connected cluster resource for {operation}",
             cmd=cmd,
-            error=errors.CONNECTED_CLUSTER_UPDATE_FAILED,
-        )
-
-    assert False
-
-
-def get_cc_resource_for_delete(
-    cmd: CLICommand,
-    client: ConnectedClusterOperations,
-    resource_group_name: str,
-    cluster_name: str,
-) -> ConnectedCluster:
-    try:
-        return client.get(resource_group_name, cluster_name)
-    except Exception as e:
-        utils.arm_exception_handler(
-            e,
-            consts.Delete_ConnectedCluster_Fault_Type,
-            "Unable to get connected cluster resource for delete",
-            cmd=cmd,
-            error=errors.CONNECTED_CLUSTER_DELETE_FAILED,
+            error=operation_error,
         )
 
     assert False
@@ -2917,11 +2885,12 @@ def update_connected_cluster(
     )
 
     # Fetch Connected Cluster for agent version
-    connected_cluster = get_cc_resource_for_update(
+    connected_cluster = get_cc_resource(
         cmd,
         client,
         resource_group_name,
         cluster_name,
+        operation="update",
     )
 
     if (connected_cluster.kind is not None) and (
@@ -3068,11 +3037,12 @@ def update_connected_cluster(
         )
 
     # Fetch Connected Cluster for agent version
-    connected_cluster = get_cc_resource_for_update(
+    connected_cluster = get_cc_resource(
         cmd,
         client,
         resource_group_name,
         cluster_name,
+        operation="update",
     )
     if connected_cluster.id is None:
         err_msg = (
@@ -3109,11 +3079,12 @@ def update_connected_cluster(
     utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Get the connected cluster resource using latest api version and generate reput request payload
-    connected_cluster = get_cc_resource_for_update(
+    connected_cluster = get_cc_resource(
         cmd,
         client,
         resource_group_name,
         cluster_name,
+        operation="update",
     )
 
     # If gateway is enabled
@@ -3181,13 +3152,14 @@ def update_connected_cluster(
     )
 
     # Update connected cluster resource
-    dp_request_payload, _ = replace_cc_resource(
+    dp_request_payload, _ = put_cc_resource(
         cmd,
         client,
         resource_group_name,
         cluster_name,
         cc,
         False,
+        operation="update",
     )
 
     # Before proceeding, we prefer to see agent state settle - updating the helm chart
