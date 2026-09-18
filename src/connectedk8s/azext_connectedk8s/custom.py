@@ -1241,24 +1241,24 @@ def create_connectedk8s(
             },
         )
 
-    if use_secret_injection_flow:
-        # Inject the private key BEFORE running helm so that the cluster always
-        # has the onboarding secret available - even if the subsequent helm
-        # install/CLI is interrupted - preventing a stuck-disconnected state.
-        try:
-            utils.inject_onboarding_private_key_secret(private_key_pem, cmd=cmd)
-        except AzCLIError:
-            raise
-        except Exception as e:
-            raise utils.report_connectedk8s_error(
-                cmd,
-                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
-                exception=e,
-                details=(
-                    "Failed to pre-create the onboarding private key secret on "
-                    f"the Kubernetes cluster: {e}"
-                ),
-            ) from e
+        if use_secret_injection_flow:
+            # Inject the private key BEFORE running helm so that the cluster always
+            # has the onboarding secret available - even if the subsequent helm
+            # install/CLI is interrupted - preventing a stuck-disconnected state.
+            try:
+                utils.inject_onboarding_private_key_secret(private_key_pem, cmd=cmd)
+            except AzCLIError:
+                raise
+            except Exception as e:
+                raise utils.report_connectedk8s_error(
+                    cmd,
+                    errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                    exception=e,
+                    details=(
+                        "Failed to pre-create the onboarding private key secret on "
+                        f"the Kubernetes cluster: {e}"
+                    ),
+                ) from e
 
         # Install azure-arc agents
         utils.helm_install_release(
