@@ -2650,11 +2650,13 @@ def sanitize_telemetry_exception(
     if exception is None:
         return Exception(sanitize_telemetry_text(fallback_message))
 
+    sanitized_message = sanitize_telemetry_text(str(exception))
+    if sanitized_message == str(exception):
+        return exception
+
     exception_type = type(exception)
     sanitized_type = type(exception_type.__name__, (Exception,), {})
-    sanitized_exception: BaseException = sanitized_type(
-        sanitize_telemetry_text(str(exception))
-    )
+    sanitized_exception: BaseException = sanitized_type(sanitized_message)
     return sanitized_exception
 
 

@@ -716,6 +716,12 @@ def test_sanitize_telemetry_exception_uses_fallback_for_missing_exception():
     assert str(sanitized) == "Couldnt run helm version"
 
 
+def test_sanitize_telemetry_exception_preserves_safe_exception():
+    exception = RuntimeError("Microsoft Graph request failed")
+
+    assert sanitize_telemetry_exception(exception, "fallback") is exception
+
+
 def test_report_connectedk8s_diagnostic_does_not_build_cli_exception(monkeypatch):
     error = ArcError(
         code="AZK8S0009",
