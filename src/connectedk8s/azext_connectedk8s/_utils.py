@@ -2920,13 +2920,8 @@ def check_provider_registrations(
                 raise ValidationError(err_msg)
     except ValidationError:
         raise
-    except Exception as ex:  # pylint: disable=broad-exception-caught
-        raise report_connectedk8s_error(
-            cmd,
-            errors.RESOURCE_PROVIDER_FETCH_FAILED,
-            exception=ex,
-            details=str(ex),
-        ) from ex
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.exception("Couldn't check the required provider's registration status")
 
 
 def can_create_clusterrolebindings() -> bool | str:

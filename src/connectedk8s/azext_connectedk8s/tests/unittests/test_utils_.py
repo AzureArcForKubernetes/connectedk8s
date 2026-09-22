@@ -62,6 +62,47 @@ def _build_test_proxy_url(username, password):
     return urlunsplit(("http", f"{credentials}@example.com:8080", "", "", ""))
 
 
+def test_check_provider_registrations_reports_unregistered_provider(monkeypatch):
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    rp_client = MagicMock()
+    rp_client.get.return_value = SimpleNamespace(registration_state="NotRegistered")
+    monkeypatch.setattr(
+        utils_module, "resource_providers_client", MagicMock(return_value=rp_client)
+    )
+    monkeypatch.setattr(utils_module, "telemetry", MagicMock())
+
+    with pytest.raises(ValidationError, match=r"\[AZK8S0408\]"):
+        utils_module.check_provider_registrations(
+            cmd,
+            "subscription-id",
+            is_gateway_enabled=False,
+            is_workload_identity_enabled=False,
+        )
+
+
+def test_check_provider_registrations_continues_when_lookup_fails(monkeypatch):
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    lookup_error = RuntimeError("provider API unavailable")
+    mock_logger = MagicMock()
+    monkeypatch.setattr(
+        utils_module,
+        "resource_providers_client",
+        MagicMock(side_effect=lookup_error),
+    )
+    monkeypatch.setattr(utils_module, "logger", mock_logger)
+
+    utils_module.check_provider_registrations(
+        cmd,
+        "subscription-id",
+        is_gateway_enabled=False,
+        is_workload_identity_enabled=False,
+    )
+
+    mock_logger.exception.assert_called_once_with(
+        "Couldn't check the required provider's registration status"
+    )
+
+
 def test_get_underlying_exception_type_uses_transport_reason():
     underlying = type("NameResolutionError", (Exception,), {})("sensitive endpoint")
     outer = type("MaxRetryError", (Exception,), {"reason": underlying})("retry")
