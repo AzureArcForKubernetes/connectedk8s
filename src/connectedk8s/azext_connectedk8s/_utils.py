@@ -1070,8 +1070,7 @@ def check_cluster_DNS(
             else -1
         )
         dns_check_failed = (
-            last_failure_position >= 0
-            and last_success_position < last_failure_position
+            last_failure_position >= 0 and last_success_position < last_failure_position
         )
 
         # Validating if DNS is working or not and displaying proper result
