@@ -1045,16 +1045,38 @@ def check_cluster_DNS(
         if consts.DNS_Check_Result_String not in dns_check_log:
             return consts.Diagnostic_Check_Incomplete, storage_space_available
         formatted_dns_log = dns_check_log.replace("\t", "")
+        failure_markers = (
+            "NXDOMAIN",
+            "SERVFAIL",
+            "connection timed out",
+            "no servers could be reached",
+            "communications error",
+            "timed out",
+        )
+        last_failure_position = max(
+            formatted_dns_log.rfind(marker) for marker in failure_markers
+        )
+        successful_resolution_matches = list(
+            re.finditer(
+                r"\bName:\s*kubernetes\.default(?:\.\S+)?\s+"
+                r"Address(?:es)?:\s+\S+",
+                formatted_dns_log,
+                flags=re.IGNORECASE,
+            )
+        )
+        last_success_position = (
+            successful_resolution_matches[-1].end()
+            if successful_resolution_matches
+            else -1
+        )
+        dns_check_failed = (
+            last_failure_position >= 0
+            and last_success_position < last_failure_position
+        )
+
         # Validating if DNS is working or not and displaying proper result
         # These are standard error strings from DNS tools (nslookup/dig) indicating resolution failures
-        if (  # pylint: disable=too-many-boolean-expressions
-            "NXDOMAIN" in formatted_dns_log
-            or "SERVFAIL" in formatted_dns_log
-            or "connection timed out" in formatted_dns_log
-            or "no servers could be reached" in formatted_dns_log
-            or "communications error" in formatted_dns_log
-            or "timed out" in formatted_dns_log
-        ):
+        if dns_check_failed:
             dns_error = errors.DNS_TIMEOUT
             # Prefer specific DNS responses when one log contains multiple signals.
             if "NXDOMAIN" in formatted_dns_log:

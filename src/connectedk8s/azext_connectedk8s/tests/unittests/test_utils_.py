@@ -1637,6 +1637,32 @@ class TestCheckClusterDNS:
         assert result == "Passed"
         assert diag == []
 
+    def test_transient_timeout_followed_by_success_passes(self):
+        log = """\
+DNS Result:;; communications error to 10.0.0.10#53: timed out
+Server: 10.0.0.10
+Address: 10.0.0.10#53
+
+Name: kubernetes.default.svc.cluster.local
+Address: 10.0.0.1"""
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Passed
+        assert diag == []
+
+    def test_timeout_after_success_fails(self):
+        log = """\
+DNS Result:
+Name: kubernetes.default.svc.cluster.local
+Address: 10.0.0.1
+;; communications error to 10.0.0.10#53: timed out"""
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Failed
+        assert diag[0].startswith("[AZK8S0302]")
+
     @pytest.mark.parametrize(
         "dns_log, expected_code, expected_fault_type",
         [
