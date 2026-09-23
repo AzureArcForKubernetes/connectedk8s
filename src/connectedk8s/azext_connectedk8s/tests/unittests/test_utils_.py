@@ -2,6 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
+import json
 import os
 import sys
 from types import SimpleNamespace
@@ -203,6 +204,26 @@ def test_redact_sensitive_fields_from_string():
         redact_sensitive_fields_from_string(input_text_partial)
         == expected_output_partial
     )
+
+
+def test_redact_sensitive_fields_handles_json_and_case_variants():
+    input_text = json.dumps(
+        {
+            "Token": "short-secret",
+            "PASSWORD": "mixed case secret",
+            "token_status": "unchanged",
+            "safe": "unchanged",
+        }
+    )
+
+    sanitized = redact_sensitive_fields_from_string(input_text)
+
+    assert json.loads(sanitized) == {
+        "Token": "[REDACTED]",
+        "PASSWORD": "[REDACTED]",
+        "token_status": "unchanged",
+        "safe": "unchanged",
+    }
 
 
 def test_get_mcr_path():

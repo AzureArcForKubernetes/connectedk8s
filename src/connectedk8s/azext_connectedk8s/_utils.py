@@ -2620,19 +2620,23 @@ def redact_base64_strings(content: str) -> str:
 
 
 def redact_sensitive_fields_from_string(input_text: str) -> str:
-    # Define regex patterns for keys
-    patterns = {
-        r"(username:\s*).*": r"\1[REDACTED]",
-        r"(password:\s*).*": r"\1[REDACTED]",
-        r"(token:\s*).*": r"\1[REDACTED]",
-    }
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<prefix>[\"']?(?:username|password|token)[\"']?"
+        r"(?![A-Za-z0-9_])\s*[:=]\s*)"
+        r"(?P<value>\"[^\"]*\"|'[^']*'|[^\r\n,}]+)",
+        re.IGNORECASE,
+    )
 
-    # Apply regex to redact sensitive fields
-    for pattern, replacement in patterns.items():
-        input_text = re.sub(pattern, replacement, input_text)
+    def redact_value(match: re.Match[str]) -> str:
+        value = match.group("value").strip()
+        if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+            redacted_value = f"{value[0]}[REDACTED]{value[0]}"
+        else:
+            redacted_value = "[REDACTED]"
+        return f"{match.group('prefix')}{redacted_value}"
 
-    # Return the redacted text
-    return input_text
+    return pattern.sub(redact_value, input_text)
 
 
 def sanitize_telemetry_text(value: str) -> str:
