@@ -173,6 +173,12 @@ def _agent_state_timeout_error(cmd: CLICommand, operation: str) -> AzCLIError:
     )
 
 
+def _announce_arc_proxy_bypass() -> None:
+    print(
+        f"Step: {utils.get_utctimestring()}: {consts.Proxy_Bypass_Arc_Applied_Message}"
+    )
+
+
 def _cleanup_stale_arc_agents(
     cmd: CLICommand,
     kubectl_client_location: str,
@@ -300,14 +306,16 @@ def create_connectedk8s(
     # needs the skip range exactly as the caller passed it.
     requested_no_proxy = no_proxy
 
-    # Apply the Arc bypass before escaping, so the separator added here is escaped too.
-    if validators.has_proxy_bypass_keyword(
+    arc_requested = validators.has_proxy_bypass_keyword(
         add_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
-    ):
-        print(
-            f"Step: {utils.get_utctimestring()}: "
-            f"{consts.Proxy_Bypass_Arc_Applied_Message}"
-        )
+    )
+    ci_requested = validators.has_proxy_bypass_keyword(
+        add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+    )
+
+    # Apply the Arc bypass before escaping, so the separator added here is escaped too.
+    # The paths below announce it, since only they know whether it reached the agents.
+    if arc_requested:
         no_proxy = add_arc_proxy_skip_range_endpoints(cmd, no_proxy)
 
     print(f"Step: {utils.get_utctimestring()}: Escape Proxy Settings, if passed in")
@@ -840,9 +848,7 @@ def create_connectedk8s(
             cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(cc_poller)
 
             # Only touch the ConfigMap when Container Insights was named on this run.
-            if validators.has_proxy_bypass_keyword(
-                add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
-            ):
+            if ci_requested:
                 containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
                     api_instance, True, cmd=cmd
                 )
@@ -993,6 +999,10 @@ def create_connectedk8s(
             cmd, kubectl_client_location, kube_config, kube_context
         )
 
+    # Onboarding installs the agents with the skip range above, so the bypass applies.
+    if arc_requested:
+        _announce_arc_proxy_bypass()
+
     print(
         f"Step: {utils.get_utctimestring()}: Check if ResourceGroup exists.  Try to create if it doesn't"
     )
@@ -1070,9 +1080,7 @@ def create_connectedk8s(
 
     # Sync the ConfigMap before the cluster resource exists, so a failure leaves nothing
     # behind in Azure. Only touch it when Container Insights was named on this run.
-    if validators.has_proxy_bypass_keyword(
-        add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
-    ):
+    if ci_requested:
         containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
             kube_client.CoreV1Api(), True, cmd=cmd
         )
@@ -1288,9 +1296,7 @@ def create_connectedk8s(
     except Exception:  # pylint: disable=broad-except
         # Undo the bypass so a failed onboarding does not leave the cluster changed.
         # raise_on_failure=False keeps the original error as the one the user sees.
-        if validators.has_proxy_bypass_keyword(
-            add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
-        ):
+        if ci_requested:
             logger.warning(consts.CI_ConfigMap_Rollback_Warning)
             containerinsightsutils.remove_container_insights_proxy_bypass_configmap(
                 kube_client.CoreV1Api(), raise_on_failure=False, cmd=cmd
@@ -1591,12 +1597,9 @@ def resolve_arc_proxy_bypass(
         return remove_arc_proxy_skip_range_endpoints(cmd, no_proxy or current_no_proxy)
 
     if requested:
-        # Off for callers that already printed this message earlier in the same command.
+        # Off for connect, which announces this once it knows the agents are updated.
         if announce_applied:
-            print(
-                f"Step: {utils.get_utctimestring()}: "
-                f"{consts.Proxy_Bypass_Arc_Applied_Message}"
-            )
+            _announce_arc_proxy_bypass()
     elif has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy):
         logger.warning(consts.Proxy_Bypass_Arc_Preserved_Warning)
     else:
