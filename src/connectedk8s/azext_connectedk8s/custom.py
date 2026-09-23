@@ -1542,13 +1542,16 @@ def add_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str:
     return ",".join(entries)
 
 
-def has_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> bool:
-    # Checking whether the Arc endpoints are present in the proxy skip range
-    entries = {entry.strip().lower() for entry in no_proxy.split(",")}
-    return any(
+def has_arc_proxy_skip_range_endpoints(
+    cmd: CLICommand, no_proxy: str | None, require_all: bool = False
+) -> bool:
+    # The bypass always writes every endpoint, so require_all matches only its own work.
+    entries = {entry.strip().lower() for entry in (no_proxy or "").split(",")}
+    present = [
         endpoint.lower() in entries
         for endpoint in get_arc_proxy_skip_range_endpoints(cmd)
-    )
+    ]
+    return all(present) if require_all else any(present)
 
 
 def remove_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str:
@@ -1596,11 +1599,10 @@ def resolve_arc_proxy_bypass(
 
     if cleared:
         # A new skip range replaces the old one, so remove the endpoints from that when
-        # given. Leave the skip range alone when neither source lists them, so clearing a
-        # cluster that never had the bypass does not start sending a proxy setting.
+        # given. Only the full set is the bypass, so endpoints listed alone are kept.
         if not (
-            has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy)
-            or has_arc_proxy_skip_range_endpoints(cmd, no_proxy)
+            has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy, require_all=True)
+            or has_arc_proxy_skip_range_endpoints(cmd, no_proxy, require_all=True)
         ):
             logger.warning(consts.Proxy_Bypass_Arc_Nothing_To_Clear_Warning)
             return None
@@ -1614,7 +1616,8 @@ def resolve_arc_proxy_bypass(
         # Off for connect, which announces this once it knows the agents are updated.
         if announce_applied:
             _announce_arc_proxy_bypass()
-    elif has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy):
+    elif has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy, require_all=True):
+        # Only the full set is carried over, so endpoints listed alone are not widened.
         logger.warning(consts.Proxy_Bypass_Arc_Preserved_Warning)
     else:
         return None

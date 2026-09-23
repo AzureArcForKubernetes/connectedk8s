@@ -879,6 +879,43 @@ def test_has_arc_endpoints(no_proxy, expected):
     assert has_arc_proxy_skip_range_endpoints(_proxy_cmd(), no_proxy) is expected
 
 
+@pytest.mark.parametrize(
+    "no_proxy,expected",
+    [
+        ("", False),
+        ("10.0.0.0/8", False),
+        (".his.arc.azure.com", False),
+        ("10.0.0.0/8,.his.arc.azure.com,.guestconfiguration.azure.com", False),
+        (ARC_SKIP_RANGE, True),
+        ("10.0.0.0/8," + ARC_SKIP_RANGE, True),
+        (ARC_SKIP_RANGE.upper(), True),
+    ],
+    ids=[
+        "empty",
+        "unrelated",
+        "one-of-them",
+        "two-of-them",
+        "all-three",
+        "keeps-entry",
+        "any-case",
+    ],
+)
+def test_has_every_arc_endpoint(no_proxy, expected):
+    # The bypass always writes every endpoint, so only the full set marks it as applied.
+    assert (
+        has_arc_proxy_skip_range_endpoints(_proxy_cmd(), no_proxy, require_all=True)
+        is expected
+    )
+
+
+def test_has_arc_endpoints_without_a_skip_range():
+    # The CLI sends an empty string when --proxy-skip-range is left out, so this only
+    # guards the helper against a caller that passes nothing at all.
+    cmd = _proxy_cmd()
+    assert has_arc_proxy_skip_range_endpoints(cmd, None) is False
+    assert has_arc_proxy_skip_range_endpoints(cmd, None, require_all=True) is False
+
+
 # ---------------- Tests for remove_arc_proxy_skip_range_endpoints ----------------
 @pytest.mark.parametrize(
     "no_proxy,expected",
@@ -994,8 +1031,8 @@ def test_resolve_announces_the_bypass_when_it_is_applied(monkeypatch, capsys):
 
 
 def test_resolve_leaves_the_announcement_to_connect(monkeypatch, capsys):
-    # connect announces the bypass before it reaches the resolver, so the resolver stays
-    # quiet instead of reporting the same thing twice in one command.
+    # connect announces this itself once it knows the agents are updated, so the
+    # resolver stays quiet rather than reporting the same thing twice.
     result, _ = _resolve(monkeypatch, add="Arc", cluster="10.0.0.0/8", announce=False)
     assert result == "10.0.0.0/8," + ARC_SKIP_RANGE
     assert consts.Proxy_Bypass_Arc_Applied_Message not in capsys.readouterr().out
@@ -1060,6 +1097,18 @@ def test_resolve_clear_with_a_new_skip_range_that_has_nothing_to_remove(monkeypa
     warning.assert_called_once_with(consts.Proxy_Bypass_Arc_Nothing_To_Clear_Warning)
 
 
+def test_resolve_clear_keeps_an_endpoint_the_customer_listed(monkeypatch):
+    # One endpoint on its own is not the bypass this CLI applies, so the clear leaves it
+    # for the customer to remove through --proxy-skip-range.
+    warning = MagicMock()
+    monkeypatch.setattr(custom.logger, "warning", warning)
+    result, _ = _resolve(
+        monkeypatch, clear="Arc", cluster="10.0.0.0/8,.his.arc.azure.com"
+    )
+    assert result is None
+    warning.assert_called_once_with(consts.Proxy_Bypass_Arc_Nothing_To_Clear_Warning)
+
+
 def test_resolve_reapplies_the_bypass_when_the_skip_range_changes(monkeypatch):
     # --proxy-skip-range replaces the whole skip range, so a cluster that has the bypass
     # keeps it instead of silently losing the endpoints.
@@ -1087,3 +1136,17 @@ def test_resolve_reports_the_carry_over_even_when_it_stays_quiet(monkeypatch):
 def test_resolve_skip_range_change_without_the_bypass_stays_untouched(monkeypatch):
     result, _ = _resolve(monkeypatch, no_proxy="192.168.0.0/16", cluster="10.0.0.0/8")
     assert result is None
+
+
+def test_resolve_skip_range_change_keeps_an_endpoint_the_customer_listed(monkeypatch):
+    # One endpoint on its own is not the bypass this CLI applies, so the skip range is
+    # stored as it was typed rather than widened into the full set.
+    warning = MagicMock()
+    monkeypatch.setattr(custom.logger, "warning", warning)
+    result, _ = _resolve(
+        monkeypatch,
+        no_proxy="192.168.0.0/16,.his.arc.azure.com",
+        cluster="10.0.0.0/8,.his.arc.azure.com",
+    )
+    assert result is None
+    assert warning.called is False

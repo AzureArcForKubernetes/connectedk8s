@@ -269,6 +269,7 @@ Gateway_ArmId_Is_Invalid = "The provided Gateway ArmID in --gateway-resource-id 
 EnableProxy_Conflict_Error = "Conflict detected: --disable-proxy can not be set with --https-proxy, --http-proxy, --proxy-skip-range, --proxy-cert and --add-proxy-bypass at the same time. Please run az connectedk8s update --help for more information about the parameters"
 
 # Arc service endpoint host suffixes that are bypassed when Arc bypass is requested.
+# A skip range holding all of them marks the bypass as applied, so changing this list stops it being recognised.
 Arc_Service_Endpoints = [
     ".his.arc.azure.{cloud_based_domain}",
     ".dp.kubernetesconfiguration.azure.{cloud_based_domain}",
@@ -296,7 +297,7 @@ Proxy_Bypass_Arc_Cleared_Message = (
 )
 # Reports a clear that found nothing, so a no-op is not mistaken for a change.
 Proxy_Bypass_Arc_Nothing_To_Clear_Warning = (
-    "No Azure Arc service endpoints were found in the proxy skip range; there is "
+    "No Azure Arc proxy bypass was found in the proxy skip range; there is "
     "nothing to clear."
 )
 # Reconnecting leaves the agents as they are, so the bypass is refused instead of being applied.
