@@ -299,6 +299,17 @@ Proxy_Bypass_Arc_Nothing_To_Clear_Warning = (
     "No Azure Arc service endpoints were found in the proxy skip range; there is "
     "nothing to clear."
 )
+# Reconnecting leaves the agents as they are, so the bypass is refused instead of being applied.
+Proxy_Bypass_Arc_Reconnect_Error = (
+    "--add-proxy-bypass Arc cannot be applied while reconnecting a cluster that is "
+    "already onboarded, because reconnecting leaves the agent configuration as it is."
+)
+# Names the command that does apply the bypass, so the error says how to get past it.
+Proxy_Bypass_Arc_Reconnect_Recommendation = (
+    "Run 'az connectedk8s update -n <connected-cluster-name> -g <resource-group-name> "
+    "--add-proxy-bypass Arc' to bypass the proxy for the Azure Arc service endpoints."
+)
+Proxy_Bypass_Arc_Reconnect_Fault_Type = "proxy-bypass-arc-reconnect-error"
 
 # Extension type accepted by --add-proxy-bypass, which makes that agent bypass the proxy.
 Proxy_Bypass_ContainerInsights_Extension_Type = "Microsoft.AzureMonitor.Containers"

@@ -812,6 +812,20 @@ def create_connectedk8s(
                     configuration_settings, configuration_protected_settings
                 )
 
+            # Without a gateway the agents are not upgraded, so the bypass is refused.
+            if arc_requested:
+                if gateway is None:
+                    telemetry.set_exception(
+                        exception=Exception(consts.Proxy_Bypass_Arc_Reconnect_Error),
+                        fault_type=consts.Proxy_Bypass_Arc_Reconnect_Fault_Type,
+                        summary="Arc proxy bypass cannot be applied while reconnecting",
+                    )
+                    raise ArgumentUsageError(
+                        consts.Proxy_Bypass_Arc_Reconnect_Error,
+                        recommendation=consts.Proxy_Bypass_Arc_Reconnect_Recommendation,
+                    )
+                _announce_arc_proxy_bypass()
+
             # Re-put connected cluster
             # If cluster is of kind provisioned cluster, there are several properties that cannot be updated
             validate_existing_provisioned_cluster_for_reput(
