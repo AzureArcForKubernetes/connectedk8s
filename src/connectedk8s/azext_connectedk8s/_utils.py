@@ -1255,6 +1255,15 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                     details=details,
                     user_fault=True,
                     emit_fault=False,
+                    telemetry_properties={
+                        consts.Telemetry_Onboarding_Error_Type_Key: (
+                            errors.CLUSTER_CONNECT_OUTBOUND_CONNECTIVITY_FAILED.fault_type
+                        ),
+                        consts.Telemetry_Onboarding_Error_Message_Key: (
+                            f"endpoint={Cluster_Connect_Precheck_Endpoint_Url}; "
+                            "code=000; target=cluster-connect"
+                        ),
+                    },
                 )
                 logger.warning(
                     "%s\n"
