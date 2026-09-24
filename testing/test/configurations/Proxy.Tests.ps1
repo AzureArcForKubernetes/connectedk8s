@@ -144,6 +144,19 @@ Describe 'Proxy Scenario' {
         $? | Should -BeTrue
     }
 
+    It 'Refuses to clear the bypass while the skip range lists an Arc endpoint' {
+        # Clearing would remove the endpoint typed here, so the command is refused.
+        # Clearing first and setting the skip range afterwards still works.
+        az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --proxy-skip-range "logcollector,.his.arc.azure.com" --clear-proxy-bypass Arc
+        $? | Should -BeFalse
+
+        # A refused command reaches neither the resource nor the agents, so nothing moved
+        $noProxy = helm get values -n azure-arc-release azure-arc -o yaml | grep noProxy | Out-String
+        Write-Host "noProxy: $noProxy"
+        $noProxy | Should -BeLike "*logcollector*"
+        $noProxy | Should -Not -BeLike "*.his.arc.azure.com*"
+    }
+
     It 'Disable proxy' {
         az connectedk8s update -n $ENVCONFIG.arcClusterName -g $ENVCONFIG.resourceGroup --disable-proxy
         $? | Should -BeTrue

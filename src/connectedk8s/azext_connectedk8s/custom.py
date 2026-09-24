@@ -173,9 +173,15 @@ def _agent_state_timeout_error(cmd: CLICommand, operation: str) -> AzCLIError:
     )
 
 
-def _announce_arc_proxy_bypass() -> None:
+def _arc_proxy_skip_range_endpoints_text(cmd: CLICommand) -> str:
+    # The endpoints differ per cloud, so messages naming them resolve the list here.
+    return ", ".join(get_arc_proxy_skip_range_endpoints(cmd))
+
+
+def _announce_arc_proxy_bypass(cmd: CLICommand) -> None:
     print(
-        f"Step: {utils.get_utctimestring()}: {consts.Proxy_Bypass_Arc_Applied_Message}"
+        f"Step: {utils.get_utctimestring()}: "
+        f"{consts.Proxy_Bypass_Arc_Applied_Message.format(endpoints=_arc_proxy_skip_range_endpoints_text(cmd))}"
     )
 
 
@@ -825,7 +831,7 @@ def create_connectedk8s(
                         consts.Proxy_Bypass_Arc_Reconnect_Error,
                         recommendation=consts.Proxy_Bypass_Arc_Reconnect_Recommendation,
                     )
-                _announce_arc_proxy_bypass()
+                _announce_arc_proxy_bypass(cmd)
 
             # Re-put connected cluster
             # If cluster is of kind provisioned cluster, there are several properties that cannot be updated
@@ -1021,7 +1027,7 @@ def create_connectedk8s(
 
     # Onboarding installs the agents with the skip range above, so the bypass applies.
     if arc_requested:
-        _announce_arc_proxy_bypass()
+        _announce_arc_proxy_bypass(cmd)
 
     print(
         f"Step: {utils.get_utctimestring()}: Check if ResourceGroup exists.  Try to create if it doesn't"
@@ -1584,6 +1590,29 @@ def remove_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str
     return ",".join(entry for entry in entries if entry.lower() not in removable)
 
 
+def validate_arc_proxy_bypass_clear(
+    cmd: CLICommand, no_proxy: str | None, clear_proxy_bypass: str
+) -> None:
+    # Clearing removes the Arc endpoints by value, so ones typed into the same command would
+    # go too. Refusing is the only outcome that keeps what the caller typed.
+    if not validators.has_proxy_bypass_keyword(
+        clear_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
+    ):
+        return
+    # One endpoint is removed just like the full set, so any of them is enough.
+    if not has_arc_proxy_skip_range_endpoints(cmd, no_proxy):
+        return
+    telemetry.set_exception(
+        exception=Exception(consts.Proxy_Bypass_Arc_Clear_Conflict_Error),
+        fault_type=consts.Proxy_Bypass_Arc_Clear_Conflict_Fault_Type,
+        summary="Arc proxy bypass cleared while the skip range lists the endpoints",
+    )
+    raise ArgumentUsageError(
+        consts.Proxy_Bypass_Arc_Clear_Conflict_Error,
+        recommendation=consts.Proxy_Bypass_Arc_Clear_Conflict_Recommendation,
+    )
+
+
 def resolve_arc_proxy_bypass(
     cmd: CLICommand,
     no_proxy: str,
@@ -1628,17 +1657,20 @@ def resolve_arc_proxy_bypass(
             return None
         print(
             f"Step: {utils.get_utctimestring()}: "
-            f"{consts.Proxy_Bypass_Arc_Cleared_Message}"
+            f"{consts.Proxy_Bypass_Arc_Cleared_Message.format(endpoints=_arc_proxy_skip_range_endpoints_text(cmd))}"
         )
         return remove_arc_proxy_skip_range_endpoints(cmd, no_proxy or current_no_proxy)
 
     if requested:
         # Off for connect, which announces this once it knows the agents are updated.
         if announce_applied:
-            _announce_arc_proxy_bypass()
+            _announce_arc_proxy_bypass(cmd)
     elif has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy, require_all=True):
         # Only the full set is carried over, so endpoints listed alone are not widened.
-        logger.warning(consts.Proxy_Bypass_Arc_Preserved_Warning)
+        preserved_warning = consts.Proxy_Bypass_Arc_Preserved_Warning.format(
+            endpoints=_arc_proxy_skip_range_endpoints_text(cmd)
+        )
+        logger.warning(preserved_warning)
     else:
         return None
 
@@ -2894,6 +2926,10 @@ def update_connected_cluster(
     # The Arc bypass is merged with the cluster's current skip range, which helm reports
     # unescaped, so hold on to this value in the same form until that merge can run.
     requested_no_proxy = no_proxy
+
+    # The ARM update below runs before the resolver, so a failure there would come too late.
+    # The value is still unescaped here, which is what splitting on commas needs.
+    validate_arc_proxy_bypass_clear(cmd, requested_no_proxy, clear_proxy_bypass)
 
     # Escaping comma, forward slash present in no proxy urls, needed for helm params.
     no_proxy = escape_proxy_settings(no_proxy)
