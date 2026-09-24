@@ -217,8 +217,8 @@ def _validate_gateway_resource_id(cmd: CLICommand, gateway_resource_id: str) -> 
         else {}
     )
     if (
-        parsed_id.get("namespace", "").lower() != "microsoft.hybridcompute"
-        or parsed_id.get("type", "").lower() != "gateways"
+        str(parsed_id.get("namespace", "")).lower() != "microsoft.hybridcompute"
+        or str(parsed_id.get("type", "")).lower() != "gateways"
     ):
         details = (
             "The gateway resource ID must identify a "
