@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import json
 import os
 import re
@@ -1046,51 +1047,53 @@ def check_cluster_DNS(
             return consts.Diagnostic_Check_Incomplete, storage_space_available
         formatted_dns_log = dns_check_log.replace("\t", "")
         failure_markers = (
-            "NXDOMAIN",
-            "SERVFAIL",
-            "connection timed out",
-            "no servers could be reached",
-            "communications error",
-            "timed out",
+            ("NXDOMAIN", errors.DNS_NXDOMAIN),
+            ("SERVFAIL", errors.DNS_SERVFAIL),
+            ("connection timed out", errors.DNS_TIMEOUT),
+            ("no servers could be reached", errors.DNS_NO_SERVERS_REACHABLE),
+            ("communications error", errors.DNS_COMMUNICATIONS_ERROR),
+            ("timed out", errors.DNS_TIMEOUT),
         )
-        last_failure_position = max(
-            formatted_dns_log.rfind(marker) for marker in failure_markers
+        latest_failure = max(
+            (
+                (match.start(), dns_error)
+                for marker, dns_error in failure_markers
+                for match in re.finditer(
+                    re.escape(marker), formatted_dns_log, flags=re.IGNORECASE
+                )
+            ),
+            default=None,
+            key=lambda failure: failure[0],
         )
-        successful_resolution_matches = list(
-            re.finditer(
-                r"\bName:\s*kubernetes\.default(?:\.\S+)?\s+"
-                r"Address(?:es)?:\s+\S+",
-                formatted_dns_log,
-                flags=re.IGNORECASE,
-            )
+        resolution_matches = re.finditer(
+            r"\bName:\s*kubernetes\.default(?:\.\S+)?[ \r\n]+"
+            r"Address(?:es)?:[ ]*(?P<addresses>[^\r\n]+)",
+            formatted_dns_log,
+            flags=re.IGNORECASE,
         )
-        last_success_position = (
-            successful_resolution_matches[-1].end()
-            if successful_resolution_matches
-            else -1
-        )
+        successful_resolution_positions = []
+        for resolution_match in resolution_matches:
+            addresses = re.split(r"[\s,]+", resolution_match.group("addresses"))
+            for address in addresses:
+                try:
+                    ipaddress.ip_address(address)
+                    successful_resolution_positions.append(resolution_match.end())
+                    break
+                except ValueError:
+                    pass
+
+        last_success_position = max(successful_resolution_positions, default=-1)
+        if latest_failure is None and last_success_position < 0:
+            return consts.Diagnostic_Check_Incomplete, storage_space_available
         dns_check_failed = (
-            last_failure_position >= 0 and last_success_position < last_failure_position
+            latest_failure is not None and last_success_position < latest_failure[0]
         )
 
         # Validating if DNS is working or not and displaying proper result
         # These are standard error strings from DNS tools (nslookup/dig) indicating resolution failures
         if dns_check_failed:
-            dns_error = errors.DNS_TIMEOUT
-            # Prefer specific DNS responses when one log contains multiple signals.
-            if "NXDOMAIN" in formatted_dns_log:
-                dns_error = errors.DNS_NXDOMAIN
-            elif "SERVFAIL" in formatted_dns_log:
-                dns_error = errors.DNS_SERVFAIL
-            elif "no servers could be reached" in formatted_dns_log:
-                dns_error = errors.DNS_NO_SERVERS_REACHABLE
-            elif (
-                "connection timed out" in formatted_dns_log
-                or "timed out" in formatted_dns_log
-            ):
-                dns_error = errors.DNS_TIMEOUT
-            elif "communications error" in formatted_dns_log:
-                dns_error = errors.DNS_COMMUNICATIONS_ERROR
+            assert latest_failure is not None
+            dns_error = latest_failure[1]
 
             details = (
                 "Review Kubernetes DNS debugging guidance at "

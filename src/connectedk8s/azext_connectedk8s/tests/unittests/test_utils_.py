@@ -1663,6 +1663,42 @@ Address: 10.0.0.1
         assert result == consts.Diagnostic_Check_Failed
         assert diag[0].startswith("[AZK8S0302]")
 
+    def test_latest_failure_is_reported_as_root_cause(self):
+        log = """\
+DNS Result: server returned SERVFAIL
+** server can't find kubernetes.default.svc.cluster.local: NXDOMAIN"""
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Failed
+        assert diag[0].startswith("[AZK8S0301]")
+
+    @pytest.mark.parametrize("address", ["10.96.0.1", "2001:db8::1"])
+    def test_valid_ip_address_passes(self, address):
+        log = (
+            "DNS Result:\n"
+            "Name: kubernetes.default.svc.cluster.local\n"
+            f"Address: {address}"
+        )
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Passed
+        assert diag == []
+
+    @pytest.mark.parametrize("address", ["not-an-ip", "10.96.0.999", "10.96.0.1#53"])
+    def test_invalid_resolved_address_is_incomplete(self, address):
+        log = (
+            "DNS Result:\n"
+            "Name: kubernetes.default.svc.cluster.local\n"
+            f"Address: {address}"
+        )
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Incomplete
+        assert diag == []
+
     @pytest.mark.parametrize(
         "dns_log, expected_code, expected_fault_type",
         [
