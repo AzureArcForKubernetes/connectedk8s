@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import json
 import os
 import re
@@ -546,7 +547,35 @@ def add_connectedk8s_telemetry_event(
             event_properties[consts.Connected_Cluster_Arm_Id_Telemetry_Property] = (
                 arm_id
             )
-    telemetry.add_extension_event("connectedk8s", event_properties)
+    telemetry.add_extension_event(
+        "connectedk8s", sanitize_telemetry_payload(event_properties)
+    )
+
+
+def report_connectedk8s_warning(
+    cmd: CLICommand | None,
+    error: errors.ArcError,
+    *,
+    telemetry_properties: dict[str, Any] | None = None,
+    fault_type: str | None = None,
+    **context: object,
+) -> str:
+    """Report a standardized warning without marking the command as failed."""
+    message = error.format(**context)
+    properties = (telemetry_properties or {}).copy()
+    properties.update(
+        {
+            consts.Telemetry_Warning_Code_Key: error.code,
+            consts.Telemetry_Warning_Fault_Type_Key: fault_type or error.fault_type,
+            consts.Telemetry_Warning_Name_Key: error.name,
+            consts.Telemetry_Warning_Message_Key: message,
+        }
+    )
+    if error.tsg_link:
+        properties[consts.Telemetry_Warning_Tsg_Link_Key] = error.tsg_link
+    add_connectedk8s_telemetry_event(cmd, properties)
+    logger.warning("%s", message)
+    return message
 
 
 def report_connectedk8s_diagnostic(
@@ -561,7 +590,7 @@ def report_connectedk8s_diagnostic(
 ) -> str:
     """Report one standardized diagnostic to telemetry without raising it."""
     message = error.format(**context)
-    telemetry_message = message.replace("'", "")
+    telemetry_message = sanitize_telemetry_text(message)
     properties = (telemetry_properties or {}).copy()
     properties.update(
         {
@@ -571,14 +600,19 @@ def report_connectedk8s_diagnostic(
             consts.Telemetry_Error_Message_Key: telemetry_message,
         }
     )
+    if exception is not None:
+        properties[consts.Telemetry_Error_Exception_Type_Key] = (
+            _get_underlying_exception_type(exception)
+        )
     if error.tsg_link:
         properties[consts.Telemetry_Error_Tsg_Link_Key] = error.tsg_link
     add_connectedk8s_telemetry_event(cmd, properties)
 
     if user_fault:
         telemetry.set_user_fault()
+    telemetry_exception = sanitize_telemetry_exception(exception, telemetry_message)
     telemetry.set_exception(
-        exception=exception if exception is not None else Exception(message),
+        exception=telemetry_exception,
         fault_type=fault_type or error.fault_type,
         summary=telemetry_message,
     )
@@ -606,6 +640,33 @@ def report_connectedk8s_error(
         **context,
     )
     return error.as_error(**context)
+
+
+def _get_underlying_exception_type(exception: BaseException) -> str:
+    """Return the deepest wrapped exception type without emitting its message."""
+    current = exception
+    seen: set[int] = set()
+    for _ in range(32):
+        if id(current) in seen:
+            break
+        seen.add(id(current))
+        context = None if current.__suppress_context__ else current.__context__
+        nested = next(
+            (
+                candidate
+                for candidate in (
+                    getattr(current, "reason", None),
+                    current.__cause__,
+                    context,
+                )
+                if isinstance(candidate, BaseException)
+            ),
+            None,
+        )
+        if nested is None or id(nested) in seen:
+            break
+        current = nested
+    return type(current).__name__[:128]
 
 
 def report_helm_timeout_error(
@@ -985,31 +1046,54 @@ def check_cluster_DNS(
         if consts.DNS_Check_Result_String not in dns_check_log:
             return consts.Diagnostic_Check_Incomplete, storage_space_available
         formatted_dns_log = dns_check_log.replace("\t", "")
+        failure_markers = (
+            ("NXDOMAIN", errors.DNS_NXDOMAIN),
+            ("SERVFAIL", errors.DNS_SERVFAIL),
+            ("connection timed out", errors.DNS_TIMEOUT),
+            ("no servers could be reached", errors.DNS_NO_SERVERS_REACHABLE),
+            ("communications error", errors.DNS_COMMUNICATIONS_ERROR),
+            ("timed out", errors.DNS_TIMEOUT),
+        )
+        latest_failure = max(
+            (
+                (match.start(), dns_error)
+                for marker, dns_error in failure_markers
+                for match in re.finditer(
+                    re.escape(marker), formatted_dns_log, flags=re.IGNORECASE
+                )
+            ),
+            default=None,
+            key=lambda failure: failure[0],
+        )
+        resolution_matches = re.finditer(
+            r"\bName:\s*kubernetes\.default(?:\.\S+)?[ \r\n]+"
+            r"Address(?:es)?:[ ]*(?P<addresses>[^\r\n]+)",
+            formatted_dns_log,
+            flags=re.IGNORECASE,
+        )
+        successful_resolution_positions = []
+        for resolution_match in resolution_matches:
+            addresses = re.split(r"[\s,]+", resolution_match.group("addresses"))
+            for address in addresses:
+                try:
+                    ipaddress.ip_address(address)
+                    successful_resolution_positions.append(resolution_match.end())
+                    break
+                except ValueError:
+                    pass
+
+        last_success_position = max(successful_resolution_positions, default=-1)
+        if latest_failure is None and last_success_position < 0:
+            return consts.Diagnostic_Check_Incomplete, storage_space_available
+        dns_check_failed = (
+            latest_failure is not None and last_success_position < latest_failure[0]
+        )
+
         # Validating if DNS is working or not and displaying proper result
         # These are standard error strings from DNS tools (nslookup/dig) indicating resolution failures
-        if (  # pylint: disable=too-many-boolean-expressions
-            "NXDOMAIN" in formatted_dns_log
-            or "SERVFAIL" in formatted_dns_log
-            or "connection timed out" in formatted_dns_log
-            or "no servers could be reached" in formatted_dns_log
-            or "communications error" in formatted_dns_log
-            or "timed out" in formatted_dns_log
-        ):
-            dns_error = errors.DNS_TIMEOUT
-            # Prefer specific DNS responses when one log contains multiple signals.
-            if "NXDOMAIN" in formatted_dns_log:
-                dns_error = errors.DNS_NXDOMAIN
-            elif "SERVFAIL" in formatted_dns_log:
-                dns_error = errors.DNS_SERVFAIL
-            elif "no servers could be reached" in formatted_dns_log:
-                dns_error = errors.DNS_NO_SERVERS_REACHABLE
-            elif (
-                "connection timed out" in formatted_dns_log
-                or "timed out" in formatted_dns_log
-            ):
-                dns_error = errors.DNS_TIMEOUT
-            elif "communications error" in formatted_dns_log:
-                dns_error = errors.DNS_COMMUNICATIONS_ERROR
+        if dns_check_failed:
+            assert latest_failure is not None
+            dns_error = latest_failure[1]
 
             details = (
                 "Review Kubernetes DNS debugging guidance at "
@@ -1769,8 +1853,54 @@ def send_request_with_retries(
 
 
 def arm_exception_handler(
-    ex: Exception, fault_type: str, summary: str, return_if_not_found: bool = False
+    ex: Exception,
+    fault_type: str,
+    summary: str,
+    return_if_not_found: bool = False,
+    *,
+    cmd: Any | None = None,
+    error: errors.ArcError | None = None,
 ) -> None:
+    status_code = None
+    if isinstance(ex, HttpOperationError):
+        status_code = ex.response.status_code
+    elif isinstance(ex, HttpResponseError):
+        status_code = ex.status_code
+    arm_error_code = _get_arm_error_code(ex)
+
+    if return_if_not_found and (
+        status_code == 404 or isinstance(ex, ResourceNotFoundError)
+    ):
+        return
+
+    if error is not None:
+        reported_error = error
+        if (
+            status_code == 404
+            and error
+            in (
+                errors.CONNECTED_CLUSTER_UPDATE_FAILED,
+                errors.CONNECTED_CLUSTER_DELETE_FAILED,
+            )
+            and arm_error_code in ("connectedclusternotfound", "resourcenotfound")
+        ):
+            reported_error = errors.RESOURCE_NOT_FOUND
+        elif (
+            status_code == 409
+            and error is errors.CONNECTED_CLUSTER_CREATE_FAILED
+            and arm_error_code
+            in ("connectedclusteralreadyexists", "resourcealreadyexists")
+        ):
+            reported_error = errors.RESOURCE_ALREADY_EXISTS
+
+        raise report_connectedk8s_error(
+            cmd,
+            reported_error,
+            exception=ex,
+            user_fault=status_code in (400, 401, 403, 404, 409, 412, 422),
+            details=str(ex),
+        ) from ex
+
     if isinstance(ex, AuthenticationError):
         telemetry.set_exception(exception=ex, fault_type=fault_type, summary=summary)
         raise AzureResponseError(
@@ -1789,8 +1919,6 @@ def arm_exception_handler(
 
     if isinstance(ex, HttpOperationError):
         status_code = ex.response.status_code
-        if status_code == 404 and return_if_not_found:
-            return
         if status_code // 100 == 4:
             telemetry.set_user_fault()
         telemetry.set_exception(exception=ex, fault_type=fault_type, summary=summary)
@@ -1816,8 +1944,6 @@ def arm_exception_handler(
 
     if isinstance(ex, HttpResponseError):
         status_code = ex.status_code
-        if status_code == 404 and return_if_not_found:
-            return
         if status_code and status_code // 100 == 4:
             telemetry.set_user_fault()
         telemetry.set_exception(exception=ex, fault_type=fault_type, summary=summary)
@@ -1833,13 +1959,39 @@ def arm_exception_handler(
             + f"\nSummary: {summary}"
         )
 
-    if isinstance(ex, ResourceNotFoundError) and return_if_not_found:
-        return
-
     telemetry.set_exception(exception=ex, fault_type=fault_type, summary=summary)
     raise ClientRequestError(
         "Error occured while making ARM request: " + str(ex) + f"\nSummary: {summary}"
     )
+
+
+def _get_arm_error_code(ex: Exception) -> str | None:
+    for value in (getattr(ex, "error", None), getattr(ex, "model", None)):
+        code = _get_error_code_from_value(value)
+        if code:
+            return code.lower()
+
+    response = getattr(ex, "response", None)
+    if response is None:
+        return None
+    try:
+        payload = response.json()
+    except (AttributeError, TypeError, ValueError):
+        return None
+    code = _get_error_code_from_value(payload)
+    return code.lower() if code else None
+
+
+def _get_error_code_from_value(value: Any) -> str | None:
+    if isinstance(value, dict):
+        nested_error = value.get("error")
+        if isinstance(nested_error, dict):
+            value = nested_error
+        code = value.get("code")
+    else:
+        nested_error = getattr(value, "error", None)
+        code = getattr(nested_error, "code", None) or getattr(value, "code", None)
+    return code if isinstance(code, str) and code else None
 
 
 def kubernetes_exception_handler(
@@ -1852,8 +2004,10 @@ def kubernetes_exception_handler(
     "ensure you have cluster admin privileges on the cluster to onboard.",
     message_for_not_found: str = "The requested kubernetes resource was not found.",
     raise_error: bool = True,
+    arc_error: errors.ArcError | None = None,
+    cmd: CLICommand | None = None,
 ) -> None:
-    telemetry.set_user_fault()
+    details: str
     if isinstance(ex, ApiException):
         status_code = ex.status
         if status_code == 403:
@@ -1862,17 +2016,58 @@ def kubernetes_exception_handler(
             logger.warning(message_for_not_found)
         else:
             logger.debug("Kubernetes Exception: ", exc_info=True)
+        details = error_message + "\nError Response: " + str(ex.body)
+        if arc_error is not None:
+            telemetry_properties = (
+                {consts.Telemetry_Error_Http_Status_Code_Key: status_code}
+                if isinstance(status_code, int)
+                else {}
+            )
+            if raise_error:
+                raise report_connectedk8s_error(
+                    cmd,
+                    arc_error,
+                    exception=ex,
+                    user_fault=True,
+                    telemetry_properties=telemetry_properties,
+                    details=details,
+                ) from ex
+            report_connectedk8s_warning(
+                cmd,
+                arc_error,
+                details=details,
+            )
+            return
+        telemetry.set_user_fault()
         if raise_error:
             telemetry.set_exception(
                 exception=ex, fault_type=fault_type, summary=summary
             )
-            raise ValidationError(error_message + "\nError Response: " + str(ex.body))
+            raise ValidationError(details)
     else:
+        details = error_message + "\nError: " + str(ex)
+        if arc_error is not None:
+            if raise_error:
+                raise report_connectedk8s_error(
+                    cmd,
+                    arc_error,
+                    exception=ex,
+                    user_fault=True,
+                    details=details,
+                ) from ex
+            report_connectedk8s_warning(
+                cmd,
+                arc_error,
+                details=details,
+            )
+            logger.debug("Kubernetes Exception", exc_info=True)
+            return
+        telemetry.set_user_fault()
         if raise_error:
             telemetry.set_exception(
                 exception=ex, fault_type=fault_type, summary=summary
             )
-            raise ValidationError(error_message + "\nError: " + str(ex))
+            raise ValidationError(details)
 
         logger.debug("Kubernetes Exception", exc_info=True)
 
@@ -1899,14 +2094,24 @@ def get_values_file() -> str | None:
     return None
 
 
-def ensure_namespace_cleanup() -> None:
+def ensure_namespace_cleanup(cmd: CLICommand | None = None) -> None:
     print(
         f"Step: {get_utctimestring()}: Confirming '{consts.Arc_Namespace}' namespace got deleted."
     )
     api_instance = kube_client.CoreV1Api()
     timeout = time.time() + 180
+    last_lookup_error: Exception | None = None
     while True:
         if time.time() > timeout:
+            if last_lookup_error is not None:
+                kubernetes_exception_handler(
+                    last_lookup_error,
+                    consts.Get_Kubernetes_Namespace_Fault_Type,
+                    "Unable to fetch kubernetes namespace",
+                    raise_error=False,
+                    arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
+                    cmd=cmd,
+                )
             telemetry.set_user_fault()
             logger.warning(
                 "Namespace 'azure-arc' still in terminating state. Please ensure that you delete the "
@@ -1917,16 +2122,15 @@ def ensure_namespace_cleanup() -> None:
             api_response = api_instance.list_namespace(
                 field_selector="metadata.name=azure-arc"
             )
+            last_lookup_error = None
             if not api_response.items:
                 return
             time.sleep(5)
         except Exception as e:  # pylint: disable=broad-exception-caught
-            logger.exception("Error while retrieving namespace information.")
-            kubernetes_exception_handler(
-                e,
-                consts.Get_Kubernetes_Namespace_Fault_Type,
-                "Unable to fetch kubernetes namespace",
-                raise_error=False,
+            last_lookup_error = e
+            logger.debug(
+                "Error while retrieving namespace information; retrying.",
+                exc_info=True,
             )
 
 
@@ -1984,7 +2188,7 @@ def delete_arc_agents(
                 f"{release_namespace}' to ensure the release is deleted."
             ),
         )
-    ensure_namespace_cleanup()
+    ensure_namespace_cleanup(cmd)
     # Cleanup azure-arc-release NS if present (created during helm installation)
     cleanup_release_install_namespace_if_exists()
 
@@ -2079,7 +2283,9 @@ def should_use_secret_injection_flow(
         return False
 
 
-def ensure_arc_namespace_with_helm_metadata() -> None:
+def ensure_arc_namespace_with_helm_metadata(
+    cmd: CLICommand | None = None,
+) -> None:
     """
     Ensure the ``azure-arc`` namespace exists and is annotated/labeled so that
     the subsequent ``helm install`` can adopt it without erroring out with
@@ -2101,6 +2307,8 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 consts.Get_Kubernetes_Namespace_Fault_Type,
                 error_message=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to fetch namespace '{consts.Arc_Namespace}'",
+                arc_error=errors.KUBERNETES_NAMESPACE_GET_FAILED,
+                cmd=cmd,
             )
             return
         # Namespace does not exist, create it with the required metadata.
@@ -2116,9 +2324,11 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
         except ApiException as create_ex:
             kubernetes_exception_handler(
                 create_ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=f"Unable to create namespace '{consts.Arc_Namespace}'",
                 summary=f"Unable to create namespace '{consts.Arc_Namespace}'",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                cmd=cmd,
             )
         return
 
@@ -2134,7 +2344,7 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
     except ApiException as patch_ex:
         kubernetes_exception_handler(
             patch_ex,
-            consts.Inject_PrivateKey_Secret_Fault_Type,
+            errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
             error_message=(
                 f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
                 "ownership metadata"
@@ -2143,10 +2353,15 @@ def ensure_arc_namespace_with_helm_metadata() -> None:
                 f"Unable to patch namespace '{consts.Arc_Namespace}' with Helm "
                 "ownership metadata"
             ),
+            arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+            cmd=cmd,
         )
 
 
-def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
+def inject_onboarding_private_key_secret(
+    private_key_pem: str,
+    cmd: CLICommand | None = None,
+) -> None:
     """
     Pre-create the onboarding private key as a Kubernetes Secret so the agents
     can consume it without ever exposing it through helm values. The namespace
@@ -2163,7 +2378,7 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         f"secret '{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
         f"'{consts.Arc_Namespace}'."
     )
-    ensure_arc_namespace_with_helm_metadata()
+    ensure_arc_namespace_with_helm_metadata(cmd)
 
     api_instance = kube_client.CoreV1Api()
     secret_body = kube_client.V1Secret(
@@ -2186,13 +2401,15 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         if ex.status != 409:
             kubernetes_exception_handler(
                 ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=(
                     "Unable to create onboarding private key secret "
                     f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
                     f"'{consts.Arc_Namespace}'"
                 ),
                 summary="Unable to create onboarding private key secret",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                cmd=cmd,
             )
             return
         # Secret already exists - replace its contents
@@ -2206,13 +2423,15 @@ def inject_onboarding_private_key_secret(private_key_pem: str) -> None:
         except ApiException as replace_ex:
             kubernetes_exception_handler(
                 replace_ex,
-                consts.Inject_PrivateKey_Secret_Fault_Type,
+                errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED.fault_type,
                 error_message=(
                     "Unable to update existing onboarding private key secret "
                     f"'{consts.Onboarding_PrivateKey_Secret_Name}' in namespace "
                     f"'{consts.Arc_Namespace}'"
                 ),
                 summary="Unable to update onboarding private key secret",
+                arc_error=errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
+                cmd=cmd,
             )
 
 
@@ -2397,16 +2616,7 @@ def helm_install_release(
 
 
 def process_helm_error_detail(helm_error_detail: str) -> str:
-    helm_error_detail = remove_rsa_private_key(helm_error_detail)
-    helm_error_detail = scrub_proxy_url(helm_error_detail)
-    helm_error_detail = redact_base64_strings(helm_error_detail)
-    helm_error_detail = redact_sensitive_fields_from_string(helm_error_detail)
-    # Remove apostrophes/single quotes to prevent CLI telemetry client parse failures.
-    # The telemetry client's _parse_in_json does data.replace("'", '"') which corrupts
-    # JSON payloads containing apostrophes (e.g. "Couldn't" becomes invalid JSON).
-    helm_error_detail = helm_error_detail.replace("'", "")
-
-    return helm_error_detail
+    return sanitize_telemetry_text(helm_error_detail)
 
 
 def remove_rsa_private_key(input_text: str) -> str:
@@ -2434,19 +2644,67 @@ def redact_base64_strings(content: str) -> str:
 
 
 def redact_sensitive_fields_from_string(input_text: str) -> str:
-    # Define regex patterns for keys
-    patterns = {
-        r"(username:\s*).*": r"\1[REDACTED]",
-        r"(password:\s*).*": r"\1[REDACTED]",
-        r"(token:\s*).*": r"\1[REDACTED]",
-    }
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9_])"
+        r"(?P<prefix>[\"']?(?:username|password|token)[\"']?"
+        r"(?![A-Za-z0-9_])\s*[:=]\s*)"
+        r"(?P<value>\"[^\"]*\"|'[^']*'|[^\r\n,}]+)",
+        re.IGNORECASE,
+    )
 
-    # Apply regex to redact sensitive fields
-    for pattern, replacement in patterns.items():
-        input_text = re.sub(pattern, replacement, input_text)
+    def redact_value(match: re.Match[str]) -> str:
+        value = match.group("value").strip()
+        if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+            redacted_value = f"{value[0]}[REDACTED]{value[0]}"
+        else:
+            redacted_value = "[REDACTED]"
+        return f"{match.group('prefix')}{redacted_value}"
 
-    # Return the redacted text
-    return input_text
+    return pattern.sub(redact_value, input_text)
+
+
+def sanitize_telemetry_text(value: str) -> str:
+    value = remove_rsa_private_key(value)
+    value = scrub_proxy_url(value)
+    value = redact_base64_strings(value)
+    value = redact_sensitive_fields_from_string(value)
+    # Azure CLI telemetry replaces apostrophes with double quotes while parsing JSON.
+    return value.replace("'", "")
+
+
+def sanitize_telemetry_exception(
+    exception: BaseException | None, fallback_message: str
+) -> BaseException:
+    if exception is None:
+        return Exception(sanitize_telemetry_text(fallback_message))
+
+    sanitized_message = sanitize_telemetry_text(str(exception))
+    if sanitized_message == str(exception):
+        return exception
+
+    exception_type = type(exception)
+    sanitized_type = type(exception_type.__name__, (Exception,), {})
+    sanitized_exception: BaseException = sanitized_type(sanitized_message)
+    return sanitized_exception
+
+
+def sanitize_telemetry_payload(value: Any) -> Any:
+    if isinstance(value, str):
+        return sanitize_telemetry_text(value)
+    if isinstance(value, dict):
+        return {
+            key: (
+                item
+                if key == consts.Connected_Cluster_Arm_Id_Telemetry_Property
+                else sanitize_telemetry_payload(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [sanitize_telemetry_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(sanitize_telemetry_payload(item) for item in value)
+    return value
 
 
 def get_helm_major_version(helm_client_location: str) -> int:
@@ -2625,30 +2883,29 @@ def is_guid(guid: str) -> bool:
 
 
 def check_provider_registrations(
-    cli_ctx: AzCli,
+    cmd: CLICommand,
     subscription_id: str,
     is_gateway_enabled: bool,
     is_workload_identity_enabled: bool,
 ) -> None:
     print(f"Step: {get_utctimestring()}: Checking Provider Registrations")
     try:
-        rp_client = resource_providers_client(cli_ctx, subscription_id)
+        rp_client = resource_providers_client(cmd.cli_ctx, subscription_id)
         cc_registration_state = rp_client.get(
             consts.Connected_Cluster_Provider_Namespace
         ).registration_state
         if cc_registration_state not in consts.allowed_rp_registration_states:
-            telemetry.set_exception(
-                exception=Exception(
-                    f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered"
-                ),
-                fault_type=consts.CC_Provider_Namespace_Not_Registered_Fault_Type,
-                summary=f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered",
-            )
             err_msg = (
                 f"{consts.Connected_Cluster_Provider_Namespace} provider is not registered. Please register it using 'az provider register -n 'Microsoft."
                 "Kubernetes' before running the connect command."
             )
-            raise ValidationError(err_msg)
+            raise report_connectedk8s_error(
+                cmd,
+                errors.CONNECTED_CLUSTER_PROVIDER_NOT_REGISTERED,
+                exception=Exception(err_msg),
+                user_fault=True,
+                details=err_msg,
+            )
         kc_registration_state = rp_client.get(
             consts.Kubernetes_Configuration_Provider_Namespace
         ).registration_state

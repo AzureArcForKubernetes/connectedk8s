@@ -23,7 +23,7 @@ import time
 from base64 import b64decode, b64encode
 from concurrent.futures import ThreadPoolExecutor
 from subprocess import DEVNULL, PIPE, Popen
-from typing import TYPE_CHECKING, Any, Callable, Iterable
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal
 
 import oras.client  # type: ignore[import-untyped]
 import yaml
@@ -173,6 +173,18 @@ def _agent_state_timeout_error(cmd: CLICommand, operation: str) -> AzCLIError:
     )
 
 
+def _arc_proxy_skip_range_endpoints_text(cmd: CLICommand) -> str:
+    # The endpoints differ per cloud, so messages naming them resolve the list here.
+    return ", ".join(get_arc_proxy_skip_range_endpoints(cmd))
+
+
+def _announce_arc_proxy_bypass(cmd: CLICommand) -> None:
+    print(
+        f"Step: {utils.get_utctimestring()}: "
+        f"{consts.Proxy_Bypass_Arc_Applied_Message.format(endpoints=_arc_proxy_skip_range_endpoints_text(cmd))}"
+    )
+
+
 def _cleanup_stale_arc_agents(
     cmd: CLICommand,
     kubectl_client_location: str,
@@ -287,7 +299,7 @@ def create_connectedk8s(
 
     # Checking provider registration status
     utils.check_provider_registrations(
-        cmd.cli_ctx,
+        cmd,
         subscription_id,
         is_gateway_enabled=bool(gateway_resource_id),
         is_workload_identity_enabled=(enable_workload_identity or enable_oidc_issuer),
@@ -300,14 +312,16 @@ def create_connectedk8s(
     # needs the skip range exactly as the caller passed it.
     requested_no_proxy = no_proxy
 
-    # Apply the Arc bypass before escaping, so the separator added here is escaped too.
-    if validators.has_proxy_bypass_keyword(
+    arc_requested = validators.has_proxy_bypass_keyword(
         add_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
-    ):
-        print(
-            f"Step: {utils.get_utctimestring()}: "
-            f"{consts.Proxy_Bypass_Arc_Applied_Message}"
-        )
+    )
+    ci_requested = validators.has_proxy_bypass_keyword(
+        add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
+    )
+
+    # Apply the Arc bypass before escaping, so the separator added here is escaped too.
+    # The paths below announce it, since only they know whether it reached the agents.
+    if arc_requested:
         no_proxy = add_arc_proxy_skip_range_endpoints(cmd, no_proxy)
 
     print(f"Step: {utils.get_utctimestring()}: Escape Proxy Settings, if passed in")
@@ -378,12 +392,12 @@ def create_connectedk8s(
     )
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     print(f"Step: {utils.get_utctimestring()}: Do node validations")
     api_instance = kube_client.CoreV1Api()
@@ -571,18 +585,17 @@ def create_connectedk8s(
         )
 
     if not required_node_exists:
-        telemetry.set_user_fault()
-        telemetry.set_exception(
-            exception=Exception(
-                "Could not find any node on the kubernetes cluster with the OS linux"
-            ),
-            fault_type=consts.Linux_Node_Not_Exists,
-            summary="Could not find any node on the kubernetes cluster with the OS linux",
+        linux_node_error = (
+            "Could not find any node on the Kubernetes cluster with the OS linux."
         )
-        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
-            check_name="LinuxNodeExists",
-            reason="Could not find any node on the kubernetes cluster with the OS linux",
-            cmd=cmd,
+        utils.report_connectedk8s_warning(
+            cmd,
+            errors.LINUX_NODE_NOT_FOUND,
+            telemetry_properties=precheckutils.get_post_diagnostic_precheck_telemetry_properties(
+                check_name="LinuxNodeExists",
+                reason=linux_node_error,
+            ),
+            details=linux_node_error,
         )
         logger.warning(
             "Please ensure that this Kubernetes cluster has any nodes with OS 'linux', for scheduling the "
@@ -596,22 +609,21 @@ def create_connectedk8s(
     crb_permission = utils.can_create_clusterrolebindings()
     if not crb_permission or crb_permission == "Unknown":
         ex_msg = "Your credentials doesn't have permission to create clusterrolebindings on this kubernetes cluster."
-        summ_msg = "Your credentials doesn't have permission to create clusterrolebindings on this kubernetes cluster."
-        telemetry.set_exception(
-            exception=Exception(ex_msg),
-            fault_type=consts.Cannot_Create_ClusterRoleBindings_Fault_Type,
-            summary=summ_msg,
-        )
-        precheckutils.send_post_diagnostic_precheck_failure_telemetry(
-            check_name="ClusterRoleBindings",
-            reason=ex_msg,
-            cmd=cmd,
-        )
         err_msg = (
             "Your credentials doesn't have permission to create clusterrolebindings on this "
             "kubernetes cluster. Please check your permissions."
         )
-        raise ValidationError(err_msg)
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.CLUSTER_ROLE_BINDING_CREATE_FORBIDDEN,
+            exception=Exception(ex_msg),
+            user_fault=True,
+            telemetry_properties=precheckutils.get_post_diagnostic_precheck_telemetry_properties(
+                check_name="ClusterRoleBindings",
+                reason=ex_msg,
+            ),
+            details=err_msg,
+        )
 
     print(
         f"Step: {utils.get_utctimestring()}: Determining Cluster Distribution and Infrastructure"
@@ -619,7 +631,7 @@ def create_connectedk8s(
     # Get kubernetes cluster info
     if distribution == "generic":
         kubernetes_distro = get_kubernetes_distro(
-            node_api_response
+            node_api_response, cmd=cmd
         )  # (cluster heuristics)
     else:
         kubernetes_distro = distribution
@@ -639,7 +651,7 @@ def create_connectedk8s(
     utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Checking if it is an AKS cluster
-    is_aks_cluster = check_aks_cluster(kube_config, kube_context)
+    is_aks_cluster = check_aks_cluster(kube_config, kube_context, cmd=cmd)
     if is_aks_cluster:
         logger.warning(
             "Connecting an Azure Kubernetes Service (AKS) cluster to Azure Arc is only required for "
@@ -732,6 +744,8 @@ def create_connectedk8s(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
+                arc_error=errors.CONFIGMAP_READ_FAILED,
+                cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
         configmap_cluster_name = configmap.data["AZURE_RESOURCE_NAME"]
@@ -753,17 +767,18 @@ def create_connectedk8s(
                 configmap_rg_name.lower() != resource_group_name.lower()
                 or configmap_cluster_name.lower() != cluster_name.lower()
             ):
-                telemetry.set_exception(
-                    exception=Exception("The kubernetes cluster is already onboarded"),
-                    fault_type=consts.Cluster_Already_Onboarded_Fault_Type,
-                    summary="Kubernetes cluster already onboarded",
-                )
                 err_msg = (
                     "The kubernetes cluster you are trying to onboard is already onboarded to "
                     f"the resource group '{configmap_rg_name}' with resource name '{configmap_cluster_name}'."
                 )
                 logger.warning(consts.Cluster_Already_Onboarded_Error)
-                raise ArgumentUsageError(err_msg)
+                raise utils.report_connectedk8s_error(
+                    cmd,
+                    errors.CLUSTER_ALREADY_ONBOARDED,
+                    exception=Exception(err_msg),
+                    user_fault=True,
+                    details=err_msg,
+                )
 
             # connect does not take --clear-proxy-bypass.
             clear_proxy_bypass = ""
@@ -804,6 +819,20 @@ def create_connectedk8s(
                     configuration_settings, configuration_protected_settings
                 )
 
+            # Without a gateway the agents are not upgraded, so the bypass is refused.
+            if arc_requested:
+                if gateway is None:
+                    telemetry.set_exception(
+                        exception=Exception(consts.Proxy_Bypass_Arc_Reconnect_Error),
+                        fault_type=consts.Proxy_Bypass_Arc_Reconnect_Fault_Type,
+                        summary="Arc proxy bypass cannot be applied while reconnecting",
+                    )
+                    raise ArgumentUsageError(
+                        consts.Proxy_Bypass_Arc_Reconnect_Error,
+                        recommendation=consts.Proxy_Bypass_Arc_Reconnect_Recommendation,
+                    )
+                _announce_arc_proxy_bypass(cmd)
+
             # Re-put connected cluster
             # If cluster is of kind provisioned cluster, there are several properties that cannot be updated
             validate_existing_provisioned_cluster_for_reput(
@@ -833,16 +862,18 @@ def create_connectedk8s(
                 arc_agentry_configurations,
                 arc_agent_profile,
             )
-            cc_poller = create_cc_resource(
-                client, resource_group_name, cluster_name, cc, no_wait
+            dp_request_payload, cc_response = put_cc_resource(
+                cmd,
+                client,
+                resource_group_name,
+                cluster_name,
+                cc,
+                no_wait,
+                operation="update",
             )
-            dp_request_payload = cc_poller.result()
-            cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(cc_poller)
 
             # Only touch the ConfigMap when Container Insights was named on this run.
-            if validators.has_proxy_bypass_keyword(
-                add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
-            ):
+            if ci_requested:
                 containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
                     api_instance, True, cmd=cmd
                 )
@@ -971,11 +1002,6 @@ def create_connectedk8s(
 
     else:
         if connected_cluster_exists(client, resource_group_name, cluster_name):
-            telemetry.set_exception(
-                exception=Exception("The connected cluster resource already exists"),
-                fault_type=consts.Resource_Already_Exists_Fault_Type,
-                summary="Connected cluster resource already exists",
-            )
             err_msg = (
                 f"The connected cluster resource {cluster_name} already exists "
                 + " in the "
@@ -986,12 +1012,22 @@ def create_connectedk8s(
                 "To onboard this Kubernetes cluster to Azure, specify different "
                 "resource name or resource group name."
             )
-            raise ArgumentUsageError(err_msg, recommendation=reco_msg)
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.RESOURCE_ALREADY_EXISTS,
+                exception=Exception(err_msg),
+                user_fault=True,
+                details=f"{err_msg} {reco_msg}",
+            )
 
         # cleanup of stuck CRD if release namespace is not present/deleted
         crd_cleanup_force_delete(
             cmd, kubectl_client_location, kube_config, kube_context
         )
+
+    # Onboarding installs the agents with the skip range above, so the bypass applies.
+    if arc_requested:
+        _announce_arc_proxy_bypass(cmd)
 
     print(
         f"Step: {utils.get_utctimestring()}: Check if ResourceGroup exists.  Try to create if it doesn't"
@@ -1070,9 +1106,7 @@ def create_connectedk8s(
 
     # Sync the ConfigMap before the cluster resource exists, so a failure leaves nothing
     # behind in Azure. Only touch it when Container Insights was named on this run.
-    if validators.has_proxy_bypass_keyword(
-        add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
-    ):
+    if ci_requested:
         containerinsightsutils.sync_container_insights_proxy_bypass_configmap(
             kube_client.CoreV1Api(), True, cmd=cmd
         )
@@ -1080,12 +1114,14 @@ def create_connectedk8s(
     print(f"Step: {utils.get_utctimestring()}: Azure resource provisioning has begun.")
     # Create connected cluster resource
     try:
-        put_cc_poller = create_cc_resource(
-            client, resource_group_name, cluster_name, cc, no_wait
-        )
-        dp_request_payload = put_cc_poller.result()
-        put_cc_response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(
-            put_cc_poller
+        dp_request_payload, put_cc_response = put_cc_resource(
+            cmd,
+            client,
+            resource_group_name,
+            cluster_name,
+            cc,
+            no_wait,
+            operation="create",
         )
 
         # Checking if custom locations rp is registered and fetching oid if it is registered
@@ -1128,7 +1164,13 @@ def create_connectedk8s(
                 print(
                     f"Step: {utils.get_utctimestring()}: Updating Connected Cluster resource with Gateway configuration"
                 )
-                connected_cluster = client.get(resource_group_name, cluster_name)
+                connected_cluster = get_cc_resource(
+                    cmd,
+                    client,
+                    resource_group_name,
+                    cluster_name,
+                    operation="update",
+                )
 
                 # Generate updated payload with gateway configuration
                 cc = generate_reput_request_payload(
@@ -1141,16 +1183,22 @@ def create_connectedk8s(
                 )
 
                 # Update the connected cluster resource
-                reput_cc_poller = create_cc_resource(
-                    client, resource_group_name, cluster_name, cc, False
+                dp_request_payload, put_cc_response = put_cc_resource(
+                    cmd,
+                    client,
+                    resource_group_name,
+                    cluster_name,
+                    cc,
+                    False,
+                    operation="update",
                 )
-                dp_request_payload = reput_cc_poller.result()
-                put_cc_response = LongRunningOperation(cmd.cli_ctx)(reput_cc_poller)
 
                 logger.info(
                     "Connected cluster resource updated successfully with gateway configuration"
                 )
 
+            except AzCLIError:
+                raise
             except Exception as e:
                 error_msg = f"Failed to update connected cluster resource with gateway configuration: {e!s}"
                 logger.error(error_msg)
@@ -1246,17 +1294,19 @@ def create_connectedk8s(
             # has the onboarding secret available - even if the subsequent helm
             # install/CLI is interrupted - preventing a stuck-disconnected state.
             try:
-                utils.inject_onboarding_private_key_secret(private_key_pem)
+                utils.inject_onboarding_private_key_secret(private_key_pem, cmd=cmd)
+            except AzCLIError:
+                raise
             except Exception as e:
-                telemetry.set_exception(
+                raise utils.report_connectedk8s_error(
+                    cmd,
+                    errors.KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
                     exception=e,
-                    fault_type=consts.Inject_PrivateKey_Secret_Fault_Type,
-                    summary="Failed to pre-create onboarding private key secret",
-                )
-                raise CLIInternalError(
-                    "Failed to pre-create onboarding private key secret on the "
-                    f"Kubernetes cluster: {e}"
-                )
+                    details=(
+                        "Failed to pre-create the onboarding private key secret on "
+                        f"the Kubernetes cluster: {e}"
+                    ),
+                ) from e
 
         # Install azure-arc agents
         utils.helm_install_release(
@@ -1286,9 +1336,7 @@ def create_connectedk8s(
     except Exception:  # pylint: disable=broad-except
         # Undo the bypass so a failed onboarding does not leave the cluster changed.
         # raise_on_failure=False keeps the original error as the one the user sees.
-        if validators.has_proxy_bypass_keyword(
-            add_proxy_bypass, consts.Proxy_Bypass_ContainerInsights_Extension_Type
-        ):
+        if ci_requested:
             logger.warning(consts.CI_ConfigMap_Rollback_Warning)
             containerinsightsutils.remove_container_insights_proxy_bypass_configmap(
                 kube_client.CoreV1Api(), raise_on_failure=False, cmd=cmd
@@ -1520,13 +1568,16 @@ def add_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str:
     return ",".join(entries)
 
 
-def has_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> bool:
-    # Checking whether the Arc endpoints are present in the proxy skip range
-    entries = {entry.strip().lower() for entry in no_proxy.split(",")}
-    return any(
+def has_arc_proxy_skip_range_endpoints(
+    cmd: CLICommand, no_proxy: str | None, require_all: bool = False
+) -> bool:
+    # The bypass always writes every endpoint, so require_all matches only its own work.
+    entries = {entry.strip().lower() for entry in (no_proxy or "").split(",")}
+    present = [
         endpoint.lower() in entries
         for endpoint in get_arc_proxy_skip_range_endpoints(cmd)
-    )
+    ]
+    return all(present) if require_all else any(present)
 
 
 def remove_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str:
@@ -1537,6 +1588,29 @@ def remove_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str
     }
     entries = [entry.strip() for entry in no_proxy.split(",") if entry.strip()]
     return ",".join(entry for entry in entries if entry.lower() not in removable)
+
+
+def validate_arc_proxy_bypass_clear(
+    cmd: CLICommand, no_proxy: str | None, clear_proxy_bypass: str
+) -> None:
+    # Clearing removes the Arc endpoints by value, so ones typed into the same command would
+    # go too. Refusing is the only outcome that keeps what the caller typed.
+    if not validators.has_proxy_bypass_keyword(
+        clear_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
+    ):
+        return
+    # One endpoint is removed just like the full set, so any of them is enough.
+    if not has_arc_proxy_skip_range_endpoints(cmd, no_proxy):
+        return
+    telemetry.set_exception(
+        exception=Exception(consts.Proxy_Bypass_Arc_Clear_Conflict_Error),
+        fault_type=consts.Proxy_Bypass_Arc_Clear_Conflict_Fault_Type,
+        summary="Arc proxy bypass cleared while the skip range lists the endpoints",
+    )
+    raise ArgumentUsageError(
+        consts.Proxy_Bypass_Arc_Clear_Conflict_Error,
+        recommendation=consts.Proxy_Bypass_Arc_Clear_Conflict_Recommendation,
+    )
 
 
 def resolve_arc_proxy_bypass(
@@ -1574,36 +1648,36 @@ def resolve_arc_proxy_bypass(
 
     if cleared:
         # A new skip range replaces the old one, so remove the endpoints from that when
-        # given. Leave the skip range alone when neither source lists them, so clearing a
-        # cluster that never had the bypass does not start sending a proxy setting.
+        # given. Only the full set is the bypass, so endpoints listed alone are kept.
         if not (
-            has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy)
-            or has_arc_proxy_skip_range_endpoints(cmd, no_proxy)
+            has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy, require_all=True)
+            or has_arc_proxy_skip_range_endpoints(cmd, no_proxy, require_all=True)
         ):
             logger.warning(consts.Proxy_Bypass_Arc_Nothing_To_Clear_Warning)
             return None
         print(
             f"Step: {utils.get_utctimestring()}: "
-            f"{consts.Proxy_Bypass_Arc_Cleared_Message}"
+            f"{consts.Proxy_Bypass_Arc_Cleared_Message.format(endpoints=_arc_proxy_skip_range_endpoints_text(cmd))}"
         )
         return remove_arc_proxy_skip_range_endpoints(cmd, no_proxy or current_no_proxy)
 
     if requested:
-        # Off for callers that already printed this message earlier in the same command.
+        # Off for connect, which announces this once it knows the agents are updated.
         if announce_applied:
-            print(
-                f"Step: {utils.get_utctimestring()}: "
-                f"{consts.Proxy_Bypass_Arc_Applied_Message}"
-            )
-    elif has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy):
-        logger.warning(consts.Proxy_Bypass_Arc_Preserved_Warning)
+            _announce_arc_proxy_bypass(cmd)
+    elif has_arc_proxy_skip_range_endpoints(cmd, current_no_proxy, require_all=True):
+        # Only the full set is carried over, so endpoints listed alone are not widened.
+        preserved_warning = consts.Proxy_Bypass_Arc_Preserved_Warning.format(
+            endpoints=_arc_proxy_skip_range_endpoints_text(cmd)
+        )
+        logger.warning(preserved_warning)
     else:
         return None
 
     return add_arc_proxy_skip_range_endpoints(cmd, no_proxy or current_no_proxy)
 
 
-def check_kube_connection() -> str:
+def check_kube_connection(cmd: CLICommand | None = None) -> str:
     print(f"Step: {utils.get_utctimestring()}: Checking Connectivity to Cluster")
     api_instance = kube_client.VersionApi()
     try:
@@ -1616,6 +1690,8 @@ def check_kube_connection() -> str:
             e,
             consts.Kubernetes_Connectivity_FaultType,
             "Unable to verify connectivity to the Kubernetes cluster",
+            arc_error=errors.KUBERNETES_CONNECTIVITY_FAILED,
+            cmd=cmd,
         )
 
     assert False
@@ -1878,7 +1954,12 @@ def resource_group_exists(
     ctx: AzCliCommand, resource_group_name: str, subscription_id: str | None = None
 ) -> bool:
     groups = cf_resource_groups(ctx, subscription_id=subscription_id)
-    return groups.check_existence(resource_group_name)
+    try:
+        return groups.check_existence(resource_group_name)
+    except HttpResponseError as ex:
+        if ex.status_code == 404:
+            return False
+        raise
 
 
 def connected_cluster_exists(
@@ -1972,7 +2053,10 @@ def get_public_key(key_pair: RsaKey) -> str:
 
 
 def load_kube_config(
-    kube_config: str | None, kube_context: str | None, skip_ssl_verification: bool
+    kube_config: str | None,
+    kube_context: str | None,
+    skip_ssl_verification: bool,
+    cmd: CLICommand | None = None,
 ) -> None:
     try:
         config.load_kube_config(config_file=kube_config, context=kube_context)
@@ -1983,14 +2067,13 @@ def load_kube_config(
             default_config.verify_ssl = False
             Configuration.set_default(default_config)
     except Exception as e:
-        telemetry.set_exception(
-            exception=e,
-            fault_type=consts.Load_Kubeconfig_Fault_Type,
-            summary="Problem loading the kubeconfig file",
-        )
         logger.warning(consts.Kubeconfig_Load_Failed_Warning)
-        raise FileOperationError(
-            "Problem loading the kubeconfig file. " + str(e)
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.KUBECONFIG_LOAD_FAILED,
+            exception=e,
+            user_fault=True,
+            details=str(e),
         ) from e
 
 
@@ -2002,7 +2085,10 @@ def get_private_key(key_pair: RsaKey) -> str:
 # Updated function to include more Kubernetes distributions based on provided criteria
 # pylint: disable=too-many-return-statements,too-many-branches
 # Multiple distribution detection logic requires many conditional branches
-def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
+def get_kubernetes_distro(
+    api_response: V1NodeList,
+    cmd: CLICommand | None = None,
+) -> str:  # Heuristic
     if api_response is None:
         return "generic"
     try:
@@ -2068,6 +2154,8 @@ def get_kubernetes_distro(api_response: V1NodeList) -> str:  # Heuristic
             consts.Get_Kubernetes_Distro_Fault_Type,
             "Unable to fetch kubernetes distribution",
             raise_error=False,
+            arc_error=errors.KUBERNETES_DISTRIBUTION_DETECTION_FAILED,
+            cmd=cmd,
         )
         return "generic"
 
@@ -2304,7 +2392,9 @@ def generate_patch_payload(
     )
 
 
-def get_kubeconfig_node_dict(kube_config: str | None = None) -> ConfigNode:
+def get_kubeconfig_node_dict(
+    kube_config: str | None = None, cmd: CLICommand | None = None
+) -> ConfigNode:
     if kube_config is None:
         kube_config = os.getenv("KUBECONFIG") or os.path.join(
             os.path.expanduser("~"), ".kube", "config"
@@ -2312,33 +2402,42 @@ def get_kubeconfig_node_dict(kube_config: str | None = None) -> ConfigNode:
     try:
         kubeconfig_data = KubeConfigMerger(kube_config).config
     except Exception as ex:
-        telemetry.set_exception(
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.KUBECONFIG_LOAD_FAILED,
             exception=ex,
-            fault_type=consts.Load_Kubeconfig_Fault_Type,
-            summary="Error while fetching details from kubeconfig",
-        )
-        raise FileOperationError(
-            "Error while fetching details from kubeconfig." + str(ex)
+            details=f"Error while fetching details from kubeconfig. {ex}",
         ) from ex
     return kubeconfig_data
 
 
 def check_proxy_kubeconfig(
-    kube_config: str | None, kube_context: str | None, arm_hash: str
+    kube_config: str | None,
+    kube_context: str | None,
+    arm_hash: str,
+    cmd: CLICommand | None = None,
 ) -> bool:
-    server_address = get_server_address(kube_config, kube_context)
+    server_address = get_server_address(kube_config, kube_context, cmd=cmd)
     regex_string = r"https://127.0.0.1:[0-9]{1,5}/" + arm_hash
     p = re.compile(regex_string)
     return bool(p.fullmatch(server_address))
 
 
-def check_aks_cluster(kube_config: str | None, kube_context: str | None) -> bool:
-    server_address = get_server_address(kube_config, kube_context)
+def check_aks_cluster(
+    kube_config: str | None,
+    kube_context: str | None,
+    cmd: CLICommand | None = None,
+) -> bool:
+    server_address = get_server_address(kube_config, kube_context, cmd=cmd)
     return server_address.find(".azmk8s.io:") != -1
 
 
-def get_server_address(kube_config: str | None, kube_context: str | None) -> str:
-    config_data = get_kubeconfig_node_dict(kube_config=kube_config)
+def get_server_address(
+    kube_config: str | None,
+    kube_context: str | None,
+    cmd: CLICommand | None = None,
+) -> str:
+    config_data = get_kubeconfig_node_dict(kube_config=kube_config, cmd=cmd)
     try:
         all_contexts, current_context = config.list_kube_config_contexts(
             config_file=kube_config
@@ -2429,7 +2528,13 @@ def delete_connectedk8s(
     logger.warning("This operation might take a while ...\n")
 
     # Check if the cluster is of supported type for deletion
-    cluster_resource = client.get(resource_group_name, cluster_name)
+    cluster_resource = get_cc_resource(
+        cmd,
+        client,
+        resource_group_name,
+        cluster_name,
+        operation="delete",
+    )
     if (cluster_resource.kind is not None) and (
         cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind
     ):
@@ -2453,12 +2558,12 @@ def delete_connectedk8s(
     kube_config = set_kube_config(kube_config)
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled
     # AKS clusters if the user had not logged in.
-    check_kube_connection()
+    check_kube_connection(cmd=cmd)
 
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
@@ -2486,8 +2591,13 @@ def delete_connectedk8s(
         )
 
         delete_cc_resource(
-            client, resource_group_name, cluster_name, no_wait, force=force_delete
-        ).result()
+            cmd,
+            client,
+            resource_group_name,
+            cluster_name,
+            no_wait,
+            force=force_delete,
+        )
 
         # Explicit CRD Deletion
         crd_cleanup_force_delete(
@@ -2509,8 +2619,13 @@ def delete_connectedk8s(
 
     if not release_namespace:
         delete_cc_resource(
-            client, resource_group_name, cluster_name, no_wait, force=force_delete
-        ).result()
+            cmd,
+            client,
+            resource_group_name,
+            cluster_name,
+            no_wait,
+            force=force_delete,
+        )
         return
 
     # Loading config map
@@ -2530,6 +2645,8 @@ def delete_connectedk8s(
             "Unable to read ConfigMap",
             error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
             message_for_not_found=err_msg,
+            arc_error=errors.CONFIGMAP_READ_FAILED,
+            cmd=cmd,
         )
 
     subscription_id = (
@@ -2549,7 +2666,7 @@ def delete_connectedk8s(
         )
         arm_hash = hashlib.sha256(armid.lower().encode("utf-8")).hexdigest()
 
-        if check_proxy_kubeconfig(kube_config, kube_context, arm_hash):
+        if check_proxy_kubeconfig(kube_config, kube_context, arm_hash, cmd=cmd):
             telemetry.set_exception(
                 exception=Exception("Encountered proxy kubeconfig during deletion."),
                 fault_type=consts.Proxy_Kubeconfig_During_Deletion_Fault_Type,
@@ -2565,19 +2682,26 @@ def delete_connectedk8s(
             )
 
         delete_cc_resource(
-            client, resource_group_name, cluster_name, no_wait, force=force_delete
-        ).result()
-    else:
-        telemetry.set_exception(
-            exception=Exception("Unable to delete connected cluster"),
-            fault_type=consts.Bad_DeleteRequest_Fault_Type,
-            summary="The resource cannot be deleted as kubernetes cluster is onboarded with some other resource id",
+            cmd,
+            client,
+            resource_group_name,
+            cluster_name,
+            no_wait,
+            force=force_delete,
         )
-        raise ArgumentUsageError(
+    else:
+        err_msg = (
             "The current context in the kubeconfig file does not correspond "
             "to the connected cluster resource specified. Agents installed on this cluster correspond "
             f"to the resource group name '{configmap.data['AZURE_RESOURCE_GROUP']}' "
             f"and resource name '{configmap.data['AZURE_RESOURCE_NAME']}'."
+        )
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.INVALID_DELETE_REQUEST,
+            exception=Exception(err_msg),
+            user_fault=True,
+            details=err_msg,
         )
 
     # Deleting the azure-arc agents
@@ -2593,13 +2717,21 @@ def delete_connectedk8s(
     print(f"Step: {utils.get_utctimestring()}: Delete of Connected Cluster ended.")
 
 
-def create_cc_resource(
+def put_cc_resource(
+    cmd: CLICommand,
     client: ConnectedClusterOperations,
     resource_group_name: str,
     cluster_name: str,
     cc: ConnectedCluster,
     no_wait: bool,
-) -> LROPoller[ConnectedCluster]:
+    *,
+    operation: Literal["create", "update"],
+) -> tuple[ConnectedCluster, ConnectedCluster]:
+    operation_error = (
+        errors.CONNECTED_CLUSTER_CREATE_FAILED
+        if operation == "create"
+        else errors.CONNECTED_CLUSTER_UPDATE_FAILED
+    )
     try:
         poller: LROPoller[ConnectedCluster] = sdk_no_wait(
             no_wait,
@@ -2608,18 +2740,50 @@ def create_cc_resource(
             cluster_name=cluster_name,
             connected_cluster=cc,
         )
-        return poller
+        dp_request_payload = poller.result()
+        response: ConnectedCluster = LongRunningOperation(cmd.cli_ctx)(poller)
+        return dp_request_payload, response
     except Exception as e:
         utils.arm_exception_handler(
             e,
-            consts.Create_ConnectedCluster_Fault_Type,
-            "Unable to create connected cluster resource",
+            operation_error.fault_type,
+            f"Unable to {operation} connected cluster resource",
+            cmd=cmd,
+            error=operation_error,
+        )
+
+    assert False
+
+
+def get_cc_resource(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    *,
+    operation: Literal["update", "delete"],
+) -> ConnectedCluster:
+    operation_error = (
+        errors.CONNECTED_CLUSTER_UPDATE_FAILED
+        if operation == "update"
+        else errors.CONNECTED_CLUSTER_DELETE_FAILED
+    )
+    try:
+        return client.get(resource_group_name, cluster_name)
+    except Exception as e:
+        utils.arm_exception_handler(
+            e,
+            operation_error.fault_type,
+            f"Unable to get connected cluster resource for {operation}",
+            cmd=cmd,
+            error=operation_error,
         )
 
     assert False
 
 
 def patch_cc_resource(
+    cmd: CLICommand,
     client: ConnectedClusterOperations,
     resource_group_name: str,
     cluster_name: str,
@@ -2636,12 +2800,15 @@ def patch_cc_resource(
             e,
             consts.Update_ConnectedCluster_Fault_Type,
             "Unable to update connected cluster resource",
+            cmd=cmd,
+            error=errors.CONNECTED_CLUSTER_UPDATE_FAILED,
         )
 
     assert False
 
 
 def delete_cc_resource(
+    cmd: CLICommand,
     client: ConnectedClusterOperations,
     resource_group_name: str,
     cluster_name: str,
@@ -2666,18 +2833,22 @@ def delete_cc_resource(
                 resource_group_name=resource_group_name,
                 cluster_name=cluster_name,
             )
+        poller.result()
         return poller
     except Exception as e:
         utils.arm_exception_handler(
             e,
             consts.Delete_ConnectedCluster_Fault_Type,
             "Unable to delete connected cluster resource",
+            cmd=cmd,
+            error=errors.CONNECTED_CLUSTER_DELETE_FAILED,
         )
 
     assert False
 
 
 def update_connected_cluster_internal(
+    cmd: CLICommand,
     client: ConnectedClusterOperations,
     resource_group_name: str,
     cluster_name: str,
@@ -2689,7 +2860,7 @@ def update_connected_cluster_internal(
     cc = generate_patch_payload(
         tags, distribution, distribution_version, azure_hybrid_benefit
     )
-    return patch_cc_resource(client, resource_group_name, cluster_name, cc)
+    return patch_cc_resource(cmd, client, resource_group_name, cluster_name, cc)
 
 
 # pylint:disable=unused-argument
@@ -2758,6 +2929,10 @@ def update_connected_cluster(
     # unescaped, so hold on to this value in the same form until that merge can run.
     requested_no_proxy = no_proxy
 
+    # The ARM update below runs before the resolver, so a failure there would come too late.
+    # The value is still unescaped here, which is what splitting on commas needs.
+    validate_arc_proxy_bypass_clear(cmd, requested_no_proxy, clear_proxy_bypass)
+
     # Escaping comma, forward slash present in no proxy urls, needed for helm params.
     no_proxy = escape_proxy_settings(no_proxy)
 
@@ -2792,7 +2967,13 @@ def update_connected_cluster(
     )
 
     # Fetch Connected Cluster for agent version
-    connected_cluster = client.get(resource_group_name, cluster_name)
+    connected_cluster = get_cc_resource(
+        cmd,
+        client,
+        resource_group_name,
+        cluster_name,
+        operation="update",
+    )
 
     if (connected_cluster.kind is not None) and (
         connected_cluster.kind.lower() == consts.Provisioned_Cluster_Kind
@@ -2829,6 +3010,7 @@ def update_connected_cluster(
 
     if not arm_properties_unset:
         patch_cc_response = update_connected_cluster_internal(
+            cmd,
             client,
             resource_group_name,
             cluster_name,
@@ -2885,12 +3067,12 @@ def update_connected_cluster(
     values_file = utils.get_values_file()
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
@@ -2937,15 +3119,22 @@ def update_connected_cluster(
         )
 
     # Fetch Connected Cluster for agent version
-    connected_cluster = client.get(resource_group_name, cluster_name)
+    connected_cluster = get_cc_resource(
+        cmd,
+        client,
+        resource_group_name,
+        cluster_name,
+        operation="update",
+    )
     if connected_cluster.id is None:
-        telemetry.set_exception(
-            exception="Connected cluster resource 'id' is None",
-            fault_type=consts.Connected_Cluster_Resource_Id_None_Fault_Type,
-            summary="Connected cluster ARM resource missing 'id' field",
-        )
-        raise CLIInternalError(
+        err_msg = (
             "Connected cluster resource 'id' is None. Cannot extract subscription id."
+        )
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.CONNECTED_CLUSTER_RESOURCE_ID_MISSING,
+            exception=Exception(err_msg),
+            details=err_msg,
         )
     subscription_id = connected_cluster.id.split("/")[2]
 
@@ -2972,7 +3161,13 @@ def update_connected_cluster(
     utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Get the connected cluster resource using latest api version and generate reput request payload
-    connected_cluster = client.get(resource_group_name, cluster_name)
+    connected_cluster = get_cc_resource(
+        cmd,
+        client,
+        resource_group_name,
+        cluster_name,
+        operation="update",
+    )
 
     # If gateway is enabled
     gateway = None
@@ -3039,11 +3234,15 @@ def update_connected_cluster(
     )
 
     # Update connected cluster resource
-    reput_cc_poller = create_cc_resource(
-        client, resource_group_name, cluster_name, cc, False
+    dp_request_payload, _ = put_cc_resource(
+        cmd,
+        client,
+        resource_group_name,
+        cluster_name,
+        cc,
+        False,
+        operation="update",
     )
-    dp_request_payload = reput_cc_poller.result()
-    _ = LongRunningOperation(cmd.cli_ctx)(reput_cc_poller)
 
     # Before proceeding, we prefer to see agent state settle - updating the helm chart
     # while things are happening risks race conditions.  Eg
@@ -3208,12 +3407,12 @@ def upgrade_agents(
     values_file = utils.get_values_file()
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     api_instance = kube_client.CoreV1Api()
 
@@ -3242,6 +3441,8 @@ def upgrade_agents(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
+                arc_error=errors.CONFIGMAP_READ_FAILED,
+                cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
         configmap_cluster_name = configmap.data["AZURE_RESOURCE_NAME"]
@@ -3527,6 +3728,8 @@ def validate_release_namespace(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
+                arc_error=errors.CONFIGMAP_READ_FAILED,
+                cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
         configmap_cluster_name = configmap.data["AZURE_RESOURCE_NAME"]
@@ -3772,12 +3975,12 @@ def enable_features(
     values_file = utils.get_values_file()
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
@@ -3986,12 +4189,12 @@ def disable_features(
     values_file = utils.get_values_file()
 
     # Loading the kubeconfig file in kubernetes client configuration
-    load_kube_config(kube_config, kube_context, skip_ssl_verification)
+    load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
     # Checking the connection to kubernetes cluster.
     # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
     # if the user had not logged in.
-    kubernetes_version = check_kube_connection()
+    kubernetes_version = check_kube_connection(cmd=cmd)
 
     helm_client_location = get_helm_client_location(cmd, azure_cloud=azure_cloud)
 
@@ -4271,14 +4474,14 @@ def merge_kubernetes_configurations(
     try:
         existing = load_kubernetes_configuration(existing_file)
         addition = load_kubernetes_configuration(addition_file)
+    except AzCLIError:
+        raise
     except Exception as ex:
-        telemetry.set_exception(
+        raise utils.report_connectedk8s_error(
+            None,
+            errors.KUBERNETES_CONFIGURATION_LOAD_FAILED,
             exception=ex,
-            fault_type=consts.Failed_To_Load_K8s_Configuration_Fault_Type,
-            summary="Exception while loading kubernetes configuration",
-        )
-        raise CLIInternalError(
-            f"Exception while loading kubernetes configuration: {ex}"
+            details=f"Exception while loading Kubernetes configuration: {ex}",
         ) from ex
 
     if context_name is not None:
@@ -4734,14 +4937,13 @@ def client_side_proxy(
         try:
             kubeconfig = json.loads(response.text)
         except Exception as e:
-            telemetry.set_exception(
+            clientproxy_process.terminate()
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.KUBECONFIG_LOAD_FAILED,
                 exception=e,
-                fault_type=consts.Load_Kubeconfig_Fault_Type,
-                summary="Unable to load Kubeconfig",
-            )
-            clientproxyutils.close_subprocess_and_raise_cli_error(
-                clientproxy_process, "Failed to load kubeconfig." + str(e)
-            )
+                details=f"Failed to load kubeconfig. {e}",
+            ) from e
 
         kubeconfig = kubeconfig["kubeconfigs"][0]["value"]
         kubeconfig = b64decode(kubeconfig).decode("utf-8")
@@ -4762,6 +4964,9 @@ def client_side_proxy(
 
             print("Press Ctrl+C to close proxy.")
 
+        except AzCLIError:
+            clientproxy_process.terminate()
+            raise
         except Exception as e:
             telemetry.set_exception(
                 exception=e,
@@ -4922,7 +5127,7 @@ def troubleshoot(
         kube_client.rest.logger.setLevel(logging.WARNING)
 
         # Loading the kubeconfig file in kubernetes client configuration
-        load_kube_config(kube_config, kube_context, skip_ssl_verification)
+        load_kube_config(kube_config, kube_context, skip_ssl_verification, cmd=cmd)
 
         azure_cloud = send_cloud_telemetry(cmd)
         kubectl_client_location = get_kubectl_client_location(
@@ -4942,7 +5147,7 @@ def troubleshoot(
         # Checking the connection to kubernetes cluster.
         # This check was added to avoid large timeouts when connecting to AAD Enabled AKS clusters
         # if the user had not logged in.
-        check_kube_connection()
+        check_kube_connection(cmd=cmd)
 
         # Fetch Connected Cluster for agent version
         connected_cluster = client.get(resource_group_name, cluster_name)

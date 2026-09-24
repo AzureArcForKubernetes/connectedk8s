@@ -2,6 +2,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License. See License.txt in the project root for license information.
 # --------------------------------------------------------------------------------------------
+import json
 import os
 import sys
 from types import SimpleNamespace
@@ -32,7 +33,9 @@ from azext_connectedk8s._utils import (
     _build_helm_timeout_telemetry_properties,
     _collect_timeout_diagnostics_from_events,
     _collect_timeout_diagnostics_from_pods,
+    _get_underlying_exception_type,
     _resolve_helm_timeout_classification,
+    arm_exception_handler,
     build_helm_timeout_report,
     check_cluster_DNS,
     check_cluster_outbound_connectivity,
@@ -45,7 +48,10 @@ from azext_connectedk8s._utils import (
     remove_rsa_private_key,
     report_connectedk8s_diagnostic,
     report_connectedk8s_error,
+    report_connectedk8s_warning,
     report_helm_timeout_error,
+    sanitize_telemetry_exception,
+    sanitize_telemetry_payload,
     scrub_proxy_url,
     should_use_secret_injection_flow,
 )
@@ -55,6 +61,77 @@ def _build_test_proxy_url(username, password):
     # Avoid storing credential-shaped URLs in the test source.
     credentials = f"{username}:{password}"
     return urlunsplit(("http", f"{credentials}@example.com:8080", "", "", ""))
+
+
+def test_check_provider_registrations_reports_unregistered_provider(monkeypatch):
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    rp_client = MagicMock()
+    rp_client.get.return_value = SimpleNamespace(registration_state="NotRegistered")
+    monkeypatch.setattr(
+        utils_module, "resource_providers_client", MagicMock(return_value=rp_client)
+    )
+    monkeypatch.setattr(utils_module, "telemetry", MagicMock())
+
+    with pytest.raises(ValidationError, match=r"\[AZK8S0408\]"):
+        utils_module.check_provider_registrations(
+            cmd,
+            "subscription-id",
+            is_gateway_enabled=False,
+            is_workload_identity_enabled=False,
+        )
+
+
+def test_check_provider_registrations_continues_when_lookup_fails(monkeypatch):
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    lookup_error = RuntimeError("provider API unavailable")
+    mock_logger = MagicMock()
+    monkeypatch.setattr(
+        utils_module,
+        "resource_providers_client",
+        MagicMock(side_effect=lookup_error),
+    )
+    monkeypatch.setattr(utils_module, "logger", mock_logger)
+
+    utils_module.check_provider_registrations(
+        cmd,
+        "subscription-id",
+        is_gateway_enabled=False,
+        is_workload_identity_enabled=False,
+    )
+
+    mock_logger.exception.assert_called_once_with(
+        "Couldn't check the required provider's registration status"
+    )
+
+
+def test_get_underlying_exception_type_uses_transport_reason():
+    underlying = type("NameResolutionError", (Exception,), {})("sensitive endpoint")
+    outer = type("MaxRetryError", (Exception,), {"reason": underlying})("retry")
+
+    assert _get_underlying_exception_type(outer) == "NameResolutionError"
+
+
+def test_get_underlying_exception_type_uses_explicit_cause():
+    underlying = PermissionError("sensitive path")
+    outer = RuntimeError("wrapper")
+    outer.__cause__ = underlying
+
+    assert _get_underlying_exception_type(outer) == "PermissionError"
+
+
+def test_get_underlying_exception_type_stops_on_cycle():
+    outer = RuntimeError("wrapper")
+    underlying = OSError("underlying")
+    outer.__cause__ = underlying
+    underlying.__cause__ = outer
+
+    assert _get_underlying_exception_type(outer) == "OSError"
+
+
+def test_get_underlying_exception_type_is_bounded():
+    exception = type("E" * 256, (Exception,), {})("sensitive detail")
+
+    assert _get_underlying_exception_type(exception) == "E" * 128
 
 
 def test_remove_rsa_private_key():
@@ -127,6 +204,26 @@ def test_redact_sensitive_fields_from_string():
         redact_sensitive_fields_from_string(input_text_partial)
         == expected_output_partial
     )
+
+
+def test_redact_sensitive_fields_handles_json_and_case_variants():
+    input_text = json.dumps(
+        {
+            "Token": "short-secret",
+            "PASSWORD": "mixed case secret",
+            "token_status": "unchanged",
+            "safe": "unchanged",
+        }
+    )
+
+    sanitized = redact_sensitive_fields_from_string(input_text)
+
+    assert json.loads(sanitized) == {
+        "Token": "[REDACTED]",
+        "PASSWORD": "[REDACTED]",
+        "token_status": "unchanged",
+        "safe": "unchanged",
+    }
 
 
 def test_get_mcr_path():
@@ -464,7 +561,9 @@ def test_error_catalog_uses_proposed_exception_classes():
         "AZK8S0106": InvalidArgumentValueError,
         "AZK8S0200": FileOperationError,
         "AZK8S0201": ValidationError,
-        "AZK8S0203": ValidationError,
+        "AZK8S0202": ValidationError,
+        "AZK8S0205": ValidationError,
+        "AZK8S0206": ValidationError,
         "AZK8S0209": ValidationError,
         "AZK8S0403": ArgumentUsageError,
         "AZK8S0404": ArgumentUsageError,
@@ -609,11 +708,12 @@ def test_report_connectedk8s_error_uses_same_message_and_includes_arm_id(
     assert properties["Context.Default.AzureCLI.errorFaultType"] == "test-error"
     assert properties["Context.Default.AzureCLI.errorName"] == "TestError"
     assert properties["Context.Default.AzureCLI.errorMessage"] == expected_message
+    assert properties["Context.Default.AzureCLI.errorExceptionType"] == "RuntimeError"
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == expected_message
     mock_telemetry.set_user_fault.assert_called_once_with()
 
 
-def test_report_connectedk8s_error_sanitizes_telemetry_apostrophes(monkeypatch):
+def test_report_connectedk8s_error_sanitizes_telemetry(monkeypatch):
     class TestCLIError(Exception):
         pass
 
@@ -626,24 +726,62 @@ def test_report_connectedk8s_error_sanitizes_telemetry_apostrophes(monkeypatch):
     )
     mock_telemetry = MagicMock()
     monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+    proxy_url = _build_test_proxy_url("repo-user", "repo-password")
+    details = f"can't connect to {proxy_url}"
 
     reported_error = report_connectedk8s_error(
         None,
         error,
-        details="Run 'helm version' to diagnose",
+        exception=RuntimeError(details),
+        details=details,
     )
 
     assert str(reported_error) == (
-        "[AZK8S0009] TestError: Test message: Run 'helm version' to diagnose"
+        f"[AZK8S0009] TestError: Test message: can't connect to {proxy_url}"
     )
     _, properties = mock_telemetry.add_extension_event.call_args.args
     telemetry_message = properties["Context.Default.AzureCLI.errorMessage"]
     assert telemetry_message == (
-        "[AZK8S0009] TestError: Test message: Run helm version to diagnose"
+        "[AZK8S0009] TestError: Test message: cant connect to "
+        "http://[REDACTED]:[REDACTED]@example.com:8080"
+    )
+    telemetry_exception = mock_telemetry.set_exception.call_args.kwargs["exception"]
+    assert type(telemetry_exception).__name__ == "RuntimeError"
+    assert str(telemetry_exception) == (
+        "cant connect to http://[REDACTED]:[REDACTED]@example.com:8080"
     )
     assert mock_telemetry.set_exception.call_args.kwargs["summary"] == telemetry_message
     mock_telemetry.add_extension_event.assert_called_once()
     mock_telemetry.set_exception.assert_called_once()
+
+
+def test_sanitize_telemetry_payload_redacts_nested_sensitive_values():
+    proxy_url = _build_test_proxy_url("repo-user", "repo-password")
+    encoded_secret = "U2Vuc2l0aXZlVGVsZW1ldHJ5VmFsdWVGb3JUZXN0aW5nMTIzNDU2"
+    payload = {
+        "message": f"Couldn't connect to {proxy_url}",
+        "details": [f"token: {encoded_secret}", 5],
+    }
+
+    sanitized = sanitize_telemetry_payload(payload)
+
+    assert sanitized["message"] == (
+        "Couldnt connect to http://[REDACTED]:[REDACTED]@example.com:8080"
+    )
+    assert sanitized["details"] == ["token: [REDACTED]", 5]
+
+
+def test_sanitize_telemetry_exception_uses_fallback_for_missing_exception():
+    sanitized = sanitize_telemetry_exception(None, "Couldn't run 'helm version'")
+
+    assert sanitized.__class__ is Exception
+    assert str(sanitized) == "Couldnt run helm version"
+
+
+def test_sanitize_telemetry_exception_preserves_safe_exception():
+    exception = RuntimeError("Microsoft Graph request failed")
+
+    assert sanitize_telemetry_exception(exception, "fallback") is exception
 
 
 def test_report_connectedk8s_diagnostic_does_not_build_cli_exception(monkeypatch):
@@ -671,6 +809,214 @@ def test_report_connectedk8s_diagnostic_does_not_build_cli_exception(monkeypatch
     add_event.assert_called_once()
     mock_telemetry.set_exception.assert_called_once()
     mock_telemetry.set_user_fault.assert_called_once_with()
+
+
+def test_arm_exception_handler_reports_standardized_arm_error(monkeypatch):
+    class ReportedError(Exception):
+        pass
+
+    class ArmError(Exception):
+        pass
+
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    source_error = RuntimeError("ARM request failed")
+    report_error = MagicMock(return_value=ReportedError("reported"))
+    monkeypatch.setattr(utils_module, "report_connectedk8s_error", report_error)
+    monkeypatch.setattr(utils_module, "HttpOperationError", ArmError)
+    monkeypatch.setattr(utils_module, "HttpResponseError", ArmError)
+    monkeypatch.setattr(utils_module, "ResourceNotFoundError", ArmError)
+
+    with pytest.raises(ReportedError, match="reported"):
+        arm_exception_handler(
+            source_error,
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED.fault_type,
+            "Unable to create connected cluster resource",
+            cmd=cmd,
+            error=errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+        )
+
+    report_error.assert_called_once_with(
+        cmd,
+        errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+        exception=source_error,
+        user_fault=False,
+        details="ARM request failed",
+    )
+
+
+def test_arm_exception_handler_emits_one_fault_for_operation(monkeypatch):
+    class ArmOperationError(Exception):
+        pass
+
+    class ArmResponseError(Exception):
+        status_code = 500
+        error = SimpleNamespace(code="InternalServerError")
+
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+    monkeypatch.setattr(utils_module, "HttpOperationError", ArmOperationError)
+    monkeypatch.setattr(utils_module, "HttpResponseError", ArmResponseError)
+    monkeypatch.setattr(utils_module, "ResourceNotFoundError", ArmResponseError)
+
+    with pytest.raises(CLIInternalError):
+        arm_exception_handler(
+            ArmResponseError("ARM request failed"),
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED.fault_type,
+            "Unable to create connected cluster resource",
+            cmd=cmd,
+            error=errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+        )
+
+    mock_telemetry.set_exception.assert_called_once()
+    mock_telemetry.add_extension_event.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    "status_code, service_error_code, operation_error, expected_error, user_fault",
+    [
+        (
+            404,
+            "ConnectedClusterNotFound",
+            errors_module.CONNECTED_CLUSTER_UPDATE_FAILED,
+            errors_module.RESOURCE_NOT_FOUND,
+            True,
+        ),
+        (
+            409,
+            "ResourceAlreadyExists",
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            errors_module.RESOURCE_ALREADY_EXISTS,
+            True,
+        ),
+        (
+            404,
+            "ResourceGroupNotFound",
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            True,
+        ),
+        (
+            409,
+            "MissingSubscriptionRegistration",
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            errors_module.CONNECTED_CLUSTER_CREATE_FAILED,
+            True,
+        ),
+        (
+            408,
+            "RequestTimeout",
+            errors_module.CONNECTED_CLUSTER_UPDATE_FAILED,
+            errors_module.CONNECTED_CLUSTER_UPDATE_FAILED,
+            False,
+        ),
+        (
+            429,
+            "TooManyRequests",
+            errors_module.CONNECTED_CLUSTER_DELETE_FAILED,
+            errors_module.CONNECTED_CLUSTER_DELETE_FAILED,
+            False,
+        ),
+    ],
+)
+def test_arm_exception_handler_maps_arm_status_codes(
+    monkeypatch,
+    status_code,
+    service_error_code,
+    operation_error,
+    expected_error,
+    user_fault,
+):
+    class ReportedError(Exception):
+        pass
+
+    class ArmOperationError(Exception):
+        pass
+
+    class ArmResponseError(Exception):
+        def __init__(self, status, service_code):
+            super().__init__(f"ARM status {status}")
+            self.status_code = status
+            self.error = SimpleNamespace(code=service_code)
+
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    source_error = ArmResponseError(status_code, service_error_code)
+    report_error = MagicMock(return_value=ReportedError("reported"))
+    monkeypatch.setattr(utils_module, "report_connectedk8s_error", report_error)
+    monkeypatch.setattr(utils_module, "HttpOperationError", ArmOperationError)
+    monkeypatch.setattr(utils_module, "HttpResponseError", ArmResponseError)
+    monkeypatch.setattr(utils_module, "ResourceNotFoundError", ArmResponseError)
+
+    with pytest.raises(ReportedError, match="reported"):
+        arm_exception_handler(
+            source_error,
+            operation_error.fault_type,
+            "Connected cluster ARM operation failed",
+            cmd=cmd,
+            error=operation_error,
+        )
+
+    report_error.assert_called_once_with(
+        cmd,
+        expected_error,
+        exception=source_error,
+        user_fault=user_fault,
+        details=f"ARM status {status_code}",
+    )
+
+
+def test_arm_exception_handler_ignores_expected_not_found(monkeypatch):
+    class ArmOperationError(Exception):
+        pass
+
+    class ArmResponseError(Exception):
+        status_code = 404
+        error = SimpleNamespace(code="ResourceGroupNotFound")
+
+    report_error = MagicMock()
+    monkeypatch.setattr(utils_module, "report_connectedk8s_error", report_error)
+    monkeypatch.setattr(utils_module, "HttpOperationError", ArmOperationError)
+    monkeypatch.setattr(utils_module, "HttpResponseError", ArmResponseError)
+    monkeypatch.setattr(utils_module, "ResourceNotFoundError", ArmResponseError)
+
+    arm_exception_handler(
+        ArmResponseError("not found"),
+        errors_module.consts.Get_ConnectedCluster_Fault_Type,
+        "Checking whether the connected cluster exists",
+        return_if_not_found=True,
+    )
+
+    report_error.assert_not_called()
+
+
+def test_report_connectedk8s_warning_logs_without_marking_command_failed(
+    monkeypatch,
+):
+    cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+    mock_telemetry = MagicMock()
+    mock_logger = MagicMock()
+    monkeypatch.setattr(utils_module, "telemetry", mock_telemetry)
+    monkeypatch.setattr(utils_module, "logger", mock_logger)
+
+    message = report_connectedk8s_warning(
+        cmd,
+        errors_module.KUBERNETES_NAMESPACE_GET_FAILED,
+        details="namespace lookup failed",
+    )
+
+    assert message.startswith(
+        "[AZK8S0204] KubernetesNamespaceGetFailed: "
+        "Failed to determine the Kubernetes namespace."
+    )
+    _, properties = mock_telemetry.add_extension_event.call_args.args
+    assert properties["Context.Default.AzureCLI.warningCode"] == "AZK8S0204"
+    assert (
+        properties["Context.Default.AzureCLI.warningFaultType"]
+        == errors_module.KUBERNETES_NAMESPACE_GET_FAILED.fault_type
+    )
+    mock_logger.warning.assert_called_once_with("%s", message)
+    mock_telemetry.set_exception.assert_not_called()
+    mock_telemetry.set_user_fault.assert_not_called()
 
 
 def test_build_helm_timeout_report_preserves_failed_diagnostics(monkeypatch):
@@ -1289,6 +1635,68 @@ class TestCheckClusterDNS:
         )
         result, diag = self._run(log)
         assert result == "Passed"
+        assert diag == []
+
+    def test_transient_timeout_followed_by_success_passes(self):
+        log = """\
+DNS Result:;; communications error to 10.0.0.10#53: timed out
+Server: 10.0.0.10
+Address: 10.0.0.10#53
+
+Name: kubernetes.default.svc.cluster.local
+Address: 10.0.0.1"""
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Passed
+        assert diag == []
+
+    def test_timeout_after_success_fails(self):
+        log = """\
+DNS Result:
+Name: kubernetes.default.svc.cluster.local
+Address: 10.0.0.1
+;; communications error to 10.0.0.10#53: timed out"""
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Failed
+        assert diag[0].startswith("[AZK8S0302]")
+
+    def test_latest_failure_is_reported_as_root_cause(self):
+        log = """\
+DNS Result: server returned SERVFAIL
+** server can't find kubernetes.default.svc.cluster.local: NXDOMAIN"""
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Failed
+        assert diag[0].startswith("[AZK8S0301]")
+
+    @pytest.mark.parametrize("address", ["10.96.0.1", "2001:db8::1"])
+    def test_valid_ip_address_passes(self, address):
+        log = (
+            "DNS Result:\n"
+            "Name: kubernetes.default.svc.cluster.local\n"
+            f"Address: {address}"
+        )
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Passed
+        assert diag == []
+
+    @pytest.mark.parametrize("address", ["not-an-ip", "10.96.0.999", "10.96.0.1#53"])
+    def test_invalid_resolved_address_is_incomplete(self, address):
+        log = (
+            "DNS Result:\n"
+            "Name: kubernetes.default.svc.cluster.local\n"
+            f"Address: {address}"
+        )
+
+        result, diag = self._run(log)
+
+        assert result == consts.Diagnostic_Check_Incomplete
         assert diag == []
 
     @pytest.mark.parametrize(
