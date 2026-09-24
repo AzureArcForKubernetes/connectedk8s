@@ -99,16 +99,118 @@ spec:
 "@
             $quota | kubectl apply -f - 2>&1 | Out-Null
         }
+
+        function Get-CapturedTelemetryEvents {
+            param(
+                [Parameter(Mandatory = $true)]
+                [string]$CaptureDirectory
+            )
+
+            $telemetryDirectory = Join-Path $CaptureDirectory "telemetry"
+            $cacheFiles = @(
+                Get-ChildItem -Path $telemetryDirectory -Filter "cache*" -File -Recurse -ErrorAction Stop
+            )
+            $cacheFiles.Count | Should -BeGreaterThan 0
+
+            $events = foreach ($cacheFile in $cacheFiles) {
+                foreach ($line in Get-Content -Path $cacheFile.FullName) {
+                    $separatorIndex = $line.IndexOf(",")
+                    $separatorIndex | Should -BeGreaterThan 0
+
+                    $payload = $line.Substring($separatorIndex + 1) | ConvertFrom-Json -Depth 100
+                    foreach ($instrumentationKey in $payload.PSObject.Properties) {
+                        foreach ($event in @($instrumentationKey.Value)) {
+                            $event
+                        }
+                    }
+                }
+            }
+
+            return @($events)
+        }
     }
 
-    It 'MCR outbound block triggers prediagnostics-failure telemetry' {
-        $clusterName = "prediag-test-mcr"
-        Invoke-CoreDNSBlock -Hosts @("mcr.microsoft.com")
-        $output = az connectedk8s connect -g $ENVCONFIG.resourceGroup -n $clusterName -l $ARC_LOCATION 2>&1
-        $? | Should -BeFalse
-        ($output -join "`n") | Should -Match "Pre-onboarding Diagnostic|pre-checks"
-        Invoke-RestoreCoreDNS
-        az connectedk8s delete -g $ENVCONFIG.resourceGroup -n $clusterName --force -y 2>&1 | Out-Null
+    It 'MCR outbound block emits one terminal fault and local diagnostics' {
+        $clusterName = "prediag-onefault-$(([guid]::NewGuid()).ToString('N').Substring(0, 8))"
+        $captureDirectory = Join-Path $TestDrive "telemetry-capture"
+        $captureHookDirectory = Join-Path $PSScriptRoot "../helper/telemetry_capture"
+        $originalPythonPath = $env:PYTHONPATH
+        $originalCaptureDirectory = $env:AZURE_CLI_TELEMETRY_CAPTURE_DIR
+        $originalAzInstaller = $env:AZ_INSTALLER
+        $azureCliPython = "/opt/az/bin/python3"
+
+        try {
+            Invoke-CoreDNSBlock -Hosts @("mcr.microsoft.com")
+            New-Item -ItemType Directory -Path $captureDirectory -Force | Out-Null
+            $azureCliPython | Should -Exist
+
+            $pathSeparator = [IO.Path]::PathSeparator
+            $env:PYTHONPATH = if ($originalPythonPath) {
+                "$captureHookDirectory$pathSeparator$originalPythonPath"
+            }
+            else {
+                $captureHookDirectory
+            }
+            $env:AZURE_CLI_TELEMETRY_CAPTURE_DIR = $captureDirectory
+            $env:AZ_INSTALLER = "DEB"
+
+            $output = & $azureCliPython -m azure.cli connectedk8s connect -g $ENVCONFIG.resourceGroup -n $clusterName -l $ARC_LOCATION 2>&1
+            $connectSucceeded = $?
+
+            $connectSucceeded | Should -BeFalse
+            ($output -join "`n") | Should -Match "Pre-onboarding Diagnostic|pre-checks"
+
+            $events = Get-CapturedTelemetryEvents -CaptureDirectory $captureDirectory
+            $commands = @($events | Where-Object { $_.name -eq "azurecli/command" })
+            $faults = @($events | Where-Object { $_.name -eq "azurecli/fault" })
+            $extensions = @($events | Where-Object { $_.name -eq "azurecli/extension" })
+
+            $commands.Count | Should -Be 1
+            $faults.Count | Should -Be 1
+
+            $faultTypes = @(
+                $faults | ForEach-Object {
+                    $_.properties.'Context.Default.AzureCLI.FaultType'
+                }
+            )
+            $faultTypes | Should -Contain "cluster-diagnostic-prechecks-failed"
+            $faultTypes | Should -Not -Contain "prediagnostics-outbound-non2xx-response"
+            $faultTypes | Should -Not -Contain "unable-to-complete-cluster-diagnostic-checks-job-after-scheduling"
+            @($faultTypes | Where-Object { $_ -like "prediagnostics-job-*" }).Count | Should -Be 0
+            @($faultTypes | Where-Object { $_ -like "prediagnostics-dns-*" }).Count | Should -Be 0
+
+            $diagnosticTypes = @(
+                $extensions | ForEach-Object {
+                    $_.properties.'Context.Default.AzureCLI.onboardingErrorType'
+                } | Where-Object { $_ }
+            )
+            $diagnosticTypes | Should -Contain "prediagnostics-failure"
+        }
+        finally {
+            if ($null -eq $originalPythonPath) {
+                Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:PYTHONPATH = $originalPythonPath
+            }
+
+            if ($null -eq $originalCaptureDirectory) {
+                Remove-Item Env:AZURE_CLI_TELEMETRY_CAPTURE_DIR -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:AZURE_CLI_TELEMETRY_CAPTURE_DIR = $originalCaptureDirectory
+            }
+
+            if ($null -eq $originalAzInstaller) {
+                Remove-Item Env:AZ_INSTALLER -ErrorAction SilentlyContinue
+            }
+            else {
+                $env:AZ_INSTALLER = $originalAzInstaller
+            }
+
+            Invoke-RestoreCoreDNS
+            az connectedk8s delete -g $ENVCONFIG.resourceGroup -n $clusterName --force -y 2>&1 | Out-Null
+        }
     }
 
     It 'Entra endpoint block triggers prediagnostics-failure telemetry' {
