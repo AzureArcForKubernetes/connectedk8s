@@ -590,6 +590,29 @@ def report_connectedk8s_diagnostic(
     **context: object,
 ) -> str:
     """Report one standardized diagnostic to telemetry without raising it."""
+    return _report_connectedk8s_diagnostic(
+        cmd,
+        error,
+        exception=exception,
+        user_fault=user_fault,
+        emit_fault=emit_fault,
+        telemetry_properties=telemetry_properties,
+        fault_type=fault_type,
+        context=context,
+    )
+
+
+def _report_connectedk8s_diagnostic(
+    cmd: CLICommand | None,
+    error: errors.ArcError,
+    *,
+    exception: BaseException | None,
+    user_fault: bool,
+    emit_fault: bool,
+    telemetry_properties: dict[str, Any] | None,
+    fault_type: str | None,
+    context: dict[str, object],
+) -> str:
     message = error.format(**context)
     telemetry_message = sanitize_telemetry_text(message)
     properties = (telemetry_properties or {}).copy()
@@ -633,14 +656,15 @@ def report_connectedk8s_error(
     **context: object,
 ) -> AzCLIError:
     """Report one standardized error to telemetry and return its console exception."""
-    report_connectedk8s_diagnostic(
+    _report_connectedk8s_diagnostic(
         cmd,
         error,
         exception=exception,
         user_fault=user_fault,
+        emit_fault=True,
         telemetry_properties=telemetry_properties,
         fault_type=fault_type,
-        **context,
+        context=context,
     )
     return error.as_error(recommendation=recommendation, **context)
 

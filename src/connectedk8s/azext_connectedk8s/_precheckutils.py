@@ -32,6 +32,7 @@ import shutil
 from subprocess import PIPE, Popen
 from typing import TYPE_CHECKING, Any
 
+from azure.cli.core import telemetry  # noqa: F401
 from azure.cli.core.azclierror import AzCLIError
 from knack.log import get_logger
 from kubernetes import config, watch
