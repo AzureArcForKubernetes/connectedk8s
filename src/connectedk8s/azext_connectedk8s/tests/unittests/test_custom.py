@@ -491,7 +491,12 @@ def onboarding_access_context(monkeypatch):
     telemetry = MagicMock()
     monkeypatch.setattr(custom, "telemetry", telemetry)
     monkeypatch.setattr(custom.utils, "telemetry", telemetry)
-    monkeypatch.setattr(custom.precheckutils, "telemetry", telemetry)
+    monkeypatch.setattr(
+        custom.precheckutils,
+        "telemetry",
+        telemetry,
+        raising=False,
+    )
     for name, value in {
         "get_subscription_id": "subscription",
         "send_cloud_telemetry": "AzureCloud",
