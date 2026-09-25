@@ -10,7 +10,7 @@ import json
 import os
 import sys
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -24,15 +24,15 @@ _REAL_ADD_CONNECTEDK8S_TELEMETRY_EVENT = (
 )
 
 
-@pytest.fixture(autouse=True)
-def _route_wrapped_events_to_test_telemetry(monkeypatch):
+@pytest.fixture
+def diagnostic_event(monkeypatch):
+    add_event = MagicMock()
     monkeypatch.setattr(
         precheckutils.azext_utils,
         "add_connectedk8s_telemetry_event",
-        lambda _cmd, properties: precheckutils.telemetry.add_extension_event(
-            "connectedk8s", properties
-        ),
+        add_event,
     )
+    return add_event
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +159,6 @@ def test_prediagnostics_helm_install_uses_standardized_error(monkeypatch):
     cmd = SimpleNamespace(cli_ctx=SimpleNamespace(data={"connectedk8s_arm_id": arm_id}))
     mock_telemetry = MagicMock()
     monkeypatch.setattr(precheckutils.azext_utils, "telemetry", mock_telemetry)
-    monkeypatch.setattr(precheckutils, "telemetry", mock_telemetry)
     monkeypatch.setattr(
         precheckutils.azext_utils,
         "add_connectedk8s_telemetry_event",
@@ -197,7 +196,6 @@ def test_prediagnostics_helm_install_sets_user_fault_once(monkeypatch):
     monkeypatch.setattr(precheckutils, "Popen", MagicMock(return_value=process))
     mock_telemetry = MagicMock()
     monkeypatch.setattr(precheckutils.azext_utils, "telemetry", mock_telemetry)
-    monkeypatch.setattr(precheckutils, "telemetry", mock_telemetry)
 
     with pytest.raises(precheckutils.AzCLIError):
         precheckutils.helm_install_release_cluster_diagnostic_checks(
@@ -219,15 +217,13 @@ def test_prediagnostics_helm_install_sets_user_fault_once(monkeypatch):
     mock_telemetry.set_exception.assert_called_once()
 
 
-def test_log_save_failure_reports_azk8s0606_with_command_context(monkeypatch):
+def test_log_save_failure_reports_diagnostic_event_without_fault(monkeypatch):
     cmd = MagicMock()
     exception = OSError("write failed")
     add_event = MagicMock()
-    set_exception = MagicMock()
     monkeypatch.setattr(
         precheckutils.azext_utils, "add_connectedk8s_telemetry_event", add_event
     )
-    monkeypatch.setattr(precheckutils.telemetry, "set_exception", set_exception)
 
     precheckutils._report_prediagnostic_log_save_failure(cmd, exception)
 
@@ -236,11 +232,20 @@ def test_log_save_failure_reports_azk8s0606_with_command_context(monkeypatch):
     assert event_cmd is cmd
     assert properties[consts.Telemetry_Error_Code_Key] == "AZK8S0606"
     assert "write failed" in properties[consts.Telemetry_Error_Message_Key]
-    set_exception.assert_called_once_with(
-        exception=exception,
-        fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-        summary=properties[consts.Telemetry_Error_Message_Key],
+
+
+def test_contributing_prediagnostic_events_use_diagnostic_boundary(diagnostic_event):
+    precheckutils.send_prediagnostic_job_execution_error_telemetry(cmd=MagicMock())
+    precheckutils.send_prediagnostic_check_failure_telemetry(
+        consts.Diagnostic_Check_Failed,
+        consts.Diagnostic_Check_Passed,
+        cmd=MagicMock(),
     )
+    precheckutils.send_post_diagnostic_precheck_failure_telemetry(
+        "LinuxNodeExists", "No Linux nodes found", cmd=MagicMock()
+    )
+
+    assert diagnostic_event.call_count == 3
 
 
 def test_fetch_results_propagates_classified_azure_cli_error(monkeypatch):
@@ -279,6 +284,56 @@ def test_fetch_results_propagates_classified_azure_cli_error(monkeypatch):
         )
 
     assert exc_info.value is classified_error
+
+
+def test_fetch_results_reports_unclassified_error_once(monkeypatch):
+    class ClassifiedError(Exception):
+        pass
+
+    failure = RuntimeError("unexpected parsing failure")
+    terminal_error = ClassifiedError("[AZK8S0600] prediagnostics failed")
+    report_error = MagicMock(return_value=terminal_error)
+
+    monkeypatch.setattr(precheckutils, "AzCLIError", ClassifiedError)
+    monkeypatch.setattr(
+        precheckutils,
+        "executing_cluster_diagnostic_checks_job",
+        MagicMock(side_effect=failure),
+    )
+    monkeypatch.setattr(
+        precheckutils.azext_utils,
+        "report_connectedk8s_error",
+        report_error,
+    )
+
+    with pytest.raises(ClassifiedError) as exc_info:
+        precheckutils.fetch_diagnostic_checks_results(
+            cmd=MagicMock(),
+            corev1_api_instance=MagicMock(),
+            batchv1_api_instance=MagicMock(),
+            helm_client_location="helm",
+            kubectl_client_location="kubectl",
+            kube_config=None,
+            kube_context=None,
+            location="eastus",
+            http_proxy="",
+            https_proxy="",
+            no_proxy="",
+            proxy_cert="",
+            azure_cloud="AZUREPUBLICCLOUD",
+            filepath_with_timestamp="/tmp/prediagnostics",
+            storage_space_available=True,
+        )
+
+    assert exc_info.value is terminal_error
+    report_error.assert_called_once()
+    assert report_error.call_args.kwargs["exception"] is failure
+    assert report_error.call_args.kwargs["telemetry_properties"] == {
+        consts.Telemetry_Onboarding_Error_Type_Key: (
+            consts.Cluster_Diagnostic_Checks_Execution_Failed_Fault_Type
+        ),
+        consts.Telemetry_Onboarding_Error_Message_Key: str(failure),
+    }
 
 
 def test_job_execution_propagates_helm_install_error_unchanged(monkeypatch):
@@ -339,35 +394,30 @@ class TestSendJobExecutionErrorTelemetry:
     def setup_method(self):
         _reset_globals()
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_sends_event_with_correct_error_type(self, mock_telemetry):
+    def test_sends_event_with_correct_error_type(self, diagnostic_event):
         precheckutils.prediagnostic_job_execution_status = (
             consts.Job_Status_Execution_Failed
         )
         precheckutils.send_prediagnostic_job_execution_error_telemetry()
 
-        mock_telemetry.add_extension_event.assert_called_once()
-        args = mock_telemetry.add_extension_event.call_args
-        assert args[0][0] == "connectedk8s"
-        props = args[0][1]
+        diagnostic_event.assert_called_once()
+        props = diagnostic_event.call_args.args[1]
         assert (
             props[consts.Telemetry_Onboarding_Error_Type_Key]
             == consts.Install_Prediagnostics_Job_Execution_Error_Fault_Type
         )
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_message_includes_job_execution_status(self, mock_telemetry):
+    def test_message_includes_job_execution_status(self, diagnostic_event):
         precheckutils.prediagnostic_job_execution_status = (
             consts.Job_Status_Execution_Failed
         )
         precheckutils.send_prediagnostic_job_execution_error_telemetry()
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert msg["jobExecutionStatus"] == consts.Job_Status_Execution_Failed
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_message_includes_reason_when_provided(self, mock_telemetry):
+    def test_message_includes_reason_when_provided(self, diagnostic_event):
         precheckutils.prediagnostic_job_execution_status = (
             consts.Job_Status_Not_Completed
         )
@@ -375,25 +425,23 @@ class TestSendJobExecutionErrorTelemetry:
             reason="ImagePullBackOff"
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert msg["reason"] == "ImagePullBackOff"
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_message_omits_reason_when_empty(self, mock_telemetry):
+    def test_message_omits_reason_when_empty(self, diagnostic_event):
         precheckutils.send_prediagnostic_job_execution_error_telemetry()
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert "reason" not in msg
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_message_is_valid_json(self, mock_telemetry):
+    def test_message_is_valid_json(self, diagnostic_event):
         precheckutils.send_prediagnostic_job_execution_error_telemetry(
             reason="ContainerCreating"
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert isinstance(msg, dict)
 
@@ -407,28 +455,26 @@ class TestSendCheckFailureTelemetry:
     def setup_method(self):
         _reset_globals()
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_sends_event_with_correct_error_type(self, mock_telemetry):
+    def test_sends_event_with_correct_error_type(self, diagnostic_event):
         precheckutils.send_prediagnostic_check_failure_telemetry(
             consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
         )
 
-        mock_telemetry.add_extension_event.assert_called_once()
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        diagnostic_event.assert_called_once()
+        props = diagnostic_event.call_args.args[1]
         assert (
             props[consts.Telemetry_Onboarding_Error_Type_Key]
             == consts.Install_Prediagnostics_Fault_Type
         )
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_check_results_in_message(self, mock_telemetry):
+    def test_check_results_in_message(self, diagnostic_event):
         precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Failed
         precheckutils.prediagnostic_crd_check = consts.Diagnostic_Check_Passed
         precheckutils.send_prediagnostic_check_failure_telemetry(
             consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Failed
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         # msg is a list of component entries
         components = {entry["componentName"]: entry for entry in msg}
@@ -440,8 +486,7 @@ class TestSendCheckFailureTelemetry:
         assert components["entra"]["checkResult"] == consts.Diagnostic_Check_Failed
         assert components["crd"]["checkResult"] == consts.Diagnostic_Check_Passed
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_entra_error_extracted_from_diagnoser_output(self, mock_telemetry):
+    def test_entra_error_extracted_from_diagnoser_output(self, diagnostic_event):
         precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
             "Some log line",
@@ -451,14 +496,13 @@ class TestSendCheckFailureTelemetry:
             consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
         assert "error" in components["entra"]
         assert "000" in components["entra"]["error"]
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_dns_error_extracted_from_diagnoser_output(self, mock_telemetry):
+    def test_dns_error_extracted_from_diagnoser_output(self, diagnostic_event):
         precheckutils.diagnoser_output = [
             "DNS error: resolution failed for test.example.com",
         ]
@@ -466,13 +510,12 @@ class TestSendCheckFailureTelemetry:
             consts.Diagnostic_Check_Failed, consts.Diagnostic_Check_Passed
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
         assert "error" in components["dns"]
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_outbound_error_extracted_from_diagnoser_output(self, mock_telemetry):
+    def test_outbound_error_extracted_from_diagnoser_output(self, diagnostic_event):
         precheckutils.diagnoser_output = [
             "Outbound connectivity error: MCR not reachable",
         ]
@@ -480,13 +523,12 @@ class TestSendCheckFailureTelemetry:
             consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Failed
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
         assert "error" in components["outboundConnectivity"]
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_multiline_error_trimmed_to_first_line(self, mock_telemetry):
+    def test_multiline_error_trimmed_to_first_line(self, diagnostic_event):
         precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
             "Error: Entra endpoint error line1\nline2\nline3",
@@ -495,28 +537,26 @@ class TestSendCheckFailureTelemetry:
             consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
         assert "\n" not in components["entra"].get("error", "")
         assert "line1" in components["entra"].get("error", "")
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_no_error_detail_when_checks_pass(self, mock_telemetry):
+    def test_no_error_detail_when_checks_pass(self, diagnostic_event):
         precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Passed
         precheckutils.prediagnostic_crd_check = consts.Diagnostic_Check_Passed
         precheckutils.send_prediagnostic_check_failure_telemetry(
             consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
         for entry in components.values():
             assert "error" not in entry
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_non_error_lines_captured_as_fallback(self, mock_telemetry):
+    def test_non_error_lines_captured_as_fallback(self, diagnostic_event):
         """Lines mentioning entra without 'error'/'failed' are captured as fallback context."""
         precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
@@ -527,15 +567,14 @@ class TestSendCheckFailureTelemetry:
             consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
         # Fallback captures any matching line when no 'error'/'failed' line exists
         assert "error" in components["entra"]
         assert "Entra check: starting" in components["entra"]["error"]
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_crd_error_extracted_from_diagnoser_output(self, mock_telemetry):
+    def test_crd_error_extracted_from_diagnoser_output(self, diagnostic_event):
         precheckutils.prediagnostic_crd_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
             "CRD ownership error: extensionconfigs.clusterconfig.azure.com owned by another release",
@@ -544,13 +583,12 @@ class TestSendCheckFailureTelemetry:
             consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Passed
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
         assert "error" in components["crd"]
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_precheck_summary_line_excluded_from_error_details(self, mock_telemetry):
+    def test_precheck_summary_line_excluded_from_error_details(self, diagnostic_event):
         """The 'Precheck summary:' metadata line should not be captured as an error detail."""
         precheckutils.prediagnostic_outbound_check = consts.Diagnostic_Check_Failed
         precheckutils.diagnoser_output = [
@@ -561,7 +599,7 @@ class TestSendCheckFailureTelemetry:
             consts.Diagnostic_Check_Passed, consts.Diagnostic_Check_Failed
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         components = {entry["componentName"]: entry for entry in msg}
         # Should only contain the actual error, not the Precheck summary line
@@ -580,43 +618,38 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
     def setup_method(self):
         _reset_globals()
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_sends_event_with_correct_error_type(self, mock_telemetry):
+    def test_sends_event_with_correct_error_type(self, diagnostic_event):
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             "LinuxNodeExists", "No Linux nodes found"
         )
 
-        mock_telemetry.add_extension_event.assert_called_once()
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        diagnostic_event.assert_called_once()
+        props = diagnostic_event.call_args.args[1]
         assert (
             props[consts.Telemetry_Onboarding_Error_Type_Key]
             == consts.Post_Diagnostic_Precheck_Fault_Type
         )
-        mock_telemetry.set_exception.assert_called_once()
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_message_includes_check_name_and_reason(self, mock_telemetry):
+    def test_message_includes_check_name_and_reason(self, diagnostic_event):
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             "ClusterRoleBindings", "Insufficient permissions"
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert msg["checkName"] == "ClusterRoleBindings"
         assert msg["reason"] == "Insufficient permissions"
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_message_is_valid_json(self, mock_telemetry):
+    def test_message_is_valid_json(self, diagnostic_event):
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             "SomeCheck", "Some reason"
         )
 
-        props = mock_telemetry.add_extension_event.call_args[0][1]
+        props = diagnostic_event.call_args.args[1]
         msg = json.loads(props[consts.Telemetry_Onboarding_Error_Message_Key])
         assert isinstance(msg, dict)
 
-    @patch("azext_connectedk8s._precheckutils.telemetry")
-    def test_different_check_names_produce_separate_events(self, mock_telemetry):
+    def test_different_check_names_produce_separate_events(self, diagnostic_event):
         precheckutils.send_post_diagnostic_precheck_failure_telemetry(
             "LinuxNodeExists", "No nodes"
         )
@@ -624,10 +657,14 @@ class TestSendPostDiagnosticPrecheckFailureTelemetry:
             "ClusterRoleBindings", "No perms"
         )
 
-        assert mock_telemetry.add_extension_event.call_count == 2
-        calls = mock_telemetry.add_extension_event.call_args_list
-        msg1 = json.loads(calls[0][0][1][consts.Telemetry_Onboarding_Error_Message_Key])
-        msg2 = json.loads(calls[1][0][1][consts.Telemetry_Onboarding_Error_Message_Key])
+        assert diagnostic_event.call_count == 2
+        calls = diagnostic_event.call_args_list
+        msg1 = json.loads(
+            calls[0].args[1][consts.Telemetry_Onboarding_Error_Message_Key]
+        )
+        msg2 = json.loads(
+            calls[1].args[1][consts.Telemetry_Onboarding_Error_Message_Key]
+        )
         assert msg1["checkName"] == "LinuxNodeExists"
         assert msg2["checkName"] == "ClusterRoleBindings"
 
@@ -669,7 +706,7 @@ def _run_completed_prediagnostic_output(monkeypatch, output):
         precheckutils.prediagnostic_job_execution_status = consts.Job_Status_Completed
         return output
 
-    def parse_dns(log, _path, storage_available, _diagnoser_output):
+    def parse_dns(log, _path, storage_available, _diagnoser_output, **_kwargs):
         result = (
             consts.Diagnostic_Check_Passed
             if consts.DNS_Check_Result_String in log
