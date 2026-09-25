@@ -3211,6 +3211,8 @@ def add_agc_endpoint_overrides(
             f"systemDefaultValues.image.repository=mcr.microsoft.{cloud_suffix}",
             "--set",
             f"systemDefaultValues.MsiAdapterArtifactImageRegistry=mcr.microsoft.{cloud_suffix}",
+            "--set",
+            f"systemDefaultValues.kube-state-metrics.repository=mcr.microsoft.{cloud_suffix}",
         ]
     )
 
