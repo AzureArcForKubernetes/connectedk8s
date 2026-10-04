@@ -2471,6 +2471,7 @@ def get_server_address(
     return server_address
 
 
+@_telemetry_catch_all
 def get_connectedk8s(
     cmd: AzCliCommand,  # pylint: disable=unused-argument
     client: ConnectedClusterOperations,
@@ -2483,6 +2484,7 @@ def get_connectedk8s(
     return client.get(resource_group_name, cluster_name)
 
 
+@_telemetry_catch_all
 def list_connectedk8s(
     cmd: AzCliCommand,  # pylint: disable=unused-argument
     client: ConnectedClusterOperations,
@@ -3866,6 +3868,7 @@ def _validate_cluster_connect_disable(
         raise ArgumentUsageError(str(ex)) from ex
 
 
+@_telemetry_catch_all
 def enable_features(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -4128,6 +4131,7 @@ def enable_features(
     )
 
 
+@_telemetry_catch_all
 def disable_features(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -4574,6 +4578,7 @@ def handle_merge(
     existing[key].append(i)
 
 
+@_telemetry_catch_all
 def client_side_proxy_wrapper(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -5090,6 +5095,7 @@ def get_custom_locations_oid(cmd: CLICommand, cl_oid: str | None) -> str:
         return ""
 
 
+@_telemetry_catch_all
 def troubleshoot(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
