@@ -23,7 +23,7 @@ import time
 from base64 import b64decode, b64encode
 from concurrent.futures import ThreadPoolExecutor
 from subprocess import DEVNULL, PIPE, Popen
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, overload
 
 import oras.client  # type: ignore[import-untyped]
 import yaml
@@ -2576,9 +2576,12 @@ def delete_connectedk8s(
         resource_group_name,
         cluster_name,
         operation="delete",
+        return_if_not_found=True,
     )
-    if (cluster_resource.kind is not None) and (
-        cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind
+    if (
+        cluster_resource is not None
+        and (cluster_resource.kind is not None)
+        and (cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind)
     ):
         err_msg = (
             "Deleting a Provisioned Cluster is not supported from the Connected Cluster CLI. Please use the "
@@ -2632,14 +2635,15 @@ def delete_connectedk8s(
             cmd, azure_cloud=azure_cloud
         )
 
-        delete_cc_resource(
-            cmd,
-            client,
-            resource_group_name,
-            cluster_name,
-            no_wait,
-            force=force_delete,
-        )
+        if cluster_resource is not None:
+            delete_cc_resource(
+                cmd,
+                client,
+                resource_group_name,
+                cluster_name,
+                no_wait,
+                force=force_delete,
+            )
 
         # Explicit CRD Deletion
         crd_cleanup_force_delete(
@@ -2660,14 +2664,15 @@ def delete_connectedk8s(
         return
 
     if not release_namespace:
-        delete_cc_resource(
-            cmd,
-            client,
-            resource_group_name,
-            cluster_name,
-            no_wait,
-            force=force_delete,
-        )
+        if cluster_resource is not None:
+            delete_cc_resource(
+                cmd,
+                client,
+                resource_group_name,
+                cluster_name,
+                no_wait,
+                force=force_delete,
+            )
         return
 
     # Loading config map
@@ -2723,14 +2728,15 @@ def delete_connectedk8s(
                 recommendation=reco_str,
             )
 
-        delete_cc_resource(
-            cmd,
-            client,
-            resource_group_name,
-            cluster_name,
-            no_wait,
-            force=force_delete,
-        )
+        if cluster_resource is not None:
+            delete_cc_resource(
+                cmd,
+                client,
+                resource_group_name,
+                cluster_name,
+                no_wait,
+                force=force_delete,
+            )
     else:
         err_msg = (
             "The current context in the kubeconfig file does not correspond "
@@ -2797,6 +2803,7 @@ def put_cc_resource(
     assert False
 
 
+@overload
 def get_cc_resource(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -2804,7 +2811,31 @@ def get_cc_resource(
     cluster_name: str,
     *,
     operation: Literal["update", "delete"],
-) -> ConnectedCluster:
+    return_if_not_found: Literal[False] = False,
+) -> ConnectedCluster: ...
+
+
+@overload
+def get_cc_resource(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    *,
+    operation: Literal["update", "delete"],
+    return_if_not_found: Literal[True],
+) -> ConnectedCluster | None: ...
+
+
+def get_cc_resource(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    *,
+    operation: Literal["update", "delete"],
+    return_if_not_found: bool = False,
+) -> ConnectedCluster | None:
     operation_error = (
         errors.CONNECTED_CLUSTER_UPDATE_FAILED
         if operation == "update"
@@ -2817,9 +2848,17 @@ def get_cc_resource(
             e,
             operation_error.fault_type,
             f"Unable to get connected cluster resource for {operation}",
+            return_if_not_found=return_if_not_found,
             cmd=cmd,
             error=operation_error,
         )
+
+        if return_if_not_found:
+            logger.warning(
+                "Could not find the Azure connected cluster resource. "
+                "Proceeding with local cleanup."
+            )
+            return None
 
     assert False
 
