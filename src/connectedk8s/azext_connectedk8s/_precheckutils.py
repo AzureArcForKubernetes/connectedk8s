@@ -446,6 +446,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                 filepath_with_timestamp,
                 storage_space_available,
                 diagnoser_output,
+                cmd=cmd,
             )
             prediagnostic_dns_check = dns_check
             outbound_connectivity_check, storage_space_available = (
@@ -537,7 +538,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
         # The container may have exited early, causing some checks to appear
         # Passed/NotApplicable while later checks never actually executed.
         if prediagnostic_job_execution_status == consts.Job_Status_Not_Completed:
-            send_prediagnostic_job_execution_error_telemetry()
+            send_prediagnostic_job_execution_error_telemetry(cmd=cmd)
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
         # All checks passed or not applicable
