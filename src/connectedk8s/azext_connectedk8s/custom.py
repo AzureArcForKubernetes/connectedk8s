@@ -2894,7 +2894,8 @@ def get_cc_resource(
     *,
     operation: Literal["update", "delete"],
     return_if_not_found: Literal[False] = False,
-) -> ConnectedCluster: ...
+) -> ConnectedCluster:
+    ...
 
 
 @overload
@@ -2906,7 +2907,8 @@ def get_cc_resource(
     *,
     operation: Literal["update", "delete"],
     return_if_not_found: Literal[True],
-) -> ConnectedCluster | None: ...
+) -> ConnectedCluster | None:
+    ...
 
 
 def get_cc_resource(
