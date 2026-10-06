@@ -1017,6 +1017,10 @@ ARC_SKIP_RANGE = (
     ",.dp.kubernetesconfiguration.azure.com"
     ",.guestconfiguration.azure.com"
 )
+GATEWAY_RESOURCE_ID = (
+    "/subscriptions/00000000-0000-0000-0000-000000000000/"
+    "resourceGroups/rg/providers/Microsoft.HybridCompute/gateways/gateway"
+)
 
 ARC_ENDPOINTS_TEXT = ", ".join(ARC_SKIP_RANGE.split(","))
 ARC_APPLIED_MESSAGE = consts.Proxy_Bypass_Arc_Applied_Message.format(
@@ -1627,7 +1631,7 @@ def test_update_with_only_protected_no_proxy_keeps_the_no_parameters_error(
 ):
     env = proxy_command_environment
     with pytest.raises(
-        custom.RequiredArgumentMissingError, match="No parameters were specified"
+        RequiredArgumentMissingError, match=r"\[AZK8S0101\] UpdateNoParameters"
     ):
         custom.update_connected_cluster(
             env.cmd,
@@ -1809,7 +1813,7 @@ def test_existing_cluster_preserves_arc_while_replacing_the_range(
             env.client,
             "rg",
             "cluster",
-            gateway_resource_id="gateway",
+            gateway_resource_id=GATEWAY_RESOURCE_ID,
             **deepcopy(arguments),
         )
     else:
@@ -1937,7 +1941,7 @@ def test_arc_ownership_failure_stops_before_helm_changes(
                 "rg",
                 "cluster",
                 no_proxy="1.1.1.1",
-                gateway_resource_id="gateway",
+                gateway_resource_id=GATEWAY_RESOURCE_ID,
                 tags={"purpose": "test"},
             )
         else:
