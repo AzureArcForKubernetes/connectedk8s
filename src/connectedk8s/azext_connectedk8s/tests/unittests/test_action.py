@@ -20,7 +20,11 @@ from azext_connectedk8s.action import (
 @pytest.mark.parametrize(
     "action,option,dest",
     [
-        (AddConfigurationSettings, "--configuration-settings", "configuration_settings"),
+        (
+            AddConfigurationSettings,
+            "--configuration-settings",
+            "configuration_settings",
+        ),
         (
             AddConfigurationProtectedSettings,
             "--configuration-protected-settings",
