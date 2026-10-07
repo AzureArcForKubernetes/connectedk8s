@@ -136,6 +136,20 @@ def test_validate_accepts_a_namespace_without_the_flags():
     validate_proxy_bypass(Namespace())
 
 
+@pytest.mark.parametrize("no_proxy", ["Arc", "arc", "10.0.0.0/8, Arc"])
+def test_validate_rejects_arc_in_proxy_skip_range(no_proxy):
+    with pytest.raises(ArgumentUsageError) as err:
+        validate_proxy_bypass(_namespace(no_proxy=no_proxy))
+
+    message = str(err.value)
+    assert "--proxy-skip-range Arc is no longer supported" in message
+    assert "--add-proxy-bypass Arc" in message
+
+
+def test_validate_allows_arc_as_part_of_a_proxy_skip_range_entry():
+    validate_proxy_bypass(_namespace(no_proxy="arc.example,.his.arc.azure.com"))
+
+
 @pytest.mark.parametrize(
     "added,cleared",
     [(ARC, CONTAINER_INSIGHTS), (CONTAINER_INSIGHTS, ARC)],
