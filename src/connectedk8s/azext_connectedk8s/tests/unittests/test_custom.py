@@ -1103,9 +1103,7 @@ def test_add_arc_endpoints(no_proxy, expected):
         ("Arc", "arc", ("", "arc")),
     ],
 )
-def test_normalize_legacy_arc_proxy_skip_range(
-    no_proxy, add_proxy_bypass, expected
-):
+def test_normalize_legacy_arc_proxy_skip_range(no_proxy, add_proxy_bypass, expected):
     assert normalize_legacy_arc_proxy_skip_range(no_proxy, add_proxy_bypass) == expected
 
 
