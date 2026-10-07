@@ -222,24 +222,18 @@ def test_prediagnostics_helm_install_sets_user_fault_once(monkeypatch):
 def test_log_save_failure_reports_azk8s0606_with_command_context(monkeypatch):
     cmd = MagicMock()
     exception = OSError("write failed")
-    add_event = MagicMock()
-    set_exception = MagicMock()
+    diagnostic = MagicMock(return_value="sanitized message")
     monkeypatch.setattr(
-        precheckutils.azext_utils, "add_connectedk8s_telemetry_event", add_event
+        precheckutils.azext_utils, "report_connectedk8s_diagnostic", diagnostic
     )
-    monkeypatch.setattr(precheckutils.telemetry, "set_exception", set_exception)
 
     precheckutils._report_prediagnostic_log_save_failure(cmd, exception)
 
-    add_event.assert_called_once()
-    event_cmd, properties = add_event.call_args.args
-    assert event_cmd is cmd
-    assert properties[consts.Telemetry_Error_Code_Key] == "AZK8S0606"
-    assert "write failed" in properties[consts.Telemetry_Error_Message_Key]
-    set_exception.assert_called_once_with(
+    diagnostic.assert_called_once_with(
+        cmd,
+        precheckutils.errors.PREDIAGNOSTICS_LOG_SAVE_FAILED,
         exception=exception,
         fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-        summary=properties[consts.Telemetry_Error_Message_Key],
     )
 
 

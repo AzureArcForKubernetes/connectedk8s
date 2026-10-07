@@ -232,20 +232,11 @@ def send_prediagnostic_job_execution_error_telemetry(
 def _report_prediagnostic_log_save_failure(
     cmd: CLICommand, exception: BaseException
 ) -> None:
-    message = errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.format(details=str(exception))
-    azext_utils.add_connectedk8s_telemetry_event(
+    message = azext_utils.report_connectedk8s_diagnostic(
         cmd,
-        {
-            consts.Telemetry_Error_Code_Key: errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.code,
-            consts.Telemetry_Error_Fault_Type_Key: consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-            consts.Telemetry_Error_Name_Key: errors.PREDIAGNOSTICS_LOG_SAVE_FAILED.name,
-            consts.Telemetry_Error_Message_Key: message,
-        },
-    )
-    telemetry.set_exception(
+        errors.PREDIAGNOSTICS_LOG_SAVE_FAILED,
         exception=exception,
         fault_type=consts.Cluster_Diagnostic_Checks_Job_Log_Save_Failed,
-        summary=message,
     )
     logger.warning(message)
 
