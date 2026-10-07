@@ -37,13 +37,6 @@ def validate_proxy_bypass(namespace: Namespace) -> None:
     # --clear-proxy-bypass is update-only, so both flags are read defensively.
     added = getattr(namespace, "add_proxy_bypass", None)
     cleared = getattr(namespace, "clear_proxy_bypass", None)
-    no_proxy = getattr(namespace, "no_proxy", None)
-    if has_proxy_bypass_keyword(no_proxy, consts.Proxy_Bypass_Arc_Keyword):
-        raise ArgumentUsageError(
-            "--proxy-skip-range Arc is no longer supported. "
-            "Use --add-proxy-bypass Arc instead."
-        )
-
     for flag, value in (
         ("--add-proxy-bypass", added),
         ("--clear-proxy-bypass", cleared),

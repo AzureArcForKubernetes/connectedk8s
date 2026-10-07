@@ -98,7 +98,6 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             "no_proxy",
             options_list=["--proxy-skip-range"],
             arg_group="Proxy",
-            validator=validate_proxy_bypass,
             help=(
                 "List of URLs/CIDRs for which proxy should not be used. Replaces the "
                 "proxy skip range while preserving endpoints added through "
@@ -277,7 +276,6 @@ def load_arguments(self: Connectedk8sCommandsLoader, _: CLICommand) -> None:  # 
             "no_proxy",
             options_list=["--proxy-skip-range"],
             arg_group="Proxy",
-            validator=validate_proxy_bypass,
             help=(
                 "List of URLs/CIDRs for which proxy should not be used. Replaces the "
                 "proxy skip range while preserving endpoints added through "
