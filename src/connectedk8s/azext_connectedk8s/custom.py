@@ -370,6 +370,9 @@ def create_connectedk8s(
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
 
+    no_proxy, add_proxy_bypass = normalize_legacy_arc_proxy_skip_range(
+        no_proxy, add_proxy_bypass
+    )
     # Preserve the original range for reconnects before merging and escaping.
     requested_no_proxy = no_proxy or None
     # None means no ownership override, not that Arc bypass is disabled.
@@ -1627,6 +1630,29 @@ def add_arc_proxy_skip_range_endpoints(cmd: CLICommand, no_proxy: str) -> str:
             entries.append(entry)
             existing.add(entry.lower())
     return ",".join(entries)
+
+
+def normalize_legacy_arc_proxy_skip_range(
+    no_proxy: str, add_proxy_bypass: str
+) -> tuple[str, str]:
+    entries = [entry.strip() for entry in no_proxy.split(",") if entry.strip()]
+    if not any(
+        entry.lower() == consts.Proxy_Bypass_Arc_Keyword.lower() for entry in entries
+    ):
+        return no_proxy, add_proxy_bypass
+
+    logger.warning(consts.Proxy_Bypass_Arc_Legacy_Alias_Warning)
+    user_entries = [
+        entry
+        for entry in entries
+        if entry.lower() != consts.Proxy_Bypass_Arc_Keyword.lower()
+    ]
+    bypass_keywords = validators.parse_proxy_bypass_keywords(add_proxy_bypass)
+    if not validators.has_proxy_bypass_keyword(
+        add_proxy_bypass, consts.Proxy_Bypass_Arc_Keyword
+    ):
+        bypass_keywords.append(consts.Proxy_Bypass_Arc_Keyword)
+    return ",".join(user_entries), ",".join(bypass_keywords)
 
 
 def has_arc_proxy_skip_range_endpoints(
@@ -3024,6 +3050,9 @@ def update_connected_cluster(
     # Escaping comma, forward slash present in http proxy urls, needed for helm params.
     http_proxy = escape_proxy_settings(http_proxy)
 
+    no_proxy, add_proxy_bypass = normalize_legacy_arc_proxy_skip_range(
+        no_proxy, add_proxy_bypass
+    )
     # Preserve the raw range for ownership resolution before Helm escaping.
     requested_no_proxy = no_proxy or None
 

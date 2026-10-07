@@ -41,6 +41,7 @@ from azext_connectedk8s.custom import (
     get_kubernetes_distro,
     get_kubernetes_infra,
     has_arc_proxy_skip_range_endpoints,
+    normalize_legacy_arc_proxy_skip_range,
     resolve_arc_proxy_bypass,
 )
 
@@ -1059,6 +1060,25 @@ def test_add_arc_endpoints(no_proxy, expected):
     assert add_arc_proxy_skip_range_endpoints(_proxy_cmd(), no_proxy) == expected
 
 
+@pytest.mark.parametrize(
+    "no_proxy,add_proxy_bypass,expected",
+    [
+        ("Arc", "", ("", "Arc")),
+        (
+            "1.1.1.1,arc,10.0.0.0/8",
+            "ContainerInsights",
+            ("1.1.1.1,10.0.0.0/8", "ContainerInsights,Arc"),
+        ),
+        ("Arc.example", "", ("Arc.example", "")),
+        ("Arc", "arc", ("", "arc")),
+    ],
+)
+def test_normalize_legacy_arc_proxy_skip_range(
+    no_proxy, add_proxy_bypass, expected
+):
+    assert normalize_legacy_arc_proxy_skip_range(no_proxy, add_proxy_bypass) == expected
+
+
 # ---------------- Tests for has_arc_proxy_skip_range_endpoints ----------------
 @pytest.mark.parametrize(
     "no_proxy,expected",
@@ -1719,6 +1739,7 @@ def test_proxy_commands_keep_other_protected_settings_with_arc(
             "1.1.1.1",
         ),
         ({"no_proxy": ARC_SKIP_RANGE}, ARC_SKIP_RANGE),
+        ({"no_proxy": "Arc"}, ""),
     ],
 )
 def test_connect_sends_arc_ownership_and_effective_range_to_helm(

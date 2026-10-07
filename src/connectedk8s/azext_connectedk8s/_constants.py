@@ -305,6 +305,9 @@ Proxy_Bypass_Arc_Overlap_Warning = (
     "current or a previous run and will be preserved when "
     "--clear-proxy-bypass Arc is used."
 )
+Proxy_Bypass_Arc_Legacy_Alias_Warning = (
+    "--proxy-skip-range Arc is deprecated. Use --add-proxy-bypass Arc instead."
+)
 # Confirms the clear, naming the endpoints so removing the bypass reads like applying it.
 Proxy_Bypass_Arc_Cleared_Message = (
     "Clearing the Arc bypass for Azure Arc endpoints {endpoints}."
