@@ -2,6 +2,10 @@
 
 Release History
 ===============
+1.11.4
+++++++
+* Report the missing Python module name in telemetry and command output when connectedk8s dependencies cannot be loaded.
+
 1.11.3
 +++++++
 * Fix container log parsing issue for environments using Python Kubernetes client 36.0 or higher.

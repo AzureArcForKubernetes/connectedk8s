@@ -22,7 +22,7 @@ class Connectedk8sCommandsLoader(AzCommandsLoader):  # type: ignore[misc]
         from azext_connectedk8s._client_factory import cf_connectedk8s
 
         connectedk8s_custom = CliCommandType(
-            operations_tmpl="azext_connectedk8s.custom#{}",
+            operations_tmpl="azext_connectedk8s._command_handlers#{}",
             client_factory=cf_connectedk8s,
         )
         super().__init__(cli_ctx=cli_ctx, custom_command_type=connectedk8s_custom)

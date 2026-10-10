@@ -487,7 +487,7 @@ def test_arc_error_formats_optional_tsg_link():
 
 def test_error_catalog_contains_allocated_codes_and_fault_type_aliases():
     expected_codes = {
-        *(f"AZK8S{code:04d}" for code in range(1, 4)),
+        *(f"AZK8S{code:04d}" for code in range(1, 5)),
         *(f"AZK8S{code:04d}" for code in range(100, 108)),
         *(f"AZK8S{code:04d}" for code in range(200, 210)),
         *(f"AZK8S{code:04d}" for code in range(300, 310)),

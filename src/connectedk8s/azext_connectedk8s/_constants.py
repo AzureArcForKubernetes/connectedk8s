@@ -15,6 +15,7 @@ Telemetry_Error_Message_Key = "Context.Default.AzureCLI.errorMessage"
 Telemetry_Error_Tsg_Link_Key = "Context.Default.AzureCLI.errorTsgLink"
 Telemetry_Error_Exception_Type_Key = "Context.Default.AzureCLI.errorExceptionType"
 Telemetry_Error_Http_Status_Code_Key = "Context.Default.AzureCLI.errorHttpStatusCode"
+Telemetry_Error_Missing_Module_Key = "Context.Default.AzureCLI.errorMissingModule"
 Telemetry_Warning_Code_Key = "Context.Default.AzureCLI.warningCode"
 Telemetry_Warning_Fault_Type_Key = "Context.Default.AzureCLI.warningFaultType"
 Telemetry_Warning_Name_Key = "Context.Default.AzureCLI.warningName"
@@ -710,6 +711,7 @@ CRD_Ownership_Check_Failed_String = "Check Failed: CRD"
 # Canonical fault-type names used by the standardized AZK8S error catalog.
 # Aliases retain the exact string values already emitted by existing call sites.
 Catch_All_Fault_Type = "unexpected-connectedk8s-error"
+Missing_Python_Module_Fault_Type = "connectedk8s-python-module-not-found"
 Unsupported_OS_Fault_Type = Unsupported_Fault_Type
 Unsupported_Operation_Provisioned_Cluster_Fault_Type = (
     Provisioned_Cluster_Operation_Fault_Type

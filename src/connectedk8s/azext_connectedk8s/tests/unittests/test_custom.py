@@ -119,6 +119,29 @@ def test_telemetry_catch_all_does_not_report_classified_error_twice(monkeypatch)
     report_error.assert_not_called()
 
 
+def test_telemetry_catch_all_reports_missing_module_name(monkeypatch):
+    missing_module = "missing_connectedk8s_dependency"
+    report_error = MagicMock(return_value=RuntimeError("reported"))
+    monkeypatch.setattr(custom.utils, "report_connectedk8s_error", report_error)
+
+    @_telemetry_catch_all
+    def command():
+        raise ModuleNotFoundError(
+            f"No module named '{missing_module}'", name=missing_module
+        )
+
+    with pytest.raises(RuntimeError):
+        command()
+
+    assert (
+        report_error.call_args.kwargs["telemetry_properties"][
+            consts.Telemetry_Error_Missing_Module_Key
+        ]
+        == missing_module
+    )
+    assert report_error.call_args.kwargs["module_name"] == missing_module
+
+
 def _cmd_without_arm_id():
     return SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
 

@@ -129,14 +129,29 @@ def _telemetry_catch_all(func: Callable[..., Any]) -> Callable[..., Any]:
 
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
+        cmd = args[0] if args and hasattr(args[0], "cli_ctx") else kwargs.get("cmd")
+        if cmd is not None and not hasattr(cmd, "cli_ctx"):
+            cmd = None
         try:
             return func(*args, **kwargs)
         except AzCLIError:
             raise  # Already properly classified
+        except ModuleNotFoundError as ex:
+            module_name = ex.name or "unknown"
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.MISSING_PYTHON_MODULE,
+                exception=ex,
+                telemetry_properties={
+                    consts.Telemetry_Error_Missing_Module_Key: module_name
+                },
+                module_name=module_name,
+                details=(
+                    "Reinstall the connectedk8s extension and retry the command. "
+                    "If the problem continues, contact support with this module name."
+                ),
+            ) from ex
         except Exception as ex:
-            cmd = args[0] if args and hasattr(args[0], "cli_ctx") else kwargs.get("cmd")
-            if cmd is not None and not hasattr(cmd, "cli_ctx"):
-                cmd = None
             raise utils.report_connectedk8s_error(
                 cmd,
                 errors.UNEXPECTED_ERROR,

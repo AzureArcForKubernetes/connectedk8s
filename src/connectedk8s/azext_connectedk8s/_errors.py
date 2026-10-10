@@ -132,6 +132,12 @@ UNSUPPORTED_PROVISIONED_CLUSTER_OPERATION = _define(
     fault_type=consts.Unsupported_Operation_Provisioned_Cluster_Fault_Type,
     az_error_cls=InvalidArgumentValueError,
 )
+MISSING_PYTHON_MODULE = _define(
+    code="AZK8S0004",
+    name="MissingPythonModule",
+    description="The connectedk8s extension could not load required Python module '{module_name}'.",
+    fault_type=consts.Missing_Python_Module_Fault_Type,
+)
 
 # Configuration & Input (AZK8S0100-AZK8S0199)
 INVALID_ARGUMENT_VALUE = _define(
@@ -650,6 +656,7 @@ ALL_ERRORS: tuple[ArcError, ...] = (
     UNEXPECTED_ERROR,
     UNSUPPORTED_OPERATING_SYSTEM,
     UNSUPPORTED_PROVISIONED_CLUSTER_OPERATION,
+    MISSING_PYTHON_MODULE,
     INVALID_ARGUMENT_VALUE,
     UPDATE_NO_PARAMETERS,
     UPDATE_PROXY_PARAMETER_CONFLICT,
