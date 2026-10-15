@@ -235,21 +235,31 @@ def test_read_diagnostic_pod_log_retries_transient_error(monkeypatch):
     sleep.assert_called_once_with(1)
 
 
-def test_read_diagnostic_pod_log_raises_after_transient_retries(monkeypatch):
+def test_read_diagnostic_pod_log_continues_after_transient_retries(monkeypatch):
     corev1_api = MagicMock()
     corev1_api.read_namespaced_pod_log.side_effect = ApiException(status=500)
     sleep = MagicMock()
+    warning = MagicMock()
+    telemetry_event = MagicMock()
     monkeypatch.setattr(precheckutils.time, "sleep", sleep)
+    monkeypatch.setattr(precheckutils.logger, "warning", warning)
+    monkeypatch.setattr(
+        precheckutils, "_send_onboarding_telemetry_event", telemetry_event
+    )
 
-    with pytest.raises(ApiException) as raised:
-        precheckutils._read_diagnostic_pod_log(corev1_api, "diagnostic-pod")
+    result = precheckutils._read_diagnostic_pod_log(corev1_api, "diagnostic-pod")
 
-    assert raised.value.status == 500
+    assert result == ""
     assert (
         corev1_api.read_namespaced_pod_log.call_count
         == precheckutils._POD_LOG_READ_MAX_ATTEMPTS
     )
     assert [call.args[0] for call in sleep.call_args_list] == [1, 2, 4]
+    assert "Continuing onboarding without verified" in warning.call_args.args[0]
+    telemetry_event.assert_called_once_with(
+        "prediagnostics-log-retrieval-unavailable",
+        warning.call_args.args[0],
+    )
 
 
 def test_read_diagnostic_pod_log_does_not_retry_permanent_error(monkeypatch):

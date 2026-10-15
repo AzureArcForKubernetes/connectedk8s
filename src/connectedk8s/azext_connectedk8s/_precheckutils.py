@@ -86,12 +86,22 @@ def _read_diagnostic_pod_log(corev1_api_instance: CoreV1Api, pod_name: str) -> A
                 namespace="azure-arc-release",
             )
         except ApiException as exception:
-            should_retry = (
-                exception.status in _TRANSIENT_KUBERNETES_API_STATUSES
-                and attempt < _POD_LOG_READ_MAX_ATTEMPTS
-            )
-            if not should_retry:
+            if exception.status not in _TRANSIENT_KUBERNETES_API_STATUSES:
                 raise
+
+            if attempt == _POD_LOG_READ_MAX_ATTEMPTS:
+                message = (
+                    "The diagnostic job completed, but its logs could not be retrieved after "
+                    f"{_POD_LOG_READ_MAX_ATTEMPTS} attempts due to transient Kubernetes API "
+                    f"error {exception.status}. Continuing onboarding without verified "
+                    "pre-onboarding diagnostic results."
+                )
+                logger.warning(message)
+                _send_onboarding_telemetry_event(
+                    "prediagnostics-log-retrieval-unavailable",
+                    message,
+                )
+                return ""
 
             retry_delay_seconds = 2 ** (attempt - 1)
             logger.warning(
