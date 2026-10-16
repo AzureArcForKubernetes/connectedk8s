@@ -547,8 +547,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
         if (
             consts.Diagnostic_Check_Incomplete
             in (dns_check, outbound_connectivity_check)
-            and prediagnostic_job_execution_status
-            != consts.Job_Status_Not_Completed
+            and prediagnostic_job_execution_status != consts.Job_Status_Not_Completed
         ):
             diagnoser_output.append(
                 "Precheck summary: "
@@ -566,14 +565,10 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
 
         # Return Incomplete if any mandatory check couldn't be determined
         if (
-            (
-                dns_check == consts.Diagnostic_Check_Incomplete
-                or outbound_connectivity_check == consts.Diagnostic_Check_Incomplete
-                or prediagnostic_entra_check == consts.Diagnostic_Check_Incomplete
-            )
-            and prediagnostic_job_execution_status
-            != consts.Job_Status_Not_Completed
-        ):
+            dns_check == consts.Diagnostic_Check_Incomplete
+            or outbound_connectivity_check == consts.Diagnostic_Check_Incomplete
+            or prediagnostic_entra_check == consts.Diagnostic_Check_Incomplete
+        ) and prediagnostic_job_execution_status != consts.Job_Status_Not_Completed:
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
         # Return Failed only if at least one check actually failed

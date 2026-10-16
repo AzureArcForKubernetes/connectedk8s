@@ -808,9 +808,7 @@ def _run_completed_prediagnostic_output(
     "job_status",
     [consts.Job_Status_Not_Scheduled, consts.Job_Status_Cleanup_Failed],
 )
-def test_lifecycle_warning_without_logs_continues_onboarding(
-    monkeypatch, job_status
-):
+def test_lifecycle_warning_without_logs_continues_onboarding(monkeypatch, job_status):
     send_job_error = MagicMock()
     monkeypatch.setattr(
         precheckutils,
