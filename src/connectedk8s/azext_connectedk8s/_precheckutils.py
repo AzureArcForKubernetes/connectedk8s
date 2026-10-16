@@ -415,7 +415,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
         (result, storage_space_available) where result is one of:
           - Diagnostic_Check_Passed: all checks passed, safe to proceed with onboarding
           - Diagnostic_Check_Failed: at least one check failed, onboarding may be blocked
-          - Diagnostic_Check_Incomplete: job didn't run or checks couldn't be determined
+          - Diagnostic_Check_Incomplete: checks couldn't be determined for an unexpected reason
     """
     global prediagnostic_job_execution_status, prediagnostic_dns_check, prediagnostic_outbound_check, prediagnostic_entra_check, prediagnostic_crd_check  # pylint: disable=global-statement
     try:
@@ -454,6 +454,11 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                 f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
             )
             send_prediagnostic_job_execution_error_telemetry(cmd=cmd)
+            if prediagnostic_job_execution_status in (
+                consts.Job_Status_Not_Scheduled,
+                consts.Job_Status_Cleanup_Failed,
+            ):
+                return consts.Diagnostic_Check_Passed, storage_space_available
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
         if cluster_diagnostic_checks_container_log != "":
@@ -521,7 +526,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                 prediagnostic_entra_check = consts.Diagnostic_Check_Not_Applicable
             prediagnostic_crd_check = _parse_crd_check_result(crd_check_log)
         else:
-            # Empty log — if job didn't complete (e.g., pod never scheduled), treat as Incomplete not Passed
+            # An empty log from a scheduled but incomplete job is warning-only.
             if prediagnostic_job_execution_status == consts.Job_Status_Not_Completed:
                 # Mark all individual checks as NotApplicable since the pod never produced output
                 prediagnostic_dns_check = consts.Diagnostic_Check_Not_Applicable
@@ -535,13 +540,15 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                     f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
                 )
                 send_prediagnostic_job_execution_error_telemetry(cmd=cmd)
-                return consts.Diagnostic_Check_Incomplete, storage_space_available
+                return consts.Diagnostic_Check_Passed, storage_space_available
             return consts.Diagnostic_Check_Passed, storage_space_available
 
         # If any of the check remain Incomplete than we will return Incomplete
-        if consts.Diagnostic_Check_Incomplete in (
-            dns_check,
-            outbound_connectivity_check,
+        if (
+            consts.Diagnostic_Check_Incomplete
+            in (dns_check, outbound_connectivity_check)
+            and prediagnostic_job_execution_status
+            != consts.Job_Status_Not_Completed
         ):
             diagnoser_output.append(
                 "Precheck summary: "
@@ -559,9 +566,13 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
 
         # Return Incomplete if any mandatory check couldn't be determined
         if (
-            dns_check == consts.Diagnostic_Check_Incomplete
-            or outbound_connectivity_check == consts.Diagnostic_Check_Incomplete
-            or prediagnostic_entra_check == consts.Diagnostic_Check_Incomplete
+            (
+                dns_check == consts.Diagnostic_Check_Incomplete
+                or outbound_connectivity_check == consts.Diagnostic_Check_Incomplete
+                or prediagnostic_entra_check == consts.Diagnostic_Check_Incomplete
+            )
+            and prediagnostic_job_execution_status
+            != consts.Job_Status_Not_Completed
         ):
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
@@ -577,12 +588,10 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
             )
             return consts.Diagnostic_Check_Failed, storage_space_available
 
-        # If the job did not complete, partial results cannot be trusted -- treat as Incomplete.
-        # The container may have exited early, causing some checks to appear
-        # Passed/NotApplicable while later checks never actually executed.
+        # A lifecycle failure is warning-only when every check that produced a result passed.
         if prediagnostic_job_execution_status == consts.Job_Status_Not_Completed:
             send_prediagnostic_job_execution_error_telemetry(cmd=cmd)
-            return consts.Diagnostic_Check_Incomplete, storage_space_available
+            return consts.Diagnostic_Check_Passed, storage_space_available
 
         # All checks passed or not applicable
         return consts.Diagnostic_Check_Passed, storage_space_available
