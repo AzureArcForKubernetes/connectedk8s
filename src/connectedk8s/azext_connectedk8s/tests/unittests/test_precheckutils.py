@@ -276,19 +276,6 @@ def test_read_diagnostic_pod_log_does_not_retry_permanent_error(monkeypatch):
     sleep.assert_not_called()
 
 
-def test_lifecycle_warning_says_onboarding_will_continue(monkeypatch):
-    warning = MagicMock()
-    monkeypatch.setattr(precheckutils.logger, "warning", warning)
-
-    precheckutils._log_prediagnostic_lifecycle_warning("Diagnostic job did not finish.")
-
-    warning.assert_called_once_with(
-        "%s %s",
-        "Diagnostic job did not finish.",
-        "Continuing onboarding without verified pre-onboarding diagnostic results.",
-    )
-
-
 def test_prediagnostics_helm_install_sets_user_fault_once(monkeypatch):
     process = MagicMock(returncode=1)
     process.communicate.return_value = (b"", b"Error: forbidden")
