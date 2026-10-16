@@ -75,6 +75,13 @@ prediagnostic_crd_check = consts.Diagnostic_Check_Starting
 
 _POD_LOG_READ_MAX_ATTEMPTS = 4
 _TRANSIENT_KUBERNETES_API_STATUSES = frozenset({429, 500, 502, 503, 504})
+_CONTINUING_ONBOARDING_MESSAGE = (
+    "Continuing onboarding without verified pre-onboarding diagnostic results."
+)
+
+
+def _log_prediagnostic_lifecycle_warning(message: str) -> None:
+    logger.warning(f"{message.rstrip()} {_CONTINUING_ONBOARDING_MESSAGE}")
 
 
 def _read_diagnostic_pod_log(corev1_api_instance: CoreV1Api, pod_name: str) -> Any:
@@ -754,10 +761,10 @@ def executing_cluster_diagnostic_checks_job(
                     prediagnostic_job_execution_status = (
                         consts.Job_Status_Cleanup_Failed
                     )
-                    logger.warning(
+                    _log_prediagnostic_lifecycle_warning(
                         "Cleanup of previous diagnostic checks helm release failed and hence couldn't "
                         'install the new helm release. Please cleanup older release using "helm delete '
-                        'cluster-diagnostic-checks -n azure-arc-release" and try onboarding again'
+                        'cluster-diagnostic-checks -n azure-arc-release".'
                     )
                     telemetry.set_exception(
                         exception=Exception(error_kubectl_delete_helm.decode("ascii")),
@@ -888,7 +895,7 @@ def executing_cluster_diagnostic_checks_job(
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Scheduled,
                 summary=message,
             )
-            logger.warning(message)
+            _log_prediagnostic_lifecycle_warning(message)
             logger.debug(
                 "Cluster diagnostic Job couldn't be scheduled.  Deleting the helm release in the cluster"
             )
@@ -981,7 +988,7 @@ def executing_cluster_diagnostic_checks_job(
                 fault_type=consts.Cluster_Diagnostic_Checks_Job_Not_Complete,
                 summary=message,
             )
-            logger.warning(message)
+            _log_prediagnostic_lifecycle_warning(message)
 
         # 4. Job completed successfully → fetch logs for result parsing
         if is_job_complete:
