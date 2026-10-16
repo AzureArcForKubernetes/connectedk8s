@@ -415,7 +415,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
         (result, storage_space_available) where result is one of:
           - Diagnostic_Check_Passed: all checks passed, safe to proceed with onboarding
           - Diagnostic_Check_Failed: at least one check failed, onboarding may be blocked
-          - Diagnostic_Check_Incomplete: checks couldn't be determined for an unexpected reason
+            - Diagnostic_Check_Incomplete: checks couldn't be determined
     """
     global prediagnostic_job_execution_status, prediagnostic_dns_check, prediagnostic_outbound_check, prediagnostic_entra_check, prediagnostic_crd_check  # pylint: disable=global-statement
     try:
