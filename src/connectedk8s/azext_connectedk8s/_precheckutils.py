@@ -81,7 +81,7 @@ _CONTINUING_ONBOARDING_MESSAGE = (
 
 
 def _log_prediagnostic_lifecycle_warning(message: str) -> None:
-    logger.warning(f"{message.rstrip()} {_CONTINUING_ONBOARDING_MESSAGE}")
+    logger.warning("%s %s", message.rstrip(), _CONTINUING_ONBOARDING_MESSAGE)
 
 
 def _read_diagnostic_pod_log(corev1_api_instance: CoreV1Api, pod_name: str) -> Any:

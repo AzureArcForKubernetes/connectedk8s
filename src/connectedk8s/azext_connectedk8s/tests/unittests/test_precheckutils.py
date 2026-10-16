@@ -283,8 +283,9 @@ def test_lifecycle_warning_says_onboarding_will_continue(monkeypatch):
     precheckutils._log_prediagnostic_lifecycle_warning("Diagnostic job did not finish.")
 
     warning.assert_called_once_with(
-        "Diagnostic job did not finish. "
-        "Continuing onboarding without verified pre-onboarding diagnostic results."
+        "%s %s",
+        "Diagnostic job did not finish.",
+        "Continuing onboarding without verified pre-onboarding diagnostic results.",
     )
 
 
