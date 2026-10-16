@@ -761,10 +761,10 @@ def executing_cluster_diagnostic_checks_job(
                     prediagnostic_job_execution_status = (
                         consts.Job_Status_Cleanup_Failed
                     )
-                    _log_prediagnostic_lifecycle_warning(
+                    logger.warning(
                         "Cleanup of previous diagnostic checks helm release failed and hence couldn't "
                         'install the new helm release. Please cleanup older release using "helm delete '
-                        'cluster-diagnostic-checks -n azure-arc-release".'
+                        'cluster-diagnostic-checks -n azure-arc-release" and try onboarding again.'
                     )
                     telemetry.set_exception(
                         exception=Exception(error_kubectl_delete_helm.decode("ascii")),
