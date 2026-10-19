@@ -749,6 +749,7 @@ def _run_completed_prediagnostic_output(
     *,
     job_status=consts.Job_Status_Completed,
     cmd=None,
+    dns_result=None,
 ):
     command = cmd or MagicMock()
 
@@ -758,7 +759,7 @@ def _run_completed_prediagnostic_output(
 
     def parse_dns(log, _path, storage_available, _diagnoser_output, **kwargs):
         assert kwargs["cmd"] is command
-        result = (
+        result = dns_result or (
             consts.Diagnostic_Check_Passed
             if consts.DNS_Check_Result_String in log
             else consts.Diagnostic_Check_Incomplete
@@ -803,6 +804,26 @@ def _run_completed_prediagnostic_output(
     return result
 
 
+@pytest.mark.parametrize(
+    "job_status",
+    [consts.Job_Status_Not_Scheduled, consts.Job_Status_Cleanup_Failed],
+)
+def test_lifecycle_warning_without_logs_continues_onboarding(monkeypatch, job_status):
+    send_job_error = MagicMock()
+    monkeypatch.setattr(
+        precheckutils,
+        "send_prediagnostic_job_execution_error_telemetry",
+        send_job_error,
+    )
+
+    result = _run_completed_prediagnostic_output(
+        monkeypatch, None, job_status=job_status
+    )
+
+    assert result == consts.Diagnostic_Check_Passed
+    send_job_error.assert_called_once()
+
+
 def test_completed_job_parses_healthy_1_36_1_output(monkeypatch):
     result = _run_completed_prediagnostic_output(
         monkeypatch, CONFORMANCE_PREDIAGNOSTIC_OUTPUT
@@ -815,7 +836,7 @@ def test_completed_job_parses_healthy_1_36_1_output(monkeypatch):
     assert precheckutils.prediagnostic_crd_check == consts.Diagnostic_Check_Passed
 
 
-def test_incomplete_job_with_partial_results_forwards_command_context(monkeypatch):
+def test_incomplete_job_with_passing_partial_results_continues_onboarding(monkeypatch):
     cmd = MagicMock()
     send_job_error = MagicMock()
     monkeypatch.setattr(
@@ -831,8 +852,29 @@ def test_incomplete_job_with_partial_results_forwards_command_context(monkeypatc
         cmd=cmd,
     )
 
-    assert result == consts.Diagnostic_Check_Incomplete
+    assert result == consts.Diagnostic_Check_Passed
     send_job_error.assert_called_once_with(cmd=cmd)
+
+
+def test_incomplete_job_with_empty_output_continues_onboarding(monkeypatch):
+    result = _run_completed_prediagnostic_output(
+        monkeypatch,
+        "",
+        job_status=consts.Job_Status_Not_Completed,
+    )
+
+    assert result == consts.Diagnostic_Check_Passed
+
+
+def test_incomplete_job_with_failed_partial_result_blocks_onboarding(monkeypatch):
+    result = _run_completed_prediagnostic_output(
+        monkeypatch,
+        CONFORMANCE_PREDIAGNOSTIC_OUTPUT,
+        job_status=consts.Job_Status_Not_Completed,
+        dns_result=consts.Diagnostic_Check_Failed,
+    )
+
+    assert result == consts.Diagnostic_Check_Failed
 
 
 def test_completed_job_parses_conformance_stringified_bytes(monkeypatch):
