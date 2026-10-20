@@ -138,15 +138,25 @@ def _parse_entra_check_result(entra_check_log: str) -> str:
     parts = entra_check_log.strip().split(" : ")
     if len(parts) >= 3:
         entra_response_code = parts[-1].strip()
-        if entra_response_code != "000":
+        if (
+            len(entra_response_code) == 3
+            and entra_response_code.isdigit()
+            and 100 <= int(entra_response_code) <= 599
+        ):
             return consts.Diagnostic_Check_Passed
-        diagnoser_output.append(
-            f"Error: Entra authentication endpoint connectivity check failed. "
-            f"Response code: {entra_response_code}. "
-            "Please ensure outbound connectivity to the Entra (Azure AD) authentication endpoint.\n"
-        )
-        return consts.Diagnostic_Check_Failed
-    return consts.Diagnostic_Check_Incomplete
+        if entra_response_code == "000":
+            diagnoser_output.append(
+                f"Error: Entra authentication endpoint connectivity check failed. "
+                f"Response code: {entra_response_code}. "
+                "Please ensure outbound connectivity to the Entra (Azure AD) authentication endpoint.\n"
+            )
+            return consts.Diagnostic_Check_Failed
+
+    logger.warning(
+        "Unable to interpret the Entra connectivity diagnostic output. "
+        "Continuing onboarding without verified Entra connectivity results."
+    )
+    return consts.Diagnostic_Check_Not_Applicable
 
 
 def _parse_crd_check_result(crd_check_log: str) -> str:

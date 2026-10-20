@@ -49,6 +49,51 @@ def _reset_globals():
     precheckutils.prediagnostic_crd_check = consts.Diagnostic_Check_Starting
 
 
+def test_parse_entra_check_result_keeps_000_as_failure():
+    _reset_globals()
+
+    result = precheckutils._parse_entra_check_result(
+        "Entra Authentication Endpoint Connectivity Check Result : "
+        "https://login.microsoftonline.com : 000"
+    )
+
+    assert result == consts.Diagnostic_Check_Failed
+    assert precheckutils.diagnoser_output == [
+        "Error: Entra authentication endpoint connectivity check failed. "
+        "Response code: 000. Please ensure outbound connectivity to the Entra "
+        "(Azure AD) authentication endpoint.\n"
+    ]
+
+
+@pytest.mark.parametrize(
+    "entra_check_log",
+    [
+        "Entra Authentication Endpoint Connectivity Check Result",
+        "Entra Authentication Endpoint Connectivity Check Result : "
+        "https://login.microsoftonline.com",
+        "Entra Authentication Endpoint Connectivity Check Result : "
+        "https://login.microsoftonline.com : not-a-code",
+        "Entra Authentication Endpoint Connectivity Check Result : "
+        "https://login.microsoftonline.com : 20O",
+    ],
+)
+def test_parse_entra_check_result_warns_for_unrecognized_output(
+    monkeypatch, entra_check_log
+):
+    _reset_globals()
+    warning = MagicMock()
+    monkeypatch.setattr(precheckutils.logger, "warning", warning)
+
+    result = precheckutils._parse_entra_check_result(entra_check_log)
+
+    assert result == consts.Diagnostic_Check_Not_Applicable
+    assert precheckutils.diagnoser_output == []
+    warning.assert_called_once_with(
+        "Unable to interpret the Entra connectivity diagnostic output. "
+        "Continuing onboarding without verified Entra connectivity results."
+    )
+
+
 def test_precheck_telemetry_helpers_forward_command_context(monkeypatch):
     cmd = MagicMock()
     add_event = MagicMock()
