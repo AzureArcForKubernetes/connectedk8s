@@ -1830,25 +1830,17 @@ DNS Result: server returned SERVFAIL
         assert diag == []
 
     @pytest.mark.parametrize("address", ["not-an-ip", "10.96.0.999", "10.96.0.1#53"])
-    def test_invalid_resolved_address_warns_and_is_not_applicable(
-        self, monkeypatch, address
-    ):
+    def test_invalid_resolved_address_is_incomplete(self, address):
         log = (
             "DNS Result:\n"
             "Name: kubernetes.default.svc.cluster.local\n"
             f"Address: {address}"
         )
-        warning = MagicMock()
-        monkeypatch.setattr(utils_module.logger, "warning", warning)
 
         result, diag = self._run(log)
 
-        assert result == consts.Diagnostic_Check_Not_Applicable
+        assert result == consts.Diagnostic_Check_Incomplete
         assert diag == []
-        warning.assert_called_once_with(
-            "Unable to interpret the DNS diagnostic output. "
-            "Continuing onboarding without verified DNS results."
-        )
 
     @pytest.mark.parametrize(
         "dns_log, expected_code, expected_fault_type",

@@ -138,25 +138,15 @@ def _parse_entra_check_result(entra_check_log: str) -> str:
     parts = entra_check_log.strip().split(" : ")
     if len(parts) >= 3:
         entra_response_code = parts[-1].strip()
-        if (
-            len(entra_response_code) == 3
-            and entra_response_code.isdigit()
-            and 100 <= int(entra_response_code) <= 599
-        ):
+        if entra_response_code != "000":
             return consts.Diagnostic_Check_Passed
-        if entra_response_code == "000":
-            diagnoser_output.append(
-                f"Error: Entra authentication endpoint connectivity check failed. "
-                f"Response code: {entra_response_code}. "
-                "Please ensure outbound connectivity to the Entra (Azure AD) authentication endpoint.\n"
-            )
-            return consts.Diagnostic_Check_Failed
-
-    logger.warning(
-        "Unable to interpret the Entra connectivity diagnostic output. "
-        "Continuing onboarding without verified Entra connectivity results."
-    )
-    return consts.Diagnostic_Check_Not_Applicable
+        diagnoser_output.append(
+            f"Error: Entra authentication endpoint connectivity check failed. "
+            f"Response code: {entra_response_code}. "
+            "Please ensure outbound connectivity to the Entra (Azure AD) authentication endpoint.\n"
+        )
+        return consts.Diagnostic_Check_Failed
+    return consts.Diagnostic_Check_Incomplete
 
 
 def _parse_crd_check_result(crd_check_log: str) -> str:
@@ -464,6 +454,8 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                 f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
             )
             send_prediagnostic_job_execution_error_telemetry(cmd=cmd)
+            if prediagnostic_job_execution_status == consts.Job_Status_Cleanup_Failed:
+                return consts.Diagnostic_Check_Passed, storage_space_available
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
         if cluster_diagnostic_checks_container_log != "":

@@ -1093,11 +1093,7 @@ def check_cluster_DNS(
 
         last_success_position = max(successful_resolution_positions, default=-1)
         if latest_failure is None and last_success_position < 0:
-            logger.warning(
-                "Unable to interpret the DNS diagnostic output. "
-                "Continuing onboarding without verified DNS results."
-            )
-            return consts.Diagnostic_Check_Not_Applicable, storage_space_available
+            return consts.Diagnostic_Check_Incomplete, storage_space_available
         dns_check_failed = (
             latest_failure is not None and last_success_position < latest_failure[0]
         )
