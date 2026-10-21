@@ -1656,8 +1656,89 @@ def _assert_proxy_configuration_has_no_ownership(environment):
 
 
 @pytest.mark.parametrize("no_proxy", ["", "1.1.1.1"])
-def test_update_with_only_protected_no_proxy_keeps_the_no_parameters_error(
+def test_update_with_only_protected_no_proxy_applies_settings(
     proxy_command_environment, no_proxy
+):
+    env = proxy_command_environment
+    env.helm_dp["helmValuesContent"]["global.noProxy"] = "redacted:proxy:no_proxy"
+    custom.update_connected_cluster(
+        env.cmd,
+        env.client,
+        "rg",
+        "cluster",
+        configuration_protected_settings={"proxy": {"no_proxy": no_proxy}},
+    )
+    custom.get_all_helm_values.assert_not_called()
+    custom.update_connected_cluster_internal.assert_not_called()
+    custom.put_cc_resource.assert_called_once()
+    custom.utils.helm_update_agent.assert_called_once()
+    payload = custom.utils.helm_update_agent.call_args.args[3]
+    assert payload["global.noProxy"] == no_proxy
+    _assert_proxy_configuration_has_no_ownership(env)
+
+
+@pytest.mark.parametrize("azure_hybrid_benefit", [None, "False"])
+@pytest.mark.parametrize(
+    "arguments,expected_settings,expected_protected",
+    [
+        (
+            {
+                "configuration_settings": {
+                    "workloadidentity": {
+                        "autoupgrademinorversion": "false",
+                        "version": "1.0.12",
+                    }
+                }
+            },
+            {"autoupgrademinorversion": "false", "version": "1.0.12"},
+            None,
+        ),
+        (
+            {
+                "configuration_protected_settings": {
+                    "workloadidentity": {"custom": "test-value"}
+                }
+            },
+            None,
+            {"custom": "redacted:workloadidentity:custom"},
+        ),
+    ],
+)
+def test_update_applies_configuration_settings_alone_or_with_hybrid_benefit(
+    proxy_command_environment,
+    azure_hybrid_benefit,
+    arguments,
+    expected_settings,
+    expected_protected,
+):
+    env = proxy_command_environment
+    custom.update_connected_cluster(
+        env.cmd,
+        env.client,
+        "rg",
+        "cluster",
+        azure_hybrid_benefit=azure_hybrid_benefit,
+        **deepcopy(arguments),
+    )
+
+    custom.put_cc_resource.assert_called_once()
+    custom.utils.helm_update_agent.assert_called_once()
+    configurations = env.dp_payload.arc_agentry_configurations
+    assert len(configurations) == 1
+    assert configurations[0].feature == "workloadidentity"
+    assert configurations[0].settings == expected_settings
+    assert configurations[0].protected_settings == expected_protected
+    arm_configurations = custom.put_cc_resource.call_args.args[
+        4
+    ].arc_agentry_configurations
+    assert len(arm_configurations) == 1
+    assert arm_configurations[0].feature == "workloadidentity"
+    assert arm_configurations[0].settings == expected_settings
+    assert arm_configurations[0].protected_settings is None
+
+
+def test_update_with_empty_configuration_settings_still_requires_parameters(
+    proxy_command_environment,
 ):
     env = proxy_command_environment
     with pytest.raises(
@@ -1668,11 +1749,9 @@ def test_update_with_only_protected_no_proxy_keeps_the_no_parameters_error(
             env.client,
             "rg",
             "cluster",
-            configuration_protected_settings={"proxy": {"no_proxy": no_proxy}},
+            configuration_settings={},
+            configuration_protected_settings={},
         )
-    custom.get_all_helm_values.assert_not_called()
-    custom.load_kube_config.assert_not_called()
-    custom.update_connected_cluster_internal.assert_not_called()
     custom.put_cc_resource.assert_not_called()
     custom.utils.helm_update_agent.assert_not_called()
 

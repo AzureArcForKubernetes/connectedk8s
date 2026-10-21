@@ -3117,6 +3117,7 @@ def update_connected_cluster(
             and auto_upgrade is None
             and container_log_path is None
             and arm_properties_only_ahb_set
+            and not arc_agentry_configurations
         ):
             return patch_cc_response
 
@@ -3130,6 +3131,7 @@ def update_connected_cluster(
         and enable_workload_identity is None
         and gateway_resource_id == ""
         and not disable_gateway
+        and not arc_agentry_configurations
     ):
         raise utils.report_connectedk8s_error(
             cmd,
