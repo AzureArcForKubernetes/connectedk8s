@@ -2119,18 +2119,87 @@ def test_non_gateway_reconnect_still_rejects_adding_arc(proxy_command_environmen
     custom.utils.helm_update_agent.assert_not_called()
 
 
+@pytest.mark.parametrize("azure_hybrid_benefit", ["True", "False"])
 def test_arm_only_hybrid_benefit_update_does_not_need_proxy_or_helm(
-    proxy_command_environment,
+    proxy_command_environment, azure_hybrid_benefit
 ):
     env = proxy_command_environment
     result = custom.update_connected_cluster(
-        env.cmd, env.client, "rg", "cluster", azure_hybrid_benefit="False"
+        env.cmd,
+        env.client,
+        "rg",
+        "cluster",
+        azure_hybrid_benefit=azure_hybrid_benefit,
+        yes=True,
     )
     assert result is env.cluster
     custom.update_connected_cluster_internal.assert_called_once()
     custom.load_kube_config.assert_not_called()
     custom.get_all_helm_values.assert_not_called()
     custom.utils.helm_update_agent.assert_not_called()
+
+
+@pytest.mark.parametrize("azure_hybrid_benefit", ["True", "False"])
+@pytest.mark.parametrize(
+    "arguments,profile_name,expected_profile",
+    [
+        (
+            {"enable_oidc_issuer": True},
+            "oidc_issuer_profile",
+            {"enabled": True},
+        ),
+        (
+            {"enable_workload_identity": True},
+            "security_profile",
+            {"workloadIdentity": {"enabled": True}},
+        ),
+        (
+            {"enable_workload_identity": False},
+            "security_profile",
+            {"workloadIdentity": {"enabled": False}},
+        ),
+        (
+            {"disable_workload_identity": True},
+            "security_profile",
+            {"workloadIdentity": {"enabled": False}},
+        ),
+        (
+            {"gateway_resource_id": GATEWAY_RESOURCE_ID},
+            "gateway",
+            {"enabled": True},
+        ),
+        (
+            {"disable_gateway": True},
+            "gateway",
+            {"enabled": False},
+        ),
+    ],
+)
+def test_hybrid_benefit_update_also_applies_security_and_gateway_changes(
+    proxy_command_environment,
+    azure_hybrid_benefit,
+    arguments,
+    profile_name,
+    expected_profile,
+):
+    env = proxy_command_environment
+    custom.update_connected_cluster(
+        env.cmd,
+        env.client,
+        "rg",
+        "cluster",
+        azure_hybrid_benefit=azure_hybrid_benefit,
+        yes=True,
+        **arguments,
+    )
+
+    custom.update_connected_cluster_internal.assert_called_once_with(
+        env.cmd, env.client, "rg", "cluster", None, None, None, azure_hybrid_benefit
+    )
+    custom.put_cc_resource.assert_called_once()
+    request = custom.put_cc_resource.call_args.args[4]
+    assert getattr(request, profile_name).as_dict() == expected_profile
+    custom.utils.helm_update_agent.assert_called_once()
 
 
 @pytest.mark.parametrize("skip_range", ["", "10.0.0.0/8,.HIS.ARC.AZURE.COM"])
