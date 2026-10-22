@@ -454,6 +454,8 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
                 f"entraCheck={prediagnostic_entra_check}; crdCheck={prediagnostic_crd_check}"
             )
             send_prediagnostic_job_execution_error_telemetry(cmd=cmd)
+            if prediagnostic_job_execution_status == consts.Job_Status_Cleanup_Failed:
+                return consts.Diagnostic_Check_Passed, storage_space_available
             return consts.Diagnostic_Check_Incomplete, storage_space_available
 
         if cluster_diagnostic_checks_container_log != "":
@@ -1077,7 +1079,11 @@ def helm_install_release_cluster_diagnostic_checks(
     # To set some other helm parameters through file
     cmd_helm_install.extend(["--set", f"global.location={location}"])
     cmd_helm_install.extend(["--set", f"global.azureCloud={azure_cloud}"])
-    cmd_helm_install.extend(["--set", f"global.mcrRepository=https://{mcr_url}"])
+    # Temporary workaround: AGC diagnostic charts require a scheme-less MCR repository until changes are merged/deployed on agent side
+    if azure_cloud.lower() in ("ussec", "usnat"):
+        cmd_helm_install.extend(["--set", f"global.mcrRepository={mcr_url}"])
+    else:
+        cmd_helm_install.extend(["--set", f"global.mcrRepository=https://{mcr_url}"])
     cmd_helm_install.extend(["--set", f"global.image.registry={mcr_url}"])
     if https_proxy:
         cmd_helm_install.extend(["--set", f"global.httpsProxy={https_proxy}"])
