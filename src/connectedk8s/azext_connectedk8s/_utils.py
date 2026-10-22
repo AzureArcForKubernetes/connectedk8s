@@ -1221,7 +1221,7 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                         f"Endpoint {Cluster_Connect_Precheck_Endpoint_Url} returned HTTP "
                         f"{Cluster_Connect_Precheck_Endpoint_response_code}; target=cluster-connect."
                     )
-                    report_connectedk8s_diagnostic(
+                    report_connectedk8s_warning(
                         cmd,
                         errors.OUTBOUND_ENDPOINT_NON2XX,
                         details=details,
@@ -1255,18 +1255,15 @@ def check_cluster_outbound_connectivity(  # pylint: disable=too-many-branches,to
                     f"Endpoint {Cluster_Connect_Precheck_Endpoint_Url} returned no HTTP response. "
                     "This only affects the cluster-connect feature."
                 )
-                message = report_connectedk8s_diagnostic(
+                report_connectedk8s_warning(
                     cmd,
                     errors.CLUSTER_CONNECT_OUTBOUND_CONNECTIVITY_FAILED,
                     details=details,
-                    user_fault=True,
                 )
                 logger.warning(
-                    "%s\n"
                     'This will affect the "cluster-connect" feature. If you are planning to use '
                     '"cluster-connect" functionality, please ensure outbound connectivity to the '
                     "above endpoint.\n",
-                    message,
                 )
                 if storage_space_available:
                     cluster_connect_outbound_connectivity_check_path = os.path.join(
