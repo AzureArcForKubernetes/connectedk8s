@@ -3313,8 +3313,16 @@ def update_connected_cluster(
             self_hosted_issuer == ""
             and kubernetes_distro in consts.Public_Cloud_Distribution_List
         ):
-            raise ValidationError(
-                f"Self hosted issuer is required for {kubernetes_distro} cluster when OIDC issuer is being enabled."
+            err_msg = (
+                f"Self hosted issuer is required for {kubernetes_distro} cluster "
+                "when OIDC issuer is being enabled."
+            )
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.INVALID_ARGUMENT_VALUE,
+                exception=ValidationError(err_msg),
+                user_fault=True,
+                details=err_msg,
             )
         oidc_profile = set_oidc_issuer_profile(enable_oidc_issuer, self_hosted_issuer)
 
@@ -3851,18 +3859,20 @@ def validate_release_namespace(
                 )
                 raise ArgumentUsageError(err_msg, recommendation=reco_msg)
         else:
-            telemetry.set_exception(
-                exception=Exception("The corresponding CC resource does not exist"),
-                fault_type=consts.Corresponding_CC_Resource_Deleted_Fault,
-                summary="CC resource corresponding to this cluster has been deleted by the customer",
-            )
             err_msg = "There exist no ConnectedCluster resource corresponding to this kubernetes Cluster."
             reco_msg = (
                 "Please cleanup the helm release first using 'az connectedk8s delete -n "
                 "<connected-cluster-name> -g <resource-group-name>' and re-onboard the cluster using "
                 "'az connectedk8s connect -n <connected-cluster-name> -g <resource-group-name>'"
             )
-            raise ClientRequestError(err_msg, recommendation=reco_msg)
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.RESOURCE_NOT_FOUND,
+                exception=Exception(err_msg),
+                user_fault=True,
+                recommendation=reco_msg,
+                details=err_msg,
+            )
     else:
         details = (
             "The azure-arc release namespace couldn't be retrieved, which implies that the kubernetes "
