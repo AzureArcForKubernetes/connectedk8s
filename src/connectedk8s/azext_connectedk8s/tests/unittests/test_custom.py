@@ -123,7 +123,9 @@ def _cmd_without_arm_id():
     return SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
 
 
-def _assert_standardized_telemetry(mock_telemetry, error, user_fault):
+def _assert_standardized_telemetry(
+    mock_telemetry, error, user_fault, extension_event_count=1
+):
     _, properties = mock_telemetry.add_extension_event.call_args.args
     assert properties["Context.Default.AzureCLI.errorCode"] == error.code
     assert properties["Context.Default.AzureCLI.errorName"] == error.name
@@ -132,7 +134,7 @@ def _assert_standardized_telemetry(mock_telemetry, error, user_fault):
         mock_telemetry.set_exception.call_args.kwargs["summary"]
         == properties["Context.Default.AzureCLI.errorMessage"]
     )
-    mock_telemetry.add_extension_event.assert_called_once()
+    assert mock_telemetry.add_extension_event.call_count == extension_event_count
     mock_telemetry.set_exception.assert_called_once()
     if user_fault:
         mock_telemetry.set_user_fault.assert_called_once_with()
@@ -217,6 +219,63 @@ def test_update_reports_standardized_parameter_errors(
 
     assert str(raised.value).startswith(f"[{error.code}] {error.name}:")
     _assert_standardized_telemetry(mock_telemetry, error, True)
+
+
+def test_update_reports_missing_self_hosted_issuer(monkeypatch):
+    cmd = _cmd_without_arm_id()
+    connected_cluster = SimpleNamespace(
+        kind=None,
+        id="/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Kubernetes/connectedClusters/cluster",
+        distribution=consts.Public_Cloud_Distribution_List[0],
+        infrastructure=None,
+    )
+    monkeypatch.setattr(
+        custom, "send_cloud_telemetry", MagicMock(return_value="AzureCloud")
+    )
+    monkeypatch.setattr(custom, "set_kube_config", lambda value: value)
+    monkeypatch.setattr(custom, "escape_proxy_settings", lambda value: value)
+    monkeypatch.setattr(custom.utils, "get_subscription_id", lambda _cli_ctx: "sub")
+    monkeypatch.setattr(
+        custom,
+        "add_config_protected_settings",
+        MagicMock(return_value=({}, {}, {})),
+    )
+    monkeypatch.setattr(custom, "load_kube_config", MagicMock())
+    monkeypatch.setattr(custom, "check_kube_connection", MagicMock(return_value="1.30"))
+    monkeypatch.setattr(
+        custom, "get_helm_client_location", MagicMock(return_value="/usr/bin/helm")
+    )
+    monkeypatch.setattr(
+        custom, "validate_release_namespace", MagicMock(return_value="azure-arc")
+    )
+    monkeypatch.setattr(
+        custom, "resolve_arc_proxy_bypass", MagicMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        custom, "get_cc_resource", MagicMock(return_value=connected_cluster)
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
+
+    with pytest.raises(custom.InvalidArgumentValueError) as raised:
+        custom.update_connected_cluster(
+            cmd,
+            MagicMock(),
+            "resource-group",
+            "cluster",
+            enable_oidc_issuer=True,
+            enable_workload_identity=True,
+            yes=True,
+        )
+
+    assert str(raised.value).startswith("[AZK8S0100] InvalidArgumentValue:")
+    assert "Self hosted issuer is required" in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry,
+        custom.errors.INVALID_ARGUMENT_VALUE,
+        True,
+        extension_event_count=2,
+    )
 
 
 def test_proxy_cert_path_reports_not_found(monkeypatch):
@@ -371,6 +430,42 @@ def test_validate_release_namespace_reports_real_standardized_error(monkeypatch)
     assert "has not been onboarded" in str(raised.value)
     _assert_standardized_telemetry(
         mock_telemetry, custom.errors.RELEASE_NAMESPACE_NOT_FOUND, True
+    )
+
+
+def test_validate_release_namespace_reports_deleted_connected_cluster(monkeypatch):
+    monkeypatch.setattr(
+        custom.utils, "get_release_namespace", MagicMock(return_value="azure-arc")
+    )
+    config_map_api = MagicMock()
+    config_map_api.read_namespaced_config_map.return_value = SimpleNamespace(
+        data={
+            "AZURE_RESOURCE_GROUP": "resource-group",
+            "AZURE_RESOURCE_NAME": "cluster",
+        }
+    )
+    monkeypatch.setattr(custom.kube_client, "CoreV1Api", lambda: config_map_api)
+    monkeypatch.setattr(
+        custom, "connected_cluster_exists", MagicMock(return_value=False)
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
+
+    with pytest.raises(ArgumentUsageError) as raised:
+        custom.validate_release_namespace(
+            _cmd_without_arm_id(),
+            MagicMock(),
+            "cluster",
+            "resource-group",
+            None,
+            None,
+            "/usr/bin/helm",
+        )
+
+    assert str(raised.value).startswith("[AZK8S0405] ConnectedClusterResourceNotFound:")
+    assert "There exist no ConnectedCluster resource" in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry, custom.errors.RESOURCE_NOT_FOUND, True
     )
 
 
