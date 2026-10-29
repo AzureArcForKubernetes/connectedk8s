@@ -1891,7 +1891,7 @@ def arm_exception_handler(
     if error is not None:
         reported_error = error
         if (
-            status_code == 404
+            (status_code == 404 or isinstance(ex, ResourceNotFoundError))
             and error
             in (
                 errors.CONNECTED_CLUSTER_UPDATE_FAILED,
@@ -1912,7 +1912,10 @@ def arm_exception_handler(
             cmd,
             reported_error,
             exception=ex,
-            user_fault=status_code in (400, 401, 403, 404, 409, 412, 422),
+            user_fault=(
+                status_code in (400, 401, 403, 404, 409, 412, 422)
+                or isinstance(ex, ResourceNotFoundError)
+            ),
             details=str(ex),
         ) from ex
 
