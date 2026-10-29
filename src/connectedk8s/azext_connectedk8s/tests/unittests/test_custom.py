@@ -720,7 +720,9 @@ def onboarding_access_context(monkeypatch):
         "resource_providers_client",
         MagicMock(return_value=provider_client),
     )
-    monkeypatch.setattr(custom.utils, "get_subscription_id", lambda _cli_ctx: "subscription")
+    monkeypatch.setattr(
+        custom.utils, "get_subscription_id", lambda _cli_ctx: "subscription"
+    )
     monkeypatch.setattr(custom.config, "load_kube_config", MagicMock())
     version_api = MagicMock()
     version_api.get_code.return_value.git_version = "v1.30.0"
@@ -801,9 +803,12 @@ def test_onboarding_invalid_location_precedes_cluster_work(
     diagnostic_helm.assert_not_called()
     ctx.helm_install.assert_not_called()
     ctx.telemetry.set_exception.assert_called_once()
-    assert ctx.telemetry.add_extension_event.call_args.args[1][
-        custom.consts.Telemetry_Error_Code_Key
-    ] == "AZK8S0104"
+    assert (
+        ctx.telemetry.add_extension_event.call_args.args[1][
+            custom.consts.Telemetry_Error_Code_Key
+        ]
+        == "AZK8S0104"
+    )
 
 
 @pytest.mark.parametrize("location", ["eastus", "EASTUS"])
