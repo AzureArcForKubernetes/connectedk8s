@@ -4,7 +4,6 @@ Release History
 ===============
 1.11.3
 +++++++
-* Validate the resolved connect location before Kubernetes access and pre-onboarding diagnostics. Intentionally prioritize unsupported-location errors (AZK8S0104) over cluster-access and diagnostic failures; previously, AZK8S0602 could mask AZK8S0104.
 * Fix container log parsing issue for environments using Python Kubernetes client 36.0 or higher.
 * Revert clusterdiagnosticchecks image to 1.31.2 to address issues with network diagnostics in proxy scenarios.
 
