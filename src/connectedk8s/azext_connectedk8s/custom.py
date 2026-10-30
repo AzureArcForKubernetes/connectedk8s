@@ -1466,8 +1466,7 @@ def poll_for_agent_state(
                 cmd=cmd,
                 error=operation_error,
             )
-
-            assert False
+            raise
         state: str | None = (
             None
             if connected_cluster.arc_agent_profile is None
