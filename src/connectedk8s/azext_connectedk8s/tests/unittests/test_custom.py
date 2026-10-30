@@ -707,6 +707,22 @@ def onboarding_access_context(monkeypatch):
         "get_metadata": {},
     }.items():
         monkeypatch.setattr(custom.utils, name, MagicMock(return_value=value))
+    provider_client = MagicMock()
+    provider_client.get.return_value = SimpleNamespace(
+        resource_types=[
+            SimpleNamespace(
+                resource_type="connectedClusters", locations=["East US", "West US"]
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        custom.utils,
+        "resource_providers_client",
+        MagicMock(return_value=provider_client),
+    )
+    monkeypatch.setattr(
+        custom.utils, "get_subscription_id", lambda _cli_ctx: "subscription"
+    )
     monkeypatch.setattr(custom.config, "load_kube_config", MagicMock())
     version_api = MagicMock()
     version_api.get_code.return_value.git_version = "v1.30.0"
@@ -729,6 +745,121 @@ def onboarding_access_context(monkeypatch):
         helm_install=helm_install,
         version_api=version_api,
     )
+
+
+@pytest.mark.parametrize("custom_token_passed", [False, True])
+@pytest.mark.parametrize("skip_diagnostics", [False, True])
+def test_onboarding_invalid_location_precedes_cluster_work(
+    onboarding_access_context, monkeypatch, custom_token_passed, skip_diagnostics
+):
+    ctx = onboarding_access_context
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "subscription")
+    monkeypatch.setattr(
+        custom.utils,
+        "validate_custom_token",
+        MagicMock(return_value=(custom_token_passed, "invalid-region")),
+    )
+    monkeypatch.delenv("AZURE_LOCAL_DISCONNECTED", raising=False)
+    ctx.core_api.list_node.return_value = V1NodeList(
+        items=[create_node(labels={"kubernetes.io/os": "linux"})]
+    )
+    monkeypatch.setattr(
+        custom.utils,
+        "create_folder_diagnosticlogs",
+        MagicMock(return_value=("diagnostic-logs", True)),
+    )
+    monkeypatch.setattr(custom.precheckutils, "fetching_cli_output_logs", MagicMock())
+    monkeypatch.setattr(custom.precheckutils, "diagnoser_output", [])
+    diagnostics = MagicMock(return_value=("Failed", True))
+    diagnostic_helm = MagicMock()
+    monkeypatch.setattr(
+        custom.precheckutils, "fetch_diagnostic_checks_results", diagnostics
+    )
+    monkeypatch.setattr(
+        custom.precheckutils,
+        "helm_install_release_cluster_diagnostic_checks",
+        diagnostic_helm,
+    )
+
+    with pytest.raises(custom.InvalidArgumentValueError, match=r"\[AZK8S0104\]"):
+        custom.create_connectedk8s(
+            ctx.cmd,
+            MagicMock(),
+            "rg",
+            "cluster",
+            location="invalid-region",
+            infrastructure="azure_stack_hci" if skip_diagnostics else "generic",
+            distribution="aks_edge_k3s" if skip_diagnostics else "generic",
+        )
+
+    custom.set_kube_config.assert_not_called()
+    custom.config.load_kube_config.assert_not_called()
+    ctx.version_api.get_code.assert_not_called()
+    ctx.core_api.list_node.assert_not_called()
+    custom.get_kubectl_client_location.assert_not_called()
+    custom.get_helm_client_location.assert_not_called()
+    diagnostics.assert_not_called()
+    diagnostic_helm.assert_not_called()
+    ctx.helm_install.assert_not_called()
+    ctx.telemetry.set_exception.assert_called_once()
+    assert (
+        ctx.telemetry.add_extension_event.call_args.args[1][
+            custom.consts.Telemetry_Error_Code_Key
+        ]
+        == "AZK8S0104"
+    )
+
+
+@pytest.mark.parametrize("location", ["eastus", "EASTUS"])
+def test_onboarding_valid_location_continues_through_prediagnostics(
+    onboarding_access_context, monkeypatch, location
+):
+    ctx = onboarding_access_context
+    monkeypatch.delenv("AZURE_LOCAL_DISCONNECTED", raising=False)
+    monkeypatch.setattr(
+        custom.utils,
+        "validate_custom_token",
+        MagicMock(return_value=(False, location)),
+    )
+    ctx.core_api.list_node.return_value = V1NodeList(
+        items=[create_node(labels={"kubernetes.io/os": "linux"})]
+    )
+    monkeypatch.setattr(
+        custom.utils,
+        "create_folder_diagnosticlogs",
+        MagicMock(return_value=("diagnostic-logs", True)),
+    )
+    diagnostics = MagicMock(return_value=(consts.Diagnostic_Check_Passed, True))
+    monkeypatch.setattr(
+        custom.precheckutils, "fetch_diagnostic_checks_results", diagnostics
+    )
+    monkeypatch.setattr(custom.precheckutils, "fetching_cli_output_logs", MagicMock())
+    monkeypatch.setattr(custom.precheckutils, "diagnoser_output", [])
+    workflow = MagicMock()
+    validate_location = MagicMock(wraps=custom.utils.validate_connect_rp_location)
+    monkeypatch.setattr(custom.utils, "validate_connect_rp_location", validate_location)
+    workflow.attach_mock(validate_location, "validate_location")
+    workflow.attach_mock(custom.config.load_kube_config, "load_kube_config")
+    workflow.attach_mock(diagnostics, "diagnostics")
+    workflow.attach_mock(ctx.permission, "check_permission")
+
+    # Stop at the existing post-diagnostics permission guard, before agent installation.
+    with pytest.raises(ValidationError, match="ClusterRoleBindingCreateForbidden"):
+        custom.create_connectedk8s(
+            ctx.cmd, MagicMock(), "rg", "cluster", location=location
+        )
+
+    validate_location.assert_called_once_with(ctx.cmd, location)
+    custom.config.load_kube_config.assert_called_once()
+    diagnostics.assert_called_once()
+    assert diagnostics.call_args.args[7] == location
+    ctx.permission.assert_called_once()
+    assert [call[0] for call in workflow.mock_calls] == [
+        "validate_location",
+        "load_kube_config",
+        "diagnostics",
+        "check_permission",
+    ]
 
 
 @pytest.mark.parametrize("node_os", ["linux", "windows"])
