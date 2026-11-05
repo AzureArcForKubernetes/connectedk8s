@@ -57,7 +57,7 @@ ID of the Custom Locations service principal. During `enable-features`, the
 extension checks these prerequisites before loading kubeconfig, downloading
 the chart, or running Helm.
 
-`AZK8S0700` is the fatal aggregate for this prerequisite stage. Version 1.11.5
+`AZK8S0700` is the fatal aggregate for this prerequisite stage. The extension
 raises it only when Custom Locations couldn't be enabled and no other requested
 feature remains. For a mixed request, the extension removes
 `custom-locations`, warns, and continues with the remaining features. A later
@@ -105,10 +105,10 @@ channel and retry with that exact value:
 az connectedk8s enable-features --resource-group "<resource-group>" --name "<cluster-name>" --features cluster-connect custom-locations --custom-locations-oid "<object-id>"
 ```
 
-A manually supplied value is a fallback, not proof: when Graph fails, version
-1.11.5 uses it without validation and warns that an invalid value might leave
-the feature unusable. Custom Locations also requires Cluster Connect and its
-network endpoints. Private-link-enabled connected clusters and provisioned
+A manually supplied value is a fallback, not proof: when Graph fails, the
+extension uses it without validation and warns that an invalid value might
+leave the feature unusable. Custom Locations also requires Cluster Connect and
+its network endpoints. Private-link-enabled connected clusters and provisioned
 clusters are rejected earlier by separate validation.
 
 The issue is fixed when the provider query returns `Registered`, object-ID
@@ -209,7 +209,7 @@ tokens, proxy credentials, or the tenant-specific object ID in public logs.
 ## `AZK8S0800`: `ClientProxyDownloadFailed`
 
 This code covers local artifact preparation, not only network download. If the
-versioned proxy executable is absent, version 1.11.5 creates or reuses
+versioned proxy executable is absent, the extension creates or reuses
 `~/.clientproxy`, removes older `arcProxy*` files, pulls the OS- and
 architecture-specific archive from Microsoft Artifact Registry (MCR), accepts
 only the expected proxy and license files from that archive, extracts them,
@@ -318,7 +318,7 @@ az connectedk8s proxy --resource-group "<resource-group>" --name "<cluster-name>
 
 The internal port normally remains `47010`, even when `--port` selects a custom
 API port. If `47010` is already occupied and a custom API port was supplied,
-version 1.11.5 instead selects `<custom-port>-1` for the internal port. For
+the extension instead selects `<custom-port>-1` for the internal port. For
 example, `--port 55000` uses internal port `54999` only when `47010` is already
 occupied; otherwise it uses `47010`. The selected API and internal ports must
 be different and both must be available. Don't kill an unknown process or a
@@ -396,11 +396,11 @@ versions. Don't provide `config.yml`, kubeconfig, tokens, or profile paths.
 
 ## `AZK8S0803`: `ClientProxyConfigCreateFailed`
 
-Before process startup, version 1.11.5 writes an extension-managed
-`config.yml` beside the proxy executable, normally under `~/.clientproxy`. If
-the file already exists, Azure CLI removes it first. Therefore this code can
-mean either the old file couldn't be removed or its replacement couldn't be
-opened and written. The detailed error distinguishes those phases.
+Before process startup, the extension writes an extension-managed `config.yml`
+beside the proxy executable, normally under `~/.clientproxy`. If the file
+already exists, Azure CLI removes it first. Therefore this code can mean either
+the old file couldn't be removed or its replacement couldn't be opened and
+written. The detailed error distinguishes those phases.
 
 The file contains local proxy, cloud, tenant, and identity configuration.
 Inspect its metadata, never its contents. Stop an earlier proxy with `Ctrl+C`
@@ -452,10 +452,10 @@ UTC time. Redact usernames and never include file contents.
 ## `AZK8S0804`: `ClientProxyClosed`
 
 The child proxy process exited while `az connectedk8s proxy` was monitoring
-it. Version 1.11.5 sleeps for 60 seconds between checks and determines liveness
-from the child process status, so the error can appear up to one monitor
-interval after the actual exit. The code doesn't distinguish a proxy fault
-from endpoint-security or process-management termination.
+it. Azure CLI waits 60 seconds between checks and determines liveness from the
+child process status, so the error can appear up to one monitor interval after
+the actual exit. The code doesn't distinguish a proxy fault from endpoint-
+security or process-management termination.
 
 ### Diagnose the proxy exit
 
@@ -524,9 +524,9 @@ kubeconfig, proxy configuration, usernames, and credential-bearing URLs.
 ## `AZK8S0805`: `ClusterCredentialsGetFailed`
 
 This standardized definition is reserved for migration and isn't directly
-emitted by the version 1.11.5 credential-retrieval path. That path starts the
-proxy and requests hybrid-connection credentials asynchronously. If the ARM
-request fails, it terminates the child process, records the legacy
+emitted by the current credential-retrieval path. That path starts the proxy
+and requests hybrid-connection credentials asynchronously. If the ARM request
+fails, it terminates the child process, records the legacy
 `GetCredentialsFailed` fault type, and lets the ARM exception helper raise an
 unnumbered typed Azure CLI error. Authentication and expired-token failures,
 HTTP response failures, server failures, and other client failures can
@@ -535,8 +535,8 @@ same phase. The following fallback `Failed to get credentials` statement isn't
 normally reached because the helper raises first.
 
 If a released extension displays `AZK8S0805`, include its extension version
-when following this procedure. For 1.11.5, use the same procedure when the
-legacy error says the ARM request couldn't list cluster user credentials.
+when following this procedure. Use the same procedure when the legacy error
+says the ARM request couldn't list cluster user credentials.
 
 ### Diagnose Cluster Connect credentials
 

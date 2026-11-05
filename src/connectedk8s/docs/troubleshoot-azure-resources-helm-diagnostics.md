@@ -125,9 +125,9 @@ Interpret each result before retrying:
   means the latest ARM operation completed; a `404` is expected only when a
   delete already completed. `agentState: Succeeded` means the agent operation
   completed successfully, while `Failed` is a terminal failure. Any other
-  nonempty agent state is still in progress. Version 1.11.5 also treats a
-  missing agent state as terminal, but it does not prove that the agents are
-  healthy, so verify Helm and Kubernetes state.
+  nonempty agent state is still in progress. A missing agent state is also
+  terminal, but it does not prove that the agents are healthy, so verify Helm
+  and Kubernetes state.
 - The Helm command searches every namespace for the exact `azure-arc` release
   and includes releases in any lifecycle state. A healthy release has one row
   with `STATUS` set to `deployed`. No row means Helm did not find the release.
@@ -191,11 +191,10 @@ retry.
 The requested location didn't match a location returned for
 `Microsoft.Kubernetes/connectedClusters` in the active cloud and subscription.
 
-In `connectedk8s` version 1.11.5, `connect` runs pre-onboarding diagnostics
-before validating the location. Resolve any earlier precheck error first. A
-diagnostic Cluster Connect failure can also contain the unsupported location
-in its endpoint hostname; correct the location before changing network rules
-for that endpoint.
+`connect` runs pre-onboarding diagnostics before validating the location.
+Resolve any earlier precheck error first. A diagnostic Cluster Connect failure
+can also contain the unsupported location in its endpoint hostname; correct
+the location before changing network rules for that endpoint.
 
 ### Diagnose the location
 
@@ -244,19 +243,28 @@ requirements.
 The original command should advance beyond location validation without
 `AZK8S0104`.
 
-### Location support evidence
+### If the location error continues
 
-Provide the sanitized error text, requested and canonical locations, active
-cloud, supported-location output, UTC timestamp, and `az version`. Replace
-subscription and resource names with stable placeholders.
+If the original command still reports `AZK8S0104`, contact support and include:
+
+- The complete sanitized error text and the UTC time when it occurred.
+- The location originally passed to `--location` and the canonical location
+  used for the retry, such as `East US` and `eastus`.
+- The output from the account and provider commands under
+  [Diagnose the location](#diagnose-the-location). This identifies the active
+  Azure cloud and the locations supported in the active subscription.
+- The output from `az version`.
+
+Remove credentials and tokens. Replace subscription IDs, resource-group names,
+and resource names with consistent placeholders before sharing the evidence.
 
 ## `AZK8S0400`: `ConnectedClusterCreateFailed`
 
 This error occurs while Azure Resource Manager creates the
 `Microsoft.Kubernetes/connectedClusters` resource, before Arc agents finish
-installing in the cluster. Version 1.11.5 uses an ARM create-or-replace request
-and doesn't automatically retry a failed request. A recognized ARM `409` name
-conflict is reported as `AZK8S0404`, not `AZK8S0400`.
+installing in the cluster. This error isn't retried automatically. A recognized
+ARM `409` name conflict is reported as `AZK8S0404`; follow that procedure
+instead.
 
 ### Diagnose resource creation
 
@@ -286,18 +294,50 @@ Wait for `Registered` before retrying.
 
 Interpret the detailed ARM response as follows:
 
-- HTTP `401` or `403`: select the intended tenant and subscription and grant
-  the identity the **Kubernetes Cluster - Azure Arc Onboarding** role at the
-  required scope, or equivalent least-privilege permissions.
-- `MissingSubscriptionRegistration`: register the provider named in the error
-  and wait for registration to finish.
-- Resource group `404`: correct the resource-group name or create it in the
-  selected subscription.
-- Unsupported location: choose a value from the location query output.
-- Policy denial: review the policy assignment named in the response and obtain
-  an appropriate exemption or use compliant settings.
-- HTTP `429`, `5xx`, or a timeout: retry with backoff and check Azure service
-  health if the failure continues.
+- HTTP `401`: sign in to the tenant named in the error, select the intended
+  subscription, and confirm the active context:
+
+  ```azurecli
+  az login --tenant "<tenant-id>"
+  az account set --subscription "<subscription-id-or-name>"
+  az account show --query "{subscription:id,tenant:tenantId,user:user.name}" --output yaml
+  ```
+
+- HTTP `403`: ask an RBAC administrator for the subscription to assign the
+  failing identity the **Kubernetes Cluster - Azure Arc Onboarding** role at
+  the resource-group scope, or equivalent least-privilege permissions at the
+  narrowest usable scope. The administrator can run:
+
+  ```azurecli
+  az role assignment create --assignee-object-id "<identity-object-id>" --assignee-principal-type "<User-or-Group-or-ServicePrincipal>" --role "Kubernetes Cluster - Azure Arc Onboarding" --scope "/subscriptions/<subscription-id>/resourceGroups/<resource-group>"
+  az role assignment list --assignee "<identity-object-id>" --scope "/subscriptions/<subscription-id>/resourceGroups/<resource-group>" --include-inherited --query "[].{role:roleDefinitionName,scope:scope}" --output table
+  ```
+
+  Wait for the assignment to propagate, then retry with the same identity.
+- `MissingSubscriptionRegistration`: use the provider namespace from the error,
+  register it in the selected subscription, and wait for `Registered`:
+
+  ```azurecli
+  az provider register --namespace "<provider-namespace>"
+  az provider show --namespace "<provider-namespace>" --query registrationState --output tsv
+  ```
+
+- Resource group `404`: first confirm the active subscription and check the
+  spelling with `az group show --name "<resource-group>"`. Correct the name or
+  subscription if necessary. Only when the deployment is intended and approved
+  to use a new resource group, create it with
+  `az group create --name "<resource-group>" --location "<resource-group-location>"`.
+- Unsupported location: follow the [`AZK8S0104` location
+  procedure](#azk8s0104-invalidlocation), then retry with a canonical location
+  returned for `Microsoft.Kubernetes/connectedClusters`.
+- Policy denial: use the policy assignment ID in the response to identify the
+  assignment and contact its policy owner. Retry with settings that comply with
+  the policy, or request an approved exemption at the required scope. Don't
+  disable or modify an organizational policy solely to complete onboarding.
+- HTTP `429`, `5xx`, or a timeout: retry at most three times, waiting 30, 60,
+  and then 120 seconds. If the failure continues, stop retrying, check Azure
+  Service Health for the selected subscription and region, and preserve the
+  request or correlation ID and UTC timestamp for support.
 
 Don't delete an existing connected cluster based only on a name-conflict
 message. Compare the Azure resource ID with the registration names stored in
@@ -406,7 +446,7 @@ delete it.
 
 ## `AZK8S0403`: `ClusterAlreadyOnboarded`
 
-During `connect`, version 1.11.5 found an existing Arc Helm release, read
+During `connect`, the extension found an existing Arc Helm release, read
 `azure-clusterconfig`, and confirmed that its saved Azure resource still
 exists. The saved resource group or resource name differs from the values in
 the new command. This guard prevents one Kubernetes cluster from silently
@@ -436,10 +476,10 @@ requested Azure registration agree case-insensitively.
 
 ## `AZK8S0404`: `ConnectedClusterResourceAlreadyExists`
 
-The requested name already identifies a connected cluster resource. Version
-1.11.5 can detect this before creation when no local Arc release exists, or map
-a recognized ARM `409` from create-or-replace to this code. A matching name
-doesn't establish that the resource belongs to the selected Kubernetes
+The requested name already identifies a connected cluster resource. The
+extension can detect this before creation when no local Arc release exists, or
+map a recognized ARM `409` from create-or-replace to this code. A matching
+name doesn't establish that the resource belongs to the selected Kubernetes
 cluster.
 
 ```azurecli
@@ -462,11 +502,10 @@ advances beyond the existing-resource check.
 
 ## `AZK8S0405`: `ConnectedClusterResourceNotFound`
 
-Version 1.11.5 reports this code when `show` receives HTTP `404`, or when an
-update or delete receives a recognized connected-cluster not-found response.
-The common causes are the wrong subscription, misspelled resource group or
-name, a completed deletion, or an Azure resource missing while Arc state still
-exists in Kubernetes.
+This code is reported when an update or delete receives a recognized
+connected-cluster not-found response. The common causes are the wrong
+subscription, misspelled resource group or name, a completed deletion, or an
+Azure resource missing while Arc state still exists in Kubernetes.
 
 ```azurecli
 az account show --query "{subscription:id,tenant:tenantId}" --output yaml
@@ -475,9 +514,9 @@ az connectedk8s show --resource-group "<resource-group>" --name "<cluster-name>"
 ```
 
 The account query verifies the active scope. The list distinguishes an absent
-resource from a spelling mismatch without creating anything. For `show` or
-update, select the correct subscription and exact names, then retry; the code
-is fixed when the command resolves the intended full resource ID.
+resource from a spelling mismatch without creating anything. For update,
+select the correct subscription and exact names, then retry; the code is fixed
+when the command resolves the intended full resource ID.
 
 For delete, a `404` can mean the Azure side is already gone. Check for remaining
 Arc state with `helm list --all-namespaces --filter "^azure-arc$"` and read the
@@ -512,11 +551,11 @@ match and the supported delete advances past validation.
 
 ## `AZK8S0407`: `ResourceProviderFetchFailed`
 
-The standardized definition is reserved for migration in version 1.11.5; no
-active call site emits `AZK8S0407`. A provider fetch can instead appear as an
-unnumbered Azure request error during location validation, while the initial
-provider-registration check logs some fetch failures and continues. Use these
-steps for either current behavior or a later version that emits the code.
+The standardized definition is reserved for migration; no active call site
+emits `AZK8S0407`. A provider fetch can instead appear as an unnumbered Azure
+request error during location validation, while the initial provider-
+registration check logs some fetch failures and continues. Use these steps for
+either current behavior or a later version that emits the code.
 
 ```azurecli
 az account show --query "{subscription:id,tenant:tenantId,cloud:environmentName}" --output yaml
@@ -661,10 +700,10 @@ tokens, certificates, or private keys.
 
 ## `AZK8S0501`: `HelmReleaseDeleteFailed`
 
-Version 1.11.5 emits this code when `helm delete azure-arc` returns nonzero.
-Helm deletion is cluster-side work: it uses the release record to remove
-managed resources and can run chart deletion hooks. The error therefore does
-not prove that every resource remains, or that none were removed.
+This code is emitted when `helm delete azure-arc` returns nonzero. Helm
+deletion is cluster-side work: it uses the release record to remove managed
+resources and can run chart deletion hooks. The error therefore does not prove
+that every resource remains, or that none were removed.
 
 ```console
 helm version --short
@@ -727,35 +766,38 @@ repeated identical failures need correction rather than more retries.
 ## `AZK8S0503`: `HelmChartExportFailed`
 
 This code occurs after the chart-pull helper returns successfully but the
-expected chart directory isn't present. The default expected path is
+expected chart path isn't present. The path can be an exported chart directory
+or a packaged Helm chart file. The default expected path is
 `$HOME/.azure/AzureArcCharts/azure-arc-k8sagents`. If `HELMCHART` is set, its
 value replaces that final expected path. This distinction matters: a valid
-pull can still be followed by a bad override or unexpected archive layout.
+pull can still be followed by a bad override or missing artifact.
 
 ```powershell
 $env:HELMCHART
-Test-Path -LiteralPath "$HOME/.azure/AzureArcCharts/azure-arc-k8sagents" -PathType Container
+Test-Path -LiteralPath "$HOME/.azure/AzureArcCharts/azure-arc-k8sagents" -PathType Any
 Get-PSDrive -PSProvider FileSystem
 ```
 
 ```bash
 printf '%s\n' "${HELMCHART:-<not-set>}"
-test -d "$HOME/.azure/AzureArcCharts/azure-arc-k8sagents"; echo $?
+test -e "$HOME/.azure/AzureArcCharts/azure-arc-k8sagents"; echo $?
 df -h "$HOME/.azure"
 ```
 
 The environment check reveals whether the extension is validating an
 override instead of its managed directory. `Test-Path` returning `True`, or
-the shell test returning `0`, proves only that the expected directory exists;
-it doesn't prove its chart contents are valid. Remove an accidental
-`HELMCHART` override from the invoking environment, or correct the explicitly
-required path. Correct local security controls or storage only when they
-blocked chart extraction. Retry once; the error is fixed when the expected
-directory exists and the workflow advances to Helm install or upgrade.
+the shell test returning `0`, proves only that the expected directory or file
+exists; it doesn't prove its chart contents are valid. If `HELMCHART` points
+to a packaged chart, run the same existence check against that exact path.
+Remove an accidental `HELMCHART` override from the invoking environment, or
+correct the explicitly required path. Correct local security controls or
+storage only when they blocked chart extraction. Retry once; the error is
+fixed when the expected directory or file exists and the workflow advances to
+Helm install or upgrade.
 
 ## `AZK8S0504`: `HelmRepositoryAddFailed`
 
-The normal 1.11.5 path pulls an OCI chart. This code is active only when both
+The normal path pulls an OCI chart. This code is active only when both
 `HELMREPONAME` and `HELMREPOURL` are set, causing the extension to run `helm
 repo add` before chart retrieval. These environment variables select an
 explicit repository override and should not be inferred from the Arc release.
@@ -810,11 +852,11 @@ fixed when the same list command returns valid JSON.
 ## `AZK8S0506`: `AgentStateTimeout`
 
 The extension polls the connected-cluster Azure resource every five seconds
-for up to 15 minutes. In version 1.11.5, a missing state, `Succeeded`, and
-`Failed` are all terminal; only a persistent nonempty state outside that set
-can time out. Create emits the error immediately after its poll. Update records
-the timeout, continues the Helm update to avoid leaving it half-finished, and
-then emits `AZK8S0506`.
+for up to 15 minutes. A missing state, `Succeeded`, and `Failed` are all
+terminal; only a persistent nonempty state outside that set can time out.
+Create emits the error immediately after its poll. Update records the timeout,
+continues the Helm update to avoid leaving it half-finished, and then emits
+`AZK8S0506`.
 
 ```azurecli
 az connectedk8s show -g "<resource-group>" -n "<cluster-name>" --query "{agentState:arcAgentProfile.agentState,provisioningState:provisioningState,connectivityStatus:connectivityStatus}" -o yaml
@@ -861,9 +903,9 @@ sanitized exception and versions to support.
 Update, upgrade, and feature paths first ask Helm where the `azure-arc` release
 is stored. This code means no namespace was returned. That can mean the release
 is absent, the wrong cluster context was selected, or Helm returned malformed
-JSON that version 1.11.5 treated like no result. It does not merely mean that
-the workload namespace `azure-arc` is absent; the Helm release metadata can be
-stored in a different namespace such as `azure-arc-release`.
+JSON that was treated like no result. It does not merely mean that the workload
+namespace `azure-arc` is absent; the Helm release metadata can be stored in a
+different namespace such as `azure-arc-release`.
 
 ```console
 kubectl config current-context
@@ -918,7 +960,7 @@ original operation succeed.
 
 ## `AZK8S0510`: `HelmNotInstalled`
 
-Version 1.11.5 emits this code in AGC clouds (`ussec` or `usnat`), where it
+This code is emitted in AGC clouds (`ussec` or `usnat`), where the extension
 skips managed Helm download and requires `helm` on `PATH`. Public-cloud paths
 normally use the extension-managed binary, so a managed download failure has a
 different, older error rather than `AZK8S0510`.
@@ -1132,6 +1174,13 @@ installs it, watches the Job, reads its pod, and requests cleanup. A recognized
 chart-pull or Helm-install error keeps its more specific code, so don't assume
 `AZK8S0601` always means that the diagnostic container itself exited.
 
+Version 1.11.5 and later retry pod-log reads up to four times when Kubernetes
+returns `429`, `500`, `502`, `503`, or `504`. If the Job completed but all four
+attempts fail, the extension warns and continues onboarding without verified
+prediagnostic results. If an earlier extension reports `AZK8S0601` with a
+`5xx`, `proxyconnect`, or `502 Bad Gateway` detail while reading container
+logs, upgrade to version 1.11.5 or later before retrying.
+
 During a controlled retry, run:
 
 ```console
@@ -1155,11 +1204,17 @@ the Job workflow completes and returns output for result parsing.
 ## `AZK8S0602`: `PostDiagnosticPrecheckFailed`
 
 Despite its name, this is the blocking aggregate for a completed diagnostic
-run with at least one explicit `Failed` result. In connectedk8s 1.11.5 the
-required results are cluster DNS, required outbound connectivity, Microsoft
-Entra connectivity, and Arc CRD ownership. A proxy-configured Entra check can
-be reported as `NotApplicable` when the diagnostic pod can't consume that
-proxy; the command prints a warning in that case.
+run with at least one explicit `Failed` result. The required results are
+cluster DNS, required outbound connectivity, Microsoft Entra connectivity,
+and Arc CRD ownership. A proxy-configured Entra check can be reported as
+`NotApplicable` when the diagnostic pod can't consume that proxy; the command
+prints a warning in that case.
+
+Version 1.11.6 also recognizes a narrow false-positive CRD result from the
+prediagnostics image. It continues when the only failure says the known Arc
+CRDs are owned by release `azure-arc` in namespace `azure-arc-release` but the
+image expected those values in reverse. A different owner, missing ownership
+evidence, another failed required check, or an unknown CRD remains blocking.
 
 Read the `Precheck summary` and the individual lines immediately above the
 error. Diagnose only the checks marked `Failed`:
@@ -1178,7 +1233,8 @@ identify pre-existing Arc CRDs; it doesn't prove ownership, so retain the
 diagnostic ownership message for support. For outbound or Entra failures,
 follow the matching `AZK8S0306`-`AZK8S0308` procedure and allow only documented
 endpoints. The issue is fixed when every required result is `Passed` or an
-explicitly allowed `NotApplicable` and onboarding proceeds.
+explicitly allowed `NotApplicable`, or version 1.11.6 verifies the known false
+CRD conflict, and onboarding proceeds.
 
 ## `AZK8S0603`: `PrediagnosticsIncomplete`
 
@@ -1187,6 +1243,13 @@ paths are a Job that wasn't observed, a Job that didn't complete, no usable
 pod output, or a required DNS, outbound, or Entra result that couldn't be
 parsed. It is different from `AZK8S0602`: absence of evidence isn't treated as
 a passed or failed connectivity check.
+
+For a completed Job, version 1.11.5 and later retry transient `429` and `5xx`
+pod-log requests four times and continue onboarding with a warning if logs
+remain unavailable. Therefore, a completed Job with only exhausted transient
+log retrieval doesn't emit this aggregate in those versions. Upgrade to
+version 1.11.5 or later when an older extension reports a `5xx` log-read
+failure.
 
 First read any preceding `AZK8S0604` or `AZK8S0605` warning and the
 `jobExecutionStatus`, `dnsCheck`, `outboundConnectivityCheck`, `entraCheck`,
@@ -1255,16 +1318,31 @@ container-state reasons. Current logs diagnose a started process; `--previous`
 is useful only when a container restarted and a prior instance exists. Correct
 the reported cause: restore approved node capacity for scheduling or OOM,
 documented MCR egress and trust for image pulls, or the dependency named in
-container logs. Don't increase timeouts merely to hide a deterministic
-failure. The issue is fixed when the Job reaches `Complete` within the watch.
+container logs.
+
+If the logs show `x509`, `certificate has expired`, `unknown authority`, or a
+TLS handshake failure behind a TLS-inspecting proxy, confirm that the original
+onboarding command supplied the organization's current proxy CA bundle through
+`--proxy-cert`. Check the local file without sharing its contents:
+
+```console
+openssl x509 -in "<proxy-certificate-path>" -noout -subject -issuer -dates
+```
+
+The validity period must include the current UTC time. If the file contains a
+chain, have the proxy administrator verify every certificate and replace any
+expired or invalid certificate through the organization's approved process.
+Don't disable TLS verification. Retry with the corrected `--proxy-cert` path.
+Don't increase timeouts merely to hide a deterministic failure. The issue is
+fixed when the Job reaches `Complete` within the watch.
 
 ## `AZK8S0606`: `PrediagnosticsLogSaveFailed`
 
 This warning means the extension obtained diagnostic pod output but couldn't
 write its local copy because of an `OSError` other than no space left on
 device, or a value or type conversion error. Disk-full has separate telemetry
-and doesn't emit `AZK8S0606` in connectedk8s 1.11.5. The warning is nonfatal:
-result parsing continues from the in-memory output.
+and doesn't emit `AZK8S0606`. The warning is nonfatal: result parsing continues
+from the in-memory output.
 
 Use the directory from the command's saved-log message or debug output. Test
 the exact parent without displaying any existing log contents:
@@ -1300,6 +1378,20 @@ nonzero. `forbidden` and `timed out waiting for the condition` are classified
 as user-correctable telemetry, but the complete processed Helm detail selects
 the actual repair. The extension requests cleanup before returning the error.
 
+If Helm says that it can't create content because `azure-arc-release` is being
+terminated, inspect the namespace phase, finalizers, and deletion conditions:
+
+```console
+kubectl get namespace azure-arc-release -o jsonpath="{.status.phase}{'\n'}{.spec.finalizers}{'\n'}"
+kubectl get namespace azure-arc-release -o jsonpath="{range .status.conditions[*]}{.type}{': '}{.message}{'\n'}{end}"
+```
+
+Wait for deletion to finish before retrying; `kubectl get namespace
+azure-arc-release` should then return `NotFound`. If it remains `Terminating`,
+ask the cluster administrator to resolve the unavailable API, remaining
+resource, or finalizer controller named in the conditions. Don't clear
+finalizers manually.
+
 During a retry, inspect authorization and transient state:
 
 ```console
@@ -1309,14 +1401,22 @@ kubectl get events -n azure-arc-release --sort-by=.lastTimestamp
 kubectl get jobs,pods -n azure-arc-release -o wide --watch
 ```
 
-The explicit status flags work with Helm 3 and Helm 4 and expose a release
-only while its record remains. No row after failure is expected cleanup, not
-proof that Helm never ran. Authorization isolates a common `forbidden` cause.
-Events and the watch identify an install that created resources but couldn't
-make them ready before Helm's timeout. Correct the first Helm detail or event:
-cluster RBAC or admission ownership for `forbidden`, namespace quota or policy
-for rejected resources, documented registry connectivity for image pulls, or
-node capacity for scheduling. Don't install the chart manually or delete the
+Interpret the results as follows:
+
+- A Helm row means the temporary release record still exists. Its status shows
+  whether installation failed, is pending, or is being removed.
+- No Helm row after the failure can mean that the extension already completed
+  cleanup. It doesn't prove that Helm never started.
+- `yes` from the authorization check confirms permission to create Jobs. `no`
+  identifies an RBAC or admission-authorization issue.
+- Events and the watch show whether resources were rejected, remained pending,
+  failed to pull an image, or started but didn't become ready before timeout.
+
+Correct the first concrete Helm error or Kubernetes event. For `forbidden`,
+have the cluster administrator correct the named RBAC or admission rule. For a
+quota or policy rejection, use compliant settings or an approved exception.
+For image-pull or scheduling failures, restore documented registry access or
+approved node capacity. Don't install the chart manually or delete the
 temporary release. The issue is fixed when the extension-owned release
 installs, its Job starts, and the command advances to check results.
 

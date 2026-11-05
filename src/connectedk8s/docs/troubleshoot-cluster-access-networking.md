@@ -220,6 +220,29 @@ Interpret each command as follows:
   or `nc -vz "<api-host>" <api-port>` on Linux or macOS. A failed TCP test
   means VPN, private routing, firewall, load balancer, or API server
   availability must be restored; it isn't an RBAC failure.
+- Local tunnel endpoint: if the kubeconfig server is `127.0.0.1`, `localhost`,
+  or another loopback address, the API server depends on a local tunnel or
+  port-forward. Confirm that the provider's supported tunnel process is
+  running on the kubeconfig port in the same host environment where Azure CLI
+  runs. Restart that tunnel through its supported command, keep it running,
+  and rerun `/version` before retrying onboarding.
+- Host proxy interception: if `HTTPS_PROXY` is set and `/version` reports a
+  proxy connection, `502`, TLS, or certificate error, add only the exact API
+  server host to both `NO_PROXY` and `no_proxy` for the Azure CLI process. For
+  a loopback endpoint, include `127.0.0.1` and `localhost`. For example:
+
+  ```powershell
+  $env:NO_PROXY = "$env:NO_PROXY,<api-host>"
+  $env:no_proxy = $env:NO_PROXY
+  ```
+
+  ```bash
+  export NO_PROXY="${NO_PROXY:+$NO_PROXY,}<api-host>"
+  export no_proxy="$NO_PROXY"
+  ```
+
+  Don't bypass the proxy for unrelated hosts or broad address ranges. Rerun
+  `/version` in the same process environment before retrying Azure CLI.
 - DNS errors: run `Resolve-DnsName "<api-host>"` on Windows or `nslookup
   "<api-host>"` on Linux or macOS. Empty output, `NXDOMAIN`, `SERVFAIL`, or a
   timeout identifies a local or private DNS problem. Correct the applicable
@@ -283,9 +306,9 @@ heuristics from finishing. It doesn't mean that a known distribution wasn't
 recognized: a valid but unknown distribution is classified as `generic`
 without this warning.
 
-In connectedk8s 1.11.5, `AZK8S0203` is non-fatal. The extension warns, uses
-`generic`, and continues onboarding. Therefore, a later error belongs to the
-later step named by that error and doesn't make `AZK8S0203` fatal.
+`AZK8S0203` is non-fatal. The extension warns, uses `generic`, and continues
+onboarding. Therefore, a later error belongs to the later step named by that
+error and doesn't make `AZK8S0203` fatal.
 
 ### Diagnose distribution detection
 
@@ -327,7 +350,7 @@ bypasses automatic distribution detection. Keep the original kubeconfig,
 context, resource group, name, location, and other settings unchanged.
 
 If the actual distribution isn't listed, don't supply a different platform.
-Because version 1.11.5 already falls back to `generic`, allow the command to
+Because the extension already falls back to `generic`, allow the command to
 continue. If onboarding later fails, troubleshoot the later error code. If
 correct platform classification is required or the same warning repeats with
 the latest extension, collect sanitized debug output and contact support.
@@ -357,7 +380,7 @@ the expected namespace state depend on the operation:
   doesn't produce this code; onboarding proceeds to create the namespace.
 - During `az connectedk8s delete`, Helm removal can delete `azure-arc`. The
   extension then lists namespaces until `azure-arc` disappears. If every
-  lookup fails for three minutes, version 1.11.5 reports `AZK8S0204` as a
+  lookup fails for three minutes, the extension reports `AZK8S0204` as a
   warning and continues cleanup. By then, Azure or Helm state can already have
   changed, so don't blindly rerun the delete.
 
@@ -424,7 +447,7 @@ customer-identifying API server URLs.
 ## `AZK8S0205`: `LinuxNodeNotFound`
 
 Azure Arc agents run as Kubernetes workloads and require a Linux node on which
-they can be scheduled. During `connect`, version 1.11.5 checks the
+they can be scheduled. During `connect`, the extension checks the
 `kubernetes.io/os` label returned for every Node. If none equals `linux`, it
 reports `AZK8S0205` as a warning and continues. Continuing doesn't make the
 capacity problem harmless: Helm can install the workloads, but their pods can
@@ -747,10 +770,13 @@ earlier `NXDOMAIN` classification.
 
 ## `AZK8S0302`: `DnsTimeout`
 
-A timeout means no usable DNS response arrived before the client deadline. It
-can result from an overloaded DNS deployment, packet loss, an unreachable
-upstream, or UDP/TCP port 53 policy. Check DNS pod readiness and recent events,
-then repeat the lookup several times:
+A single generic timeout, such as `query timed out`, is treated as transient:
+the diagnostic reports `NotApplicable`, warns, and continues onboarding.
+`AZK8S0302` requires repeated generic timeouts or explicit timeout evidence.
+An explicit timeout means no usable DNS response arrived before the client
+deadline. It can result from an overloaded DNS deployment, packet loss, an
+unreachable upstream, or UDP/TCP port 53 policy. Check DNS pod readiness and
+recent events, then repeat the lookup several times:
 
 ```console
 kubectl --kubeconfig "<path>" --context "<context>" get events -n kube-system --sort-by=.lastTimestamp
@@ -761,7 +787,7 @@ Use the events to identify DNS pod scheduling, restart, or resource-pressure
 failures. Review NetworkPolicies rather than deleting them: pod DNS normally
 requires egress to the configured resolver on both UDP and TCP port 53. Run
 the [common in-cluster DNS procedure](#diagnose-azk8s0301-through-azk8s0305)
-until it returns an address without timing out.
+until repeated lookups return an address without timing out.
 
 ## `AZK8S0303`: `DnsServerFailure`
 
@@ -837,7 +863,7 @@ diagnostic pod or the supported troubleshoot command instead.
 
 ## `AZK8S0306`: `OnboardingOutboundConnectivityFailed`
 
-At least one mandatory onboarding endpoint returned `000`, so version 1.11.5
+At least one mandatory onboarding endpoint returned `000`, so the extension
 marks the pre-onboarding outbound check `Failed`. Use the endpoint list in the
 detailed diagnostic to select the firewall, proxy, private-link, DNS, or TLS
 path. Allow only the hostname, protocol, and port documented for the active
@@ -853,7 +879,7 @@ make this transport check fail.
 ## `AZK8S0307`: `ClusterConnectOutboundConnectivityFailed`
 
 The optional Cluster Connect endpoint returned `000`. During pre-onboarding,
-version 1.11.5 records `AZK8S0307` and warns that Cluster Connect will be
+the extension records `AZK8S0307` and warns that Cluster Connect will be
 affected, but the outbound check still passes when mandatory onboarding
 endpoints are reachable. No action is required when the feature won't be used.
 
@@ -885,7 +911,7 @@ legitimately remain 4xx while the authenticated product operation succeeds.
 ## `AZK8S0309`: `CertificatePulldownFailed`
 
 This code is selected only after an Arc Helm install or upgrade times out.
-Version 1.11.5 then performs read-only checks of `azure-arc` pods, warning
+The extension then performs read-only checks of `azure-arc` pods, warning
 events, and Secret metadata. Missing `azure-identity-certificate`, a missing
 `kube-aad-proxy-certificate` named by a `FailedMount` event, or related
 clusteridentityoperator evidence selects `AZK8S0309`. Image-pull evidence is
