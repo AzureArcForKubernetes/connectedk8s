@@ -228,20 +228,20 @@ Interpret each command as follows:
   don't guess at the server URL or edit credential data. If it does match,
   restore the required VPN, private route, firewall path, load balancer, or API
   server availability. Repeat the TCP test, then rerun `/version` with the
-  same kubeconfig and context.
+  same kubeconfig and context. For example, for a kind cluster, see
+  [Interacting With Your
+  Cluster](https://kind.sigs.k8s.io/docs/user/quick-start/#interacting-with-your-cluster)
+  and run `kind get kubeconfig --name "<cluster-name>" > "<new-path>"` to save
+  the current configuration to a new file. Restrict access to that file
+  because it contains client credentials.
 - Local tunnel endpoint: if the kubeconfig server is `127.0.0.1`, `localhost`,
   or another loopback address, API access depends on a listener on the same
   host where Azure CLI runs. That listener might belong to a provider tunnel,
   port-forward, or local Kubernetes cluster. Confirm which process the
   provider expects and whether it is running on the kubeconfig port. Restart
   that process through its supported command. If the provider no longer uses
-  that loopback address or port, obtain a current kubeconfig instead. For
-  example, for a kind cluster, see [Interacting With Your
-  Cluster](https://kind.sigs.k8s.io/docs/user/quick-start/#interacting-with-your-cluster)
-  and run `kind get kubeconfig --name "<cluster-name>" > "<new-path>"` to save
-  the current configuration to a new file. Restrict access to that file
-  because it contains client credentials. Rerun `/version` before retrying
-  onboarding.
+  that loopback address or port, obtain a current kubeconfig instead. Rerun
+  `/version` before retrying onboarding.
 - Host proxy interception: if `HTTPS_PROXY` is set and `/version` reports a
   proxy connection, `502`, TLS, or certificate error, add only the exact API
   server host to both `NO_PROXY` and `no_proxy` for the Azure CLI process. For
