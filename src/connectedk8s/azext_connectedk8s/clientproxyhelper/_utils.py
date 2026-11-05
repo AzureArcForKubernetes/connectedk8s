@@ -6,9 +6,11 @@
 from __future__ import annotations
 
 import base64
+import errno
 import json
 import os
 import platform
+import socket
 import sys
 import time
 from base64 import b64decode, b64encode
@@ -24,7 +26,6 @@ from psutil import (
     AccessDenied,
     NoSuchProcess,
     ZombieProcess,
-    net_connections,
     process_iter,
 )
 
@@ -44,20 +45,11 @@ logger = get_logger(__name__)
 
 def check_if_port_is_open(port: int) -> bool:
     try:
-        connections = net_connections(kind="inet")
-        for tup in connections:
-            if int(tup[3][1]) == port:  # type: ignore[misc]
-                return True
-    except (
-        AccessDenied,
-        NoSuchProcess,
-        ZombieProcess,
-        OSError,
-        IndexError,
-        TypeError,
-        ValueError,
-    ) as e:
-        # Port inspection can fail when the process table is transient or inaccessible.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", int(port)))
+    except OSError as e:
+        if e.errno in (errno.EADDRINUSE, errno.EACCES):
+            return True
         telemetry.set_exception(
             exception=e,
             fault_type=consts.Port_Check_Fault_Type,
