@@ -23,6 +23,22 @@ az connectedk8s show --resource-group "<resource-group>" --name "<cluster-name>"
 az connectedk8s troubleshoot --resource-group "<resource-group>" --name "<cluster-name>"
 ```
 
+Use the results as follows:
+
+- In the `show` output, confirm that `id` identifies the intended cluster,
+  `provisioningState` is `Succeeded`, and `connectivityStatus` is `Connected`.
+  A different state identifies the Azure-side condition to investigate; retain
+  the complete output for comparison after the repair.
+- In the `troubleshoot` output, address each check reported as failed or
+  incomplete before retrying the original command. The command reports the
+  local directory where it saved the diagnostic logs. Keep that directory
+  with the command output and the UTC time of the run.
+- If every check passes but the original failure continues, create a sanitized
+  copy of the output and diagnostic directory and attach it to the support
+  request. Remove credentials, tokens, certificates, private keys, proxy
+  details, internal addresses, and customer identifiers. Do not include
+  kubeconfig contents or Kubernetes Secret data.
+
 ### Inspect the Azure Arc agents
 
 For agent installation or upgrade failures, inspect the `azure-arc` namespace:
@@ -51,6 +67,29 @@ Use the commands in order:
   when the pod starts but a container exits, restarts, or reports not ready;
   correct the first concrete error in the output.
 
+Act on the category reported by the events, description, or logs:
+
+- For scheduling failures, correct the exact `FailedScheduling` reason, such
+  as insufficient capacity, no suitable Linux node, a blocking taint, or an
+  admission-policy constraint. Follow the
+  [`AZK8S0512` procedure](#azk8s0512-helmtimeoutpendingorunschedulable).
+- For mount failures, use the `FailedMount` event to identify the missing or
+  inaccessible Secret, ConfigMap, volume, or node path. Restore access to the
+  named dependency or correct the node, CSI driver, or policy condition. Do
+  not manually create or alter an Arc-managed object; if one is missing,
+  retry the supported Arc operation after correcting the underlying cause.
+- For image retrieval failures, use the kubelet message to distinguish node
+  egress, proxy or TLS trust, registry authorization, and node storage. Follow
+  the [`AZK8S0513` procedure](#azk8s0513-helmtimeoutimagepullfailed).
+- For container startup or readiness failures, use current logs and, for a
+  restarted container, `kubectl logs --previous`. Correct the earliest
+  dependency, authentication, or configuration error. Follow the
+  [`AZK8S0514` procedure](#azk8s0514-helmtimeout).
+
+After the repair, repeat `get pods`, `get events`, and `describe pod`. The
+failure is resolved when the warning no longer recurs and the required Arc
+pods are `Running` and ready; then retry the original supported operation.
+
 Do not include kubeconfig contents, tokens, certificates, private keys, proxy
 credentials, or Kubernetes Secrets in support requests.
 
@@ -78,14 +117,62 @@ helm list --all-namespaces --deployed --failed --pending --uninstalling --uninst
 kubectl get deployments,pods -n azure-arc -o wide
 ```
 
-The Azure query shows whether the resource exists and whether its latest
-operation succeeded. A `404` is expected only when a delete already completed.
-The Helm row shows the release namespace and state; if a row appears, use that
-namespace with `helm status azure-arc --namespace "<release-namespace>"`.
-Deployments should have all desired replicas available, and pods should be
-running and ready. If only one layer changed, or Azure, Helm, or Kubernetes
-reports a failed or pending state, use the matching error procedure instead of
-repeating the operation. Unless the specific procedure directs it, don't:
+Interpret each result before retrying:
+
+- The Azure query returns only the resource ID, ARM provisioning state, and
+  Arc agent operation state. A nonempty `id` must identify the intended
+  subscription, resource group, and cluster. `provisioningState: Succeeded`
+  means the latest ARM operation completed; a `404` is expected only when a
+  delete already completed. `agentState: Succeeded` means the agent operation
+  completed successfully, while `Failed` is a terminal failure. Any other
+  nonempty agent state is still in progress. Version 1.11.5 also treats a
+  missing agent state as terminal, but it does not prove that the agents are
+  healthy, so verify Helm and Kubernetes state.
+- The Helm command searches every namespace for the exact `azure-arc` release
+  and includes releases in any lifecycle state. A healthy release has one row
+  with `STATUS` set to `deployed`. No row means Helm did not find the release.
+  For `failed`, `pending-*`, `uninstalling`, or another unexpected status, run
+  `helm status azure-arc --namespace "<release-namespace>"` and follow the
+  matching Helm error procedure.
+- The Kubernetes command lists both deployments and pods in `azure-arc`.
+  Every deployment should have its desired replicas ready and available. Each
+  required pod should show all containers ready and normally have `STATUS` set
+  to `Running`. For a pending, restarting, failed, or non-ready pod, use the
+  agent inspection steps above before retrying.
+
+The following synthetic examples are trimmed to the fields that determine
+health. A healthy Azure result resembles:
+
+```yaml
+agentState: Succeeded
+id: /subscriptions/<subscription-id>/resourceGroups/<resource-group>/providers/Microsoft.Kubernetes/connectedClusters/<cluster-name>
+provisioningState: Succeeded
+```
+
+A healthy Helm result resembles:
+
+```output
+NAME       NAMESPACE          REVISION  STATUS    CHART
+azure-arc  azure-arc-release  6         deployed  azure-arc-k8sagents-<version>
+```
+
+Healthy deployment and pod rows resemble:
+
+```output
+NAME                                READY  UP-TO-DATE  AVAILABLE
+deployment.apps/<deployment-name>   1/1    1           1
+
+NAME                    READY  STATUS   RESTARTS
+pod/<pod-name>           1/1    Running  0
+```
+
+Names, revisions, versions, ages, node assignments, and replica counts vary by
+installation. Compare readiness ratios and states rather than those example
+values.
+
+If only one layer changed, or Azure, Helm, or Kubernetes reports a failed or
+pending state, use the matching error procedure instead of repeating the
+operation. Unless the specific procedure directs it, don't:
 
 - Use force deletion to bypass identity or resource mismatches.
 - Delete Helm releases, namespaces, ConfigMaps, or Secrets manually.
@@ -119,10 +206,30 @@ az account list-locations --query "[?displayName=='<supported-display-name>'].na
 ```
 
 The account query identifies the subscription and Azure cloud used for the
-location lookup; confirm that both are the intended targets. The provider
-query should return at least one location for that cloud and subscription.
-The final command converts a displayed name such as `East US` to the canonical
-name `eastus`; empty output means the supplied display name didn't match.
+location lookup. The intended subscription is the one that contains the
+connected cluster resource. Find its ID in the cluster's Azure portal resource
+ID, deployment record, or approved support case. The intended cloud is the
+Azure environment where that resource is hosted, such as `AzureCloud`,
+`AzureUSGovernment`, or `AzureChinaCloud`. If the cloud isn't known, ask the
+Azure administrator rather than inferring it from the region name.
+
+If the cloud is correct but the subscription is not, list the subscriptions
+available to the signed-in identity and select the subscription ID identified
+above:
+
+```azurecli
+az account list --output table
+az account set --subscription "<subscription-id>"
+az account show --query "{subscription:id,cloud:environmentName}" --output yaml
+```
+
+The final `account show` output must contain the selected subscription and
+intended cloud before continuing. If the cloud is wrong, sign in to the
+organization's correct Azure environment first, then select the subscription.
+The provider query should return at least one location for that cloud and
+subscription. The final location command converts a displayed name such as
+`East US` to the canonical name `eastus`; empty output means the supplied
+display name didn't match.
 
 ### Resolve the location
 
@@ -135,7 +242,7 @@ requirements.
 ### Verify the location
 
 The original command should advance beyond location validation without
-`AZK8S0104`. Repeating the same rejected value isn't useful.
+`AZK8S0104`.
 
 ### Location support evidence
 
