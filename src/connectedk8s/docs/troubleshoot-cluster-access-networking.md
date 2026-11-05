@@ -42,11 +42,14 @@ kubectl cluster-info
 kubectl auth can-i get namespaces
 ```
 
-If the context is wrong, select the intended context with `kubectl config
-use-context <context-name>`. If `kubectl cluster-info` fails, restore VPN or
-private-network access and verify API server DNS and firewall rules. If the
-authorization check returns `no`, use a kubeconfig identity with the required
-cluster permissions before retrying the Azure CLI command.
+If the context is wrong, pass `--kube-context "<context-name>"` to the Azure
+CLI command, or run `kubectl --kubeconfig "<path>" config use-context
+"<context-name>"`. If `kubectl cluster-info` fails, reconnect through the
+organization's approved VPN or private-network method, then verify the API
+server host's DNS resolution and TCP port. If the authorization check returns
+`no`, ask the cluster administrator to grant the operation-specific
+permissions to the kubeconfig identity. Retry only after the authorization
+check returns `yes`.
 
 ## Determine whether DNS is blocking connectivity
 
