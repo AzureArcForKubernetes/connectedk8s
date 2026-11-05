@@ -221,14 +221,27 @@ Interpret each command as follows:
   jsonpath="{.clusters[0].cluster.server}{'\n'}"`. Test its host and port with
   `Test-NetConnection -ComputerName "<api-host>" -Port <api-port>` on Windows
   or `nc -vz "<api-host>" <api-port>` on Linux or macOS. A failed TCP test
-  means VPN, private routing, firewall, load balancer, or API server
-  availability must be restored; it isn't an RBAC failure.
+  isn't an RBAC failure. Confirm that the URL still matches the cluster's
+  current API endpoint by using the cluster provider's supported management
+  tool or asking the cluster administrator. If it doesn't match, obtain or
+  regenerate the kubeconfig through the provider's supported access flow;
+  don't guess at the server URL or edit credential data. If it does match,
+  restore the required VPN, private route, firewall path, load balancer, or API
+  server availability. Repeat the TCP test, then rerun `/version` with the
+  same kubeconfig and context.
 - Local tunnel endpoint: if the kubeconfig server is `127.0.0.1`, `localhost`,
-  or another loopback address, the API server depends on a local tunnel or
-  port-forward. Confirm that the provider's supported tunnel process is
-  running on the kubeconfig port in the same host environment where Azure CLI
-  runs. Restart that tunnel through its supported command, keep it running,
-  and rerun `/version` before retrying onboarding.
+  or another loopback address, API access depends on a listener on the same
+  host where Azure CLI runs. That listener might belong to a provider tunnel,
+  port-forward, or local Kubernetes cluster. Confirm which process the
+  provider expects and whether it is running on the kubeconfig port. Restart
+  that process through its supported command. If the provider no longer uses
+  that loopback address or port, obtain a current kubeconfig instead. For
+  example, for a kind cluster, see [Interacting With Your
+  Cluster](https://kind.sigs.k8s.io/docs/user/quick-start/#interacting-with-your-cluster)
+  and run `kind get kubeconfig --name "<cluster-name>" > "<new-path>"` to save
+  the current configuration to a new file. Restrict access to that file
+  because it contains client credentials. Rerun `/version` before retrying
+  onboarding.
 - Host proxy interception: if `HTTPS_PROXY` is set and `/version` reports a
   proxy connection, `502`, TLS, or certificate error, add only the exact API
   server host to both `NO_PROXY` and `no_proxy` for the Azure CLI process. For
