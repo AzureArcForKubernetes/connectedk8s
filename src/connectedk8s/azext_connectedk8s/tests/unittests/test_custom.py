@@ -20,6 +20,7 @@ from azure.cli.core.azclierror import (
     RequiredArgumentMissingError,
     ValidationError,
 )
+from azure.core.exceptions import ResourceNotFoundError
 from kubernetes.client.exceptions import ApiException
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
@@ -32,6 +33,7 @@ from kubernetes.client.models import (
 )
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._errors as errors
 from azext_connectedk8s import custom
 from azext_connectedk8s.custom import (
     _get_kubernetes_client_locations,
@@ -138,6 +140,30 @@ def _assert_standardized_telemetry(mock_telemetry, error, user_fault):
         mock_telemetry.set_user_fault.assert_called_once_with()
     else:
         mock_telemetry.set_user_fault.assert_not_called()
+
+
+def test_poll_for_agent_state_reports_update_resource_not_found(monkeypatch):
+    source_error = ResourceNotFoundError(
+        "The connected cluster resource could not be found."
+    )
+    source_error.error = SimpleNamespace(code="ResourceNotFound")
+    client = MagicMock()
+    client.get.side_effect = source_error
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
+
+    with pytest.raises(AzCLIError, match="AZK8S0405"):
+        custom.poll_for_agent_state(
+            client,
+            "resource-group",
+            "cluster",
+            cmd=_cmd_without_arm_id(),
+            operation="update",
+        )
+
+    _assert_standardized_telemetry(
+        mock_telemetry, errors.RESOURCE_NOT_FOUND, user_fault=True
+    )
 
 
 def test_enable_features_reports_invalid_argument_value(monkeypatch):
