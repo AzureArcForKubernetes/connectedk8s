@@ -1,8 +1,8 @@
 # Troubleshoot Azure Arc-enabled Kubernetes error codes
 
 Use this reference when an `az connectedk8s` command reports an error in the
-`AZK8Snnnn` format. Find the code in the tables below, follow the resolution,
-and retry the original command.
+`AZK8Snnnn` format. Complete the readiness checks below, find the complete
+code, and follow its resolution before retrying the original command.
 
 The code identifies the operation or failure category. The detailed text after
 the code identifies the specific resource, endpoint, or underlying failure.
@@ -14,10 +14,115 @@ The behavior descriptions in this reference were validated with
 The error catalog is introduced incrementally. Some codes are reserved for
 call sites that have not yet migrated to standardized errors. DNS and outbound
 connectivity codes, and diagnostic log-save failures, can also appear as
-non-fatal diagnostic results. A non-fatal result needs action only when the
-related check or command also fails.
+non-fatal diagnostic results. Non-fatal means that the command can continue;
+it doesn't mean that the underlying result should be discarded when a related
+check or later operation fails.
+
+## Before troubleshooting
+
+Run checks from the same computer, shell, network, kubeconfig, and context used
+by the failing Azure CLI command. Confirm the tools and Azure context first:
+
+```azurecli
+az version
+az extension show --name connectedk8s --query version --output tsv
+az account show --query "{subscription:id,tenant:tenantId}" --output yaml
+kubectl version --client
+```
+
+Next, verify the exact Kubernetes access path supplied to Azure CLI:
+
+```console
+kubectl --kubeconfig "<path>" config get-contexts "<context>"
+kubectl --kubeconfig "<path>" config current-context
+kubectl --kubeconfig "<path>" --context "<context>" get --raw=/version
+kubectl --kubeconfig "<path>" --context "<context>" auth can-i get namespaces
+kubectl --kubeconfig "<path>" --context "<context>" cluster-info
+```
+
+For an existing connected cluster, run the supported self-diagnostic command:
+
+```azurecli
+az connectedk8s troubleshoot --resource-group "<resource-group>" --name "<cluster-name>" --kube-config "<path>" --kube-context "<context>"
+```
+
+Don't display or share kubeconfig contents, tokens, certificates, private keys,
+proxy credentials, customer-identifying endpoints, or unsanitized diagnostic
+files. A successful local check doesn't override a later, more specific error.
+When the command reports both a pre-onboarding `AZK8S0600`-series code and an
+underlying DNS, egress, scheduling, or image-pull code, troubleshoot the
+underlying code first and use the `AZK8S0600`-series code to understand the
+diagnostic stage that stopped.
+
+## Minimum permissions for onboarding
+
+Azure and Kubernetes permissions are separate:
+
+- **Azure:** assign the connecting identity the
+  [Kubernetes Cluster - Azure Arc Onboarding](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles/containers#kubernetes-cluster---azure-arc-onboarding)
+  role at the intended resource-group scope. This role provides the required
+  read and write permissions for `Microsoft.Kubernetes/connectedClusters`
+  without granting general resource-management permissions. The identity also
+  needs read access to an existing resource group.
+- **Kubernetes:** use an approved onboarding identity with
+  [`cluster-admin`](https://learn.microsoft.com/azure/architecture/hybrid/arc-hybrid-kubernetes#cluster-registration),
+  or an organization-defined equivalent that can create the cluster-scoped
+  and namespaced resources in the Arc agent chart. Don't grant permanent
+  `cluster-admin` access solely for troubleshooting. `AZK8S0204`,
+  `AZK8S0206`, and `AZK8S0208` identify common namespace, ClusterRoleBinding,
+  and Secret permission failures.
+
+See [Azure Arc-enabled Kubernetes system requirements](https://learn.microsoft.com/azure/azure-arc/kubernetes/system-requirements)
+for the current identity and resource-provider requirements. Update, delete,
+Cluster Connect, Custom Locations, and other features can require different
+Azure or Kubernetes permissions; follow the linked feature procedure instead
+of reusing the onboarding role generically.
+
+## Start with these errors
+
+Use the most specific code reported by the command. A command can report more
+than one code when a specific check contributes to a later aggregate result.
+Some diagnostics are nonfatal: `AZK8S0308` confirms that an endpoint returned
+an HTTP response, and `AZK8S0701` can indicate that a mixed feature request
+continued without Custom Locations. Don't treat either code alone as proof
+that the overall command failed.
+
+Use these customer paths to find the relevant guidance. The complete catalog
+remains below.
+
+| Customer path | Related codes |
+| --- | --- |
+| Interpret an unexpected or unclassified failure | `AZK8S0001` |
+| Load kubeconfig and reach Kubernetes | `AZK8S0200`, `AZK8S0202` |
+| Diagnose endpoint responses, Cluster Connect egress, or certificate synchronization | `AZK8S0307`, `AZK8S0308`, `AZK8S0309` |
+| Create, find, or reconcile the connected-cluster resource | `AZK8S0400`, `AZK8S0403`, `AZK8S0404`, `AZK8S0405` |
+| Install or inspect the Helm release and diagnose image pulls | `AZK8S0500`, `AZK8S0505`, `AZK8S0508`, `AZK8S0513` |
+| Complete pre-onboarding diagnostics | `AZK8S0601`, `AZK8S0602`, `AZK8S0603`, `AZK8S0605`, `AZK8S0607` |
+| Enable Custom Locations | `AZK8S0701` |
+| Download or run the Cluster Connect client proxy | `AZK8S0800`, `AZK8S0801`, `AZK8S0804` |
+
+## Ownership and escalation
+
+| Failure area | Start with | Escalate when |
+| --- | --- | --- |
+| Kubeconfig, context, API access, or Kubernetes RBAC | Cluster administrator or Kubernetes provider | The provider-generated kubeconfig, required network path, and approved permissions are correct, but the same operation still fails. |
+| Cluster DNS, outbound access, firewall, proxy, or private routing | Cluster and network administrators | The documented endpoints and routes are allowed and the same in-cluster diagnostic still fails. |
+| Azure subscription, resource provider, resource state, or Azure RBAC | Azure subscription or resource administrator | The tenant, subscription, resource, provider registration, and required role are correct, but Azure still rejects the request. |
+| Helm release, pod scheduling, image pull, or Arc agent health | Cluster operator, using the code-specific procedure | Cluster capacity, registry access, policy, and Kubernetes events don't identify a customer-controlled cause, or the failure persists after that cause is fixed. |
+| Persistent authenticated `429` or `5xx`, or `AZK8S0001` without a specific cause | Azure support | Retry and Azure service-health checks don't resolve the failure. Provide the sanitized evidence listed in [Contact support](#contact-support). |
 
 ## Find your error
+
+Use the first failed check or the most specific code to select a path:
+
+| First failure | Start here |
+| --- | --- |
+| Kubeconfig can't be opened or parsed | [`AZK8S0200`](#kubeconfig-and-cluster-access-errors) |
+| Kubernetes `/version` fails | [`AZK8S0202`](#kubeconfig-and-cluster-access-errors) |
+| Kubernetes is reachable, but a required read or write is denied | [Kubeconfig and cluster access errors](#kubeconfig-and-cluster-access-errors) |
+| An in-cluster DNS or outbound check fails | [Network and connectivity errors](#network-and-connectivity-errors) |
+| Azure resource, Helm, or Arc agent work fails | [Azure resource operation errors](#azure-resource-operation-errors) or [Helm and agent lifecycle errors](#helm-and-agent-lifecycle-errors) |
+| Cluster Connect, client proxy, or another feature fails | [Feature errors](#feature-errors) or [Client proxy errors](#client-proxy-errors) |
 
 Use your browser's page search to find the complete `AZK8Snnnn` code, or select
 its category:
@@ -34,71 +139,7 @@ its category:
 | `AZK8S0700`-`AZK8S0799` | [Feature errors](#feature-errors) |
 | `AZK8S0800`-`AZK8S0899` | [Client proxy errors](#client-proxy-errors) |
 
-Detailed procedures are available for these errors:
-
-- [`AZK8S0104`: `InvalidLocation`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0104-invalidlocation)
-- [`AZK8S0200`: `KubeconfigLoadFailed`](troubleshoot-cluster-access-networking.md#azk8s0200-kubeconfigloadfailed)
-- [`AZK8S0202`: `KubernetesConnectivityFailed`](troubleshoot-cluster-access-networking.md#azk8s0202-kubernetesconnectivityfailed)
-- [`AZK8S0203`: `KubernetesDistributionDetectionFailed`](troubleshoot-cluster-access-networking.md#azk8s0203-kubernetesdistributiondetectionfailed)
-- [`AZK8S0204`: `KubernetesNamespaceGetFailed`](troubleshoot-cluster-access-networking.md#azk8s0204-kubernetesnamespacegetfailed)
-- [`AZK8S0205`: `LinuxNodeNotFound`](troubleshoot-cluster-access-networking.md#azk8s0205-linuxnodenotfound)
-- [`AZK8S0206`: `ClusterRoleBindingCreateForbidden`](troubleshoot-cluster-access-networking.md#azk8s0206-clusterrolebindingcreateforbidden)
-- [`AZK8S0207`: `KubernetesConfigurationLoadFailed`](troubleshoot-cluster-access-networking.md#azk8s0207-kubernetesconfigurationloadfailed)
-- [`AZK8S0208`: `KubernetesPrivateKeyInjectionFailed`](troubleshoot-cluster-access-networking.md#azk8s0208-kubernetesprivatekeyinjectionfailed)
-- [`AZK8S0209`: `ConfigMapWriteFailed`](troubleshoot-cluster-access-networking.md#azk8s0209-configmapwritefailed)
-- [`AZK8S0300`: `DataPlaneHealthCheckFailed`](troubleshoot-cluster-access-networking.md#azk8s0300-dataplanehealthcheckfailed)
-- [`AZK8S0301`: `DnsNxDomain`](troubleshoot-cluster-access-networking.md#azk8s0301-dnsnxdomain)
-- [`AZK8S0302`: `DnsTimeout`](troubleshoot-cluster-access-networking.md#azk8s0302-dnstimeout)
-- [`AZK8S0303`: `DnsServerFailure`](troubleshoot-cluster-access-networking.md#azk8s0303-dnsserverfailure)
-- [`AZK8S0304`: `DnsNoServersReachable`](troubleshoot-cluster-access-networking.md#azk8s0304-dnsnoserversreachable)
-- [`AZK8S0305`: `DnsCommunicationsError`](troubleshoot-cluster-access-networking.md#azk8s0305-dnscommunicationserror)
-- [`AZK8S0306`: `OnboardingOutboundConnectivityFailed`](troubleshoot-cluster-access-networking.md#azk8s0306-onboardingoutboundconnectivityfailed)
-- [`AZK8S0307`: `ClusterConnectOutboundConnectivityFailed`](troubleshoot-cluster-access-networking.md#azk8s0307-clusterconnectoutboundconnectivityfailed)
-- [`AZK8S0308`: `OutboundEndpointNonSuccessResponse`](troubleshoot-cluster-access-networking.md#azk8s0308-outboundendpointnonsuccessresponse)
-- [`AZK8S0309`: `CertificatePulldownFailed`](troubleshoot-cluster-access-networking.md#azk8s0309-certificatepulldownfailed)
-- [`AZK8S0400`: `ConnectedClusterCreateFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0400-connectedclustercreatefailed)
-- [`AZK8S0401`: `ConnectedClusterUpdateFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0401-connectedclusterupdatefailed)
-- [`AZK8S0402`: `ConnectedClusterDeleteFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0402-connectedclusterdeletefailed)
-- [`AZK8S0403`: `ClusterAlreadyOnboarded`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0403-clusteralreadyonboarded)
-- [`AZK8S0404`: `ConnectedClusterResourceAlreadyExists`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0404-connectedclusterresourcealreadyexists)
-- [`AZK8S0405`: `ConnectedClusterResourceNotFound`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0405-connectedclusterresourcenotfound)
-- [`AZK8S0406`: `InvalidDeleteRequest`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0406-invaliddeleterequest)
-- [`AZK8S0407`: `ResourceProviderFetchFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0407-resourceproviderfetchfailed)
-- [`AZK8S0408`: `ConnectedClusterProviderNotRegistered`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0408-connectedclusterprovidernotregistered)
-- [`AZK8S0409`: `ConnectedClusterResourceIdMissing`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0409-connectedclusterresourceidmissing)
-- [`AZK8S0500`: `HelmReleaseInstallFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0500-helmreleaseinstallfailed)
-- [`AZK8S0501`: `HelmReleaseDeleteFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0501-helmreleasedeletefailed)
-- [`AZK8S0502`: `HelmChartPullFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0502-helmchartpullfailed)
-- [`AZK8S0503`: `HelmChartExportFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0503-helmchartexportfailed)
-- [`AZK8S0504`: `HelmRepositoryAddFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0504-helmrepositoryaddfailed)
-- [`AZK8S0505`: `HelmReleaseListFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0505-helmreleaselistfailed)
-- [`AZK8S0506`: `AgentStateTimeout`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0506-agentstatetimeout)
-- [`AZK8S0507`: `KeyPairGenerationFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0507-keypairgenerationfailed)
-- [`AZK8S0508`: `ReleaseNamespaceNotFound`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0508-releasenamespacenotfound)
-- [`AZK8S0509`: `HelmValuesGetFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0509-helmvaluesgetfailed)
-- [`AZK8S0510`: `HelmNotInstalled`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0510-helmnotinstalled)
-- [`AZK8S0511`: `HelmVersionTooOld`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0511-helmversiontooold)
-- [`AZK8S0512`: `HelmTimeoutPendingOrUnschedulable`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0512-helmtimeoutpendingorunschedulable)
-- [`AZK8S0513`: `HelmTimeoutImagePullFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0513-helmtimeoutimagepullfailed)
-- [`AZK8S0514`: `HelmTimeout`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0514-helmtimeout)
-- [`AZK8S0515`: `HelmClientError`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0515-helmclienterror)
-- [`AZK8S0600`: `PrediagnosticsFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0600-prediagnosticsfailed)
-- [`AZK8S0601`: `PrediagnosticsJobExecutionFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0601-prediagnosticsjobexecutionfailed)
-- [`AZK8S0602`: `PostDiagnosticPrecheckFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0602-postdiagnosticprecheckfailed)
-- [`AZK8S0603`: `PrediagnosticsIncomplete`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0603-prediagnosticsincomplete)
-- [`AZK8S0604`: `PrediagnosticsJobNotScheduled`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0604-prediagnosticsjobnotscheduled)
-- [`AZK8S0605`: `PrediagnosticsJobNotComplete`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0605-prediagnosticsjobnotcomplete)
-- [`AZK8S0606`: `PrediagnosticsLogSaveFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0606-prediagnosticslogsavefailed)
-- [`AZK8S0607`: `PrediagnosticsHelmInstallFailed`](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0607-prediagnosticshelminstallfailed)
-- [`AZK8S0700`: `CustomLocationsEnableFailed`](troubleshoot-features-cluster-connect.md#azk8s0700-customlocationsenablefailed)
-- [`AZK8S0701`: `CustomLocationsOidFetchFailed`](troubleshoot-features-cluster-connect.md#azk8s0701-customlocationsoidfetchfailed)
-- [`AZK8S0702`: `CustomLocationsRegistrationCheckFailed`](troubleshoot-features-cluster-connect.md#azk8s0702-customlocationsregistrationcheckfailed)
-- [`AZK8S0800`: `ClientProxyDownloadFailed`](troubleshoot-features-cluster-connect.md#azk8s0800-clientproxydownloadfailed)
-- [`AZK8S0801`: `ClientProxyPortInUse`](troubleshoot-features-cluster-connect.md#azk8s0801-clientproxyportinuse)
-- [`AZK8S0802`: `ClientProxyStartFailed`](troubleshoot-features-cluster-connect.md#azk8s0802-clientproxystartfailed)
-- [`AZK8S0803`: `ClientProxyConfigCreateFailed`](troubleshoot-features-cluster-connect.md#azk8s0803-clientproxyconfigcreatefailed)
-- [`AZK8S0804`: `ClientProxyClosed`](troubleshoot-features-cluster-connect.md#azk8s0804-clientproxyclosed)
-- [`AZK8S0805`: `ClusterCredentialsGetFailed`](troubleshoot-features-cluster-connect.md#azk8s0805-clustercredentialsgetfailed)
+Each error table links to a detailed procedure when one is available.
 
 ## Troubleshooting guides
 
@@ -113,7 +154,7 @@ Detailed procedures are available for these errors:
 
 | Code and name | What it means | How to resolve |
 | --- | --- | --- |
-| `AZK8S0001` `UnexpectedError` | The extension encountered an unclassified error. `az connectedk8s show` also uses this code when Azure returns `ResourceNotFound`. | If the detailed error is `ResourceNotFound`, follow `AZK8S0405`. Otherwise, record the installed versions with `az version`, then run `az upgrade` and `az extension update --name connectedk8s`. Retry the original command once. If the error repeats, rerun that command with `--debug`, remove credentials, tokens, certificates, private keys, proxy details, and customer identifiers from the output, and contact support with the sanitized error and versions. |
+| `AZK8S0001` `UnexpectedError` | The extension couldn't classify the failure more specifically. | Follow the detailed error first. For `ResourceNotFound` during show, update, or delete, follow `AZK8S0405`. Otherwise, update Azure CLI and the extension, then retry once. If it repeats, run the command with `--debug` and [contact support](#contact-support) with sanitized output. |
 | `AZK8S0002` `UnsupportedOperatingSystem` | The command is running on a host operating system other than Windows, Linux, or macOS. Current command paths display an unnumbered error; the client-proxy path records this classification in telemetry, while Helm installation uses a separate legacy fault type. The code is reserved for their migration to standardized console errors. | On Linux or macOS, run `uname -srm`; the first value must be `Linux` or `Darwin`. On Windows PowerShell, run `[System.Environment]::OSVersion.VersionString`; the result must identify Windows. The remaining values describe the kernel and processor architecture and don't determine this error. Run the latest Azure CLI and `connectedk8s` extension on a supported OS. See [Install Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) for supported installation options and OS-version details. |
 | `AZK8S0003` `UnsupportedProvisionedClusterOperation` | The requested `az connectedk8s` operation isn't available for an AKS Arc provisioned cluster. Current command paths record this classification in telemetry but display an unnumbered error; the code is reserved for their migration to standardized console errors. | Run `az connectedk8s show -g "<resource-group>" -n "<cluster-name>" --query kind -o tsv`; this error applies when the result is `ProvisionedCluster`. Use the `az aksarc` command named in the detailed error for lifecycle operations: `update`, `delete`, or `upgrade`. Run `az aksarc <command> --help` before retrying. Manage supported features through cluster extensions as directed by the detailed error. Connecting an existing cluster with `az connectedk8s connect` doesn't convert it into an AKS Arc provisioned cluster. |
 
@@ -123,10 +164,10 @@ Detailed procedures are available for these errors:
 | --- | --- | --- |
 | `AZK8S0100` `InvalidArgumentValue` | One or more command arguments are invalid. | Read the detailed message, run `az connectedk8s <command> --help`, and correct the named value or format. |
 | `AZK8S0101` `UpdateNoParameters` | `az connectedk8s update` was called without a setting to change. | Supply at least one supported update option. Use `az connectedk8s update --help` to list the options. |
-| `AZK8S0102` `UpdateProxyParameterConflict` | `az connectedk8s update` was given proxy settings and `--disable-proxy` in the same command. | To update the proxy settings, rerun without `--disable-proxy`, for example: `az connectedk8s update -g "<resource-group>" -n "<cluster-name>" --proxy-https "<https-proxy-url>" --proxy-http "<http-proxy-url>" --proxy-skip-range "<host-or-cidr>,<additional-host-or-cidr>"`. Add `--proxy-cert "<certificate-path>"` only when required. To disable all proxy settings, run `az connectedk8s update -g "<resource-group>" -n "<cluster-name>" --disable-proxy` without proxy or bypass options. |
-| `AZK8S0103` `ProxyCertificatePathNotFound` | The proxy certificate file cannot be found. | On Windows run `Test-Path -LiteralPath "<certificate-path>" -PathType Leaf`; expect `True`. On Linux or macOS run `test -f "<certificate-path>" && test -r "<certificate-path>"; echo $?`; expect exit code `0`. Retry with the absolute path if the check fails. |
+| `AZK8S0102` `UpdateProxyParameterConflict` | `az connectedk8s update` was given proxy settings and `--disable-proxy` in the same command. | Choose one operation: supply the required proxy options without `--disable-proxy`, or disable the proxy without supplying proxy or bypass options. Follow the [outbound proxy guidance](https://learn.microsoft.com/azure/azure-arc/kubernetes/diagnose-connection-issues#connections-with-a-proxy-server) for supported settings. |
+| `AZK8S0103` `ProxyCertificatePathNotFound` | The proxy certificate file cannot be found. | On Windows run `Test-Path -LiteralPath "<certificate-path>" -PathType Leaf`; expect `True`. On Linux or macOS run `test -f "<certificate-path>" && test -r "<certificate-path>"; echo $?`; expect exit code `0`. Retry with a readable absolute path, then follow the [outbound proxy guidance](https://learn.microsoft.com/azure/azure-arc/kubernetes/diagnose-connection-issues#connections-with-a-proxy-server). |
 | `AZK8S0104` `InvalidLocation` | The Azure location is not in the current `Microsoft.Kubernetes/connectedClusters` supported-location list. | Follow the [location steps](troubleshoot-azure-resources-helm-diagnostics.md#azk8s0104-invalidlocation) and retry with the canonical name of a supported region. |
-| `AZK8S0105` `PrivateLinkScopeLocationMismatch` | The Azure Arc Private Link Scope and the requested connected cluster are in different locations. | Run `az resource show --ids "<private-link-scope-id>" --query "{type:type,location:location}" -o yaml`; `type` must be `Microsoft.HybridCompute/privateLinkScopes`. Compare the returned location with the `--location` value passed to `az connectedk8s connect`. Retry with a matching supported location or an approved scope in the requested region. **Fixed when:** the two locations match case-insensitively and the retry no longer reports `AZK8S0105`; later independent onboarding checks can still fail. |
+| `AZK8S0105` `PrivateLinkScopeLocationMismatch` | The Azure Arc Private Link Scope and the requested connected cluster are in different locations. | Run `az resource show --ids "<private-link-scope-id>" --query "{type:type,location:location}" -o yaml`; `type` must be `Microsoft.HybridCompute/privateLinkScopes`. Compare the result with the `--location` value and follow the [Azure Arc Private Link guidance](https://learn.microsoft.com/azure/azure-arc/kubernetes/private-link). Retry with a matching supported location or approved scope. **Fixed when:** the locations match and the retry no longer reports `AZK8S0105`. |
 | `AZK8S0106` `InvalidGatewayArmId` | The gateway resource ID is malformed or does not identify a `Microsoft.HybridCompute/gateways` resource. | Run `az resource show --ids "<gateway-resource-id>" --query "{id:id,type:type}" -o yaml`. An invalid-ID or `ResourceNotFound` response means you need the ARM ID of an existing Azure Arc gateway. Otherwise, `type` must be `Microsoft.HybridCompute/gateways`; pass the returned `id` unchanged to `--gateway-resource-id`. **Fixed when:** the retry no longer reports `AZK8S0106`; later independent onboarding checks can still fail. |
 | `AZK8S0107` `ProxyBypassStateInvalid` | The saved Arc proxy-bypass ownership record is unreadable or does not match the current `global.noProxy` Helm value. This can happen when Helm values are changed outside the CLI. The command stops before changing proxy or Helm settings. | Do not guess which `global.noProxy` entries the CLI owns. Run `kubectl get configmap azure-clusterconfig -n azure-arc -o jsonpath="{.data.AZURE_ARC_HELM_NAMESPACE}{'\n'}"` to read the Helm release namespace without displaying other ConfigMap data. Collect `helm get values azure-arc --namespace "<release-namespace>"`. Before sharing the output outside a secure support channel, replace credentials, proxy URLs, internal hostnames and IP addresses, certificate data, and Azure resource identifiers with descriptive placeholders. Keep the field names, structure, and number and order of `noProxy` entries intact so support can reconcile `connectedk8sCli.arcProxyBypass` with `global.noProxy`. |
 
@@ -158,7 +199,7 @@ az provider show --namespace Microsoft.Kubernetes --query "resourceTypes[?resour
 
 | Code and name | What it means | How to resolve |
 | --- | --- | --- |
-| `AZK8S0300` `DataPlaneHealthCheckFailed` | Before retrieving Helm metadata, `connect` or `update` couldn't complete its authenticated POST to the regional Arc data-plane health endpoint. Only HTTP `200` passes this check. | Follow the [data-plane health-check steps](troubleshoot-cluster-access-networking.md#azk8s0300-dataplanehealthcheckfailed). **Fixed when:** the original command's health-check POST returns `200` and advances to Helm metadata retrieval. |
+| `AZK8S0300` `DataPlaneHealthCheckFailed` | Before retrieving Helm metadata, `connect` or `update` couldn't complete its authenticated POST to the regional Arc data-plane health endpoint. | Follow the [data-plane health-check steps](troubleshoot-cluster-access-networking.md#azk8s0300-dataplanehealthcheckfailed). Correct local DNS, proxy, TLS, routing, authentication, or authorization failures. Escalate a persistent `429` or `5xx` after retry and Azure service-health checks. **Fixed when:** the health-check POST returns `200` and advances to Helm metadata retrieval. |
 | `AZK8S0301` `DnsNxDomain` | The in-cluster diagnostic's latest recognized DNS result for the Kubernetes service ended in `NXDOMAIN`. | Follow the [`NXDOMAIN` steps](troubleshoot-cluster-access-networking.md#azk8s0301-dnsnxdomain). **Fixed when:** the same cluster DNS path returns a valid address for `kubernetes.default` and the diagnostic passes. |
 | `AZK8S0302` `DnsTimeout` | The in-cluster diagnostic found repeated generic DNS timeouts or an explicit timeout failure. A single generic timeout is treated as transient and reported as `NotApplicable`, so it doesn't emit this code or block onboarding. | Follow the [DNS-timeout steps](troubleshoot-cluster-access-networking.md#azk8s0302-dnstimeout). **Fixed when:** repeated lookups return a valid address without timing out and the diagnostic passes. |
 | `AZK8S0303` `DnsServerFailure` | The in-cluster DNS server returned `SERVFAIL`; it received the query but couldn't produce an answer. | Follow the [`SERVFAIL` steps](troubleshoot-cluster-access-networking.md#azk8s0303-dnsserverfailure). **Fixed when:** the same lookup returns a valid address and the diagnostic passes. |
@@ -223,14 +264,17 @@ for the current endpoint and port list.
 
 ## Feature errors
 
-| Code and name | What it means | How to resolve |
-| --- | --- | --- |
-| `AZK8S0700` `CustomLocationsEnableFailed` | Custom Locations prerequisites failed and no other requested feature remained to enable, so `enable-features` stopped before kubeconfig, chart, or Helm work. A mixed feature request removes Custom Locations and continues with the remaining features instead. | Follow the [Custom Locations enablement steps](troubleshoot-features-cluster-connect.md#azk8s0700-customlocationsenablefailed). **Fixed when:** the provider is registered, a valid tenant-specific object ID is available, and the same request advances to Helm feature enablement. |
-| `AZK8S0701` `CustomLocationsOidFetchFailed` | Microsoft Graph returned no Custom Locations service principal when no manual object ID was supplied, or the Graph lookup raised an exception. This is a nonfatal diagnostic: a supplied object ID can be used without validation; otherwise Custom Locations is skipped and `AZK8S0700` can follow. | Follow the [object-ID lookup steps](troubleshoot-features-cluster-connect.md#azk8s0701-customlocationsoidfetchfailed). **Fixed when:** Graph returns the tenant-specific object ID or the exact verified object ID is supplied manually and enablement advances. |
-| `AZK8S0702` `CustomLocationsRegistrationCheckFailed` | The extension raised an exception while querying `Microsoft.ExtendedLocation` registration or retrieving its prerequisite object ID. This nonfatal diagnostic disables Custom Locations for the request; it does not prove that the provider is unregistered. | Follow the [provider-check steps](troubleshoot-features-cluster-connect.md#azk8s0702-customlocationsregistrationcheckfailed). **Fixed when:** the provider query succeeds, returns `Registered`, and object-ID retrieval can proceed. |
+Custom Locations behavior, prerequisites, and permissions are owned by the
+feature documentation. Use these links instead of the general lifecycle paths:
+
+| Code | Detailed guidance |
+| --- | --- |
+| `AZK8S0700` `CustomLocationsEnableFailed` | [Custom Locations enablement steps](troubleshoot-features-cluster-connect.md#azk8s0700-customlocationsenablefailed) |
+| `AZK8S0701` `CustomLocationsOidFetchFailed` | [Custom Locations object-ID steps](troubleshoot-features-cluster-connect.md#azk8s0701-customlocationsoidfetchfailed) |
+| `AZK8S0702` `CustomLocationsRegistrationCheckFailed` | [Custom Locations provider-registration steps](troubleshoot-features-cluster-connect.md#azk8s0702-customlocationsregistrationcheckfailed) |
 
 See [Create and manage custom locations on Azure Arc-enabled Kubernetes](https://learn.microsoft.com/azure/azure-arc/kubernetes/custom-locations)
-for current prerequisites and permissions.
+for the supported feature workflow.
 
 ## Client proxy errors
 
@@ -253,7 +297,8 @@ If the resolution does not fix the problem, provide:
 - The correlation or request ID and Azure cloud or region when reported.
 - The subscription, resource group, and cluster identifiers through the secure
   support channel; replace them with stable placeholders in shared logs.
-- Sanitized `az connectedk8s troubleshoot` output.
+- Sanitized files from the `arc_diagnostic_logs` folder created by
+  `az connectedk8s troubleshoot`.
 - Relevant `azure-arc` pod status, events, and logs.
 - The diagnostic command results and expected-result comparison from the
   matching detailed procedure.
@@ -266,5 +311,6 @@ If the resolution does not fix the problem, provide:
 - [Azure Arc-enabled Kubernetes system requirements](https://learn.microsoft.com/azure/azure-arc/kubernetes/system-requirements)
 - [Connect an existing Kubernetes cluster to Azure Arc](https://learn.microsoft.com/azure/azure-arc/kubernetes/quickstart-connect-cluster#prerequisites)
 - [Azure Arc-enabled Kubernetes network requirements](https://learn.microsoft.com/azure/azure-arc/kubernetes/network-requirements)
+- [Use private connectivity with Azure Arc Private Link](https://learn.microsoft.com/azure/azure-arc/kubernetes/private-link)
 - [Troubleshoot platform issues for Azure Arc-enabled Kubernetes clusters](https://learn.microsoft.com/azure/azure-arc/kubernetes/troubleshooting)
 - [Diagnose connection issues for Azure Arc-enabled Kubernetes clusters](https://learn.microsoft.com/azure/azure-arc/kubernetes/diagnose-connection-issues)

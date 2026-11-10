@@ -4,43 +4,91 @@ Use this guide for Azure Arc-enabled Kubernetes errors involving kubeconfig,
 Kubernetes API access, DNS, and Azure Arc data-plane connectivity. Return to
 the [error-code reference](error-codes.md) to look up every `AZK8Snnnn` code.
 
-## Prepare to troubleshoot
+## Before troubleshooting
 
-Update Azure CLI and the `connectedk8s` extension:
+Run all checks from the same computer, shell, network, kubeconfig, and context
+used by the failing command. Record the installed versions before changing the
+environment:
+
+```azurecli
+az version
+az extension show --name connectedk8s --query version --output tsv
+kubectl version --client
+```
+
+Update Azure CLI and the extension if they aren't current, then confirm the
+active Azure context:
 
 ```azurecli
 az upgrade
 az extension update --name connectedk8s
+az account set --subscription "<subscription-id>"
+az account show --query "{subscription:id,tenant:tenantId}" --output yaml
 ```
 
-Confirm the active Azure subscription:
+### Confirm cluster access
+
+Use the exact kubeconfig and context supplied to Azure CLI:
+
+```console
+kubectl --kubeconfig "<path>" config get-contexts "<context>"
+kubectl --kubeconfig "<path>" config current-context
+kubectl --kubeconfig "<path>" --context "<context>" get --raw=/version
+kubectl --kubeconfig "<path>" --context "<context>" auth can-i get namespaces
+kubectl --kubeconfig "<path>" --context "<context>" cluster-info
+```
+
+The context list must contain the context supplied to Azure CLI. The current
+context is the file's saved default and can differ when Azure CLI was given an
+explicit `--kube-context` value. `/version` must return JSON containing
+`gitVersion`, the authorization check must return `yes`, and `cluster-info`
+must list the control plane. A connectivity error from the authorization check
+isn't an RBAC denial because the API server didn't answer.
+
+### Check an existing Arc installation
+
+For update, delete, proxy, or feature operations, inspect Azure and Helm state
+before retrying:
 
 ```azurecli
-az account set --subscription "<subscription-id>"
-az account show
+az connectedk8s show --resource-group "<resource-group>" --name "<cluster-name>" --query "{id:id,provisioningState:provisioningState,agentState:arcAgentProfile.agentState}" --output yaml
 ```
-
-Confirm that `kubectl` uses the intended cluster and identity:
 
 ```console
-kubectl config current-context
-kubectl cluster-info
-kubectl auth can-i get pods --all-namespaces
+helm list --kubeconfig "<path>" --kube-context "<context>" --all-namespaces --deployed --failed --pending --uninstalling --uninstalled --superseded --filter "^azure-arc$"
 ```
 
-Use the same kubeconfig and context for these checks that you supplied to
-Azure CLI. Don't display or share kubeconfig contents, tokens, certificates,
-private keys, or customer-identifying API server URLs.
+The Azure result identifies the connected-cluster resource and its latest
+state. The Helm result identifies whether an Arc release exists and its
+namespace and status. Don't install Helm only for this check when the failing
+environment doesn't otherwise require a local Helm client; follow the
+operation-specific procedure instead.
 
-## Check Kubernetes API access
+For an existing connected cluster, run the supported self-diagnostic command:
+
+```azurecli
+az connectedk8s troubleshoot --resource-group "<resource-group>" --name "<cluster-name>" --kube-config "<path>" --kube-context "<context>"
+```
+
+This command creates an `arc_diagnostic_logs` folder and prints its path. The
+folder can contain Kubernetes descriptions, events, logs, Helm values, and
+Azure resource identifiers. Keep it private. Before sharing it through an
+approved support channel, remove credentials and replace customer identifiers,
+internal names, addresses, and proxy details with descriptive placeholders.
+Delete the local copy when it is no longer needed.
+
+During first-time onboarding, `connect` runs pre-onboarding diagnostics. Keep
+the specific `AZK8S0300`-series DNS or outbound result together with the
+`AZK8S0600`-series orchestration result. The specific code identifies the
+failed check; the `AZK8S0600`-series code identifies why the diagnostic stage
+stopped. Don't replace both with a generic connection failure.
+
+Don't display or share kubeconfig contents, tokens, certificates, private
+keys, proxy credentials, or customer-identifying API server URLs.
+
+## Restore Kubernetes API access
 
 Use this path for `AZK8S0200` and `AZK8S0202`:
-
-```console
-kubectl config current-context
-kubectl cluster-info
-kubectl auth can-i get namespaces
-```
 
 If the context is wrong, pass `--kube-context "<context-name>"` to the Azure
 CLI command, or run `kubectl --kubeconfig "<path>" config use-context
@@ -228,12 +276,11 @@ Interpret each command as follows:
   don't guess at the server URL or edit credential data. If it does match,
   restore the required VPN, private route, firewall path, load balancer, or API
   server availability. Repeat the TCP test, then rerun `/version` with the
-  same kubeconfig and context. For example, for a kind cluster, see
-  [Interacting With Your
-  Cluster](https://kind.sigs.k8s.io/docs/user/quick-start/#interacting-with-your-cluster)
-  and run `kind get kubeconfig --name "<cluster-name>" > "<new-path>"` to save
-  the current configuration to a new file. Restrict access to that file
-  because it contains client credentials.
+  same kubeconfig and context. To obtain current access information, use the
+  cluster provider's portal or documentation and look for its **Connect**,
+  **Get credentials**, or **Download kubeconfig** workflow. Ask the cluster
+  administrator when credentials are centrally managed. Save a new kubeconfig
+  to a private path instead of overwriting or displaying the old file.
 - Local tunnel endpoint: if the kubeconfig server is `127.0.0.1`, `localhost`,
   or another loopback address, API access depends on a listener on the same
   host where Azure CLI runs. That listener might belong to a provider tunnel,
@@ -713,7 +760,9 @@ Use the result to choose the correction:
 - HTTP `401` or `403`: run `az login` again if needed, select the correct tenant
   and subscription, and verify Azure RBAC access to the connected cluster.
 - HTTP `429` or `5xx`: retry with backoff and check Azure service health if the
-  response persists.
+  response persists. If the same status continues after the client-side DNS,
+  proxy, TLS, and identity checks pass, contact support with the sanitized
+  request or correlation ID, UTC timestamp, Azure cloud, region, and status.
 
 ### Verify data-plane recovery
 
