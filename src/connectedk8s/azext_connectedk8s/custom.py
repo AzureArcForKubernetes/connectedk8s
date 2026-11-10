@@ -367,6 +367,12 @@ def create_connectedk8s(
         is_workload_identity_enabled=(enable_workload_identity or enable_oidc_issuer),
     )
 
+    # Reject unsupported locations before Kubernetes access or diagnostic installation.
+    print(
+        f"Step: {utils.get_utctimestring()}: Checking Connect RP is available in the Location passed in."
+    )
+    utils.validate_connect_rp_location(cmd, location)
+
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
 
@@ -716,11 +722,6 @@ def create_connectedk8s(
             "https://go.microsoft.com/fwlink/?linkid=2144200",
         )
 
-    # Validate location
-    print(
-        f"Step: {utils.get_utctimestring()}: Checking Connect RP is available in the Location passed in."
-    )
-    utils.validate_connect_rp_location(cmd, location)
     resourceClient = cf_resource_groups(cmd.cli_ctx, subscription_id=subscription_id)
 
     # Validate location of private link scope resource. Throws error only if there is a location mismatch
@@ -1418,7 +1419,11 @@ def create_connectedk8s(
             f"state, with timeout of {consts.Agent_State_Timeout}"
         )
         terminal, connected_cluster = poll_for_agent_state(
-            client, resource_group_name, cluster_name
+            client,
+            resource_group_name,
+            cluster_name,
+            cmd=cmd,
+            operation="create",
         )
         if terminal:
             print(
@@ -1438,10 +1443,31 @@ def poll_for_agent_state(
     cluster_name: str,
     timeout_minutes: int = consts.Agent_State_Timeout,
     interval: int = 5,
+    *,
+    cmd: CLICommand | None = None,
+    operation: Literal["create", "update"] | None = None,
 ) -> tuple[bool, ConnectedCluster]:
     start_time = time.time()
     while True:
-        connected_cluster = client.get(resource_group_name, cluster_name)
+        try:
+            connected_cluster = client.get(resource_group_name, cluster_name)
+        except Exception as e:
+            if cmd is None or operation is None:
+                raise
+
+            operation_error = (
+                errors.CONNECTED_CLUSTER_CREATE_FAILED
+                if operation == "create"
+                else errors.CONNECTED_CLUSTER_UPDATE_FAILED
+            )
+            utils.arm_exception_handler(
+                e,
+                operation_error.fault_type,
+                f"Unable to poll connected cluster resource after {operation}",
+                cmd=cmd,
+                error=operation_error,
+            )
+            raise
         state: str | None = (
             None
             if connected_cluster.arc_agent_profile is None
@@ -3348,7 +3374,11 @@ def update_connected_cluster(
         f"Step: {utils.get_utctimestring()}: Wait for Agent State to reach terminal state, with timeout of {consts.Agent_State_Timeout}"
     )
     terminal_agent_state, connected_cluster = poll_for_agent_state(
-        client, resource_group_name, cluster_name
+        client,
+        resource_group_name,
+        cluster_name,
+        cmd=cmd,
+        operation="update",
     )
     maybe_has = "has" if terminal_agent_state else "has not"
     print(
