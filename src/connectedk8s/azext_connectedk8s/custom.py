@@ -367,6 +367,12 @@ def create_connectedk8s(
         is_workload_identity_enabled=(enable_workload_identity or enable_oidc_issuer),
     )
 
+    # Reject unsupported locations before Kubernetes access or diagnostic installation.
+    print(
+        f"Step: {utils.get_utctimestring()}: Checking Connect RP is available in the Location passed in."
+    )
+    utils.validate_connect_rp_location(cmd, location)
+
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
 
@@ -716,11 +722,6 @@ def create_connectedk8s(
             "https://go.microsoft.com/fwlink/?linkid=2144200",
         )
 
-    # Validate location
-    print(
-        f"Step: {utils.get_utctimestring()}: Checking Connect RP is available in the Location passed in."
-    )
-    utils.validate_connect_rp_location(cmd, location)
     resourceClient = cf_resource_groups(cmd.cli_ctx, subscription_id=subscription_id)
 
     # Validate location of private link scope resource. Throws error only if there is a location mismatch
