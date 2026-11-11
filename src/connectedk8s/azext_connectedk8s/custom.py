@@ -4560,7 +4560,11 @@ def load_kubernetes_configuration(filename: str) -> dict[str, Any]:
 
 
 def print_or_merge_credentials(
-    path: str, kubeconfig: str, overwrite_existing: bool, context_name: str | None
+    path: str,
+    kubeconfig: str,
+    overwrite_existing: bool,
+    context_name: str | None,
+    set_current_context: bool = True,
 ) -> None:
     """Merge an unencrypted kubeconfig into the file at the specified path, or print it to
     stdout if the path is "-".
@@ -4596,7 +4600,11 @@ def print_or_merge_credentials(
         additional_file.write(kubeconfig)
         additional_file.flush()
         merge_kubernetes_configurations(
-            path, temp_path, overwrite_existing, context_name
+            path,
+            temp_path,
+            overwrite_existing,
+            context_name,
+            set_current_context,
         )
     except yaml.YAMLError as ex:
         logger.warning("Failed to merge credentials to kube config file: %s", ex)
@@ -4610,6 +4618,7 @@ def merge_kubernetes_configurations(
     addition_file: str,
     replace: bool,
     context_name: str | None = None,
+    set_current_context: bool = True,
 ) -> None:
     try:
         existing = load_kubernetes_configuration(existing_file)
@@ -4646,7 +4655,8 @@ def merge_kubernetes_configurations(
         handle_merge(existing, addition, "clusters", replace)
         handle_merge(existing, addition, "users", replace)
         handle_merge(existing, addition, "contexts", replace)
-        existing["current-context"] = addition["current-context"]
+        if set_current_context:
+            existing["current-context"] = addition["current-context"]
 
     # check that ~/.kube/config is only read- and writable by its owner
     if platform.system() != "Windows":
@@ -4672,7 +4682,10 @@ def merge_kubernetes_configurations(
             ) from e
 
     current_context = addition.get("current-context", "UNKNOWN")
-    msg = f'Merged "{current_context}" as current context in {existing_file}'
+    if set_current_context:
+        msg = f'Merged "{current_context}" as current context in {existing_file}'
+    else:
+        msg = f'Updated "{current_context}" in {existing_file}'
     print(msg)
 
 
@@ -5085,7 +5098,7 @@ def client_side_proxy(
             correlation_id=correlation_id,
         )
 
-    if flag == ProxyStatus.FirstRun:
+    if ProxyStatus.should_hc_token_refresh(flag):
         # Decoding kubeconfig into a string
         try:
             kubeconfig = json.loads(response.text)
@@ -5102,20 +5115,27 @@ def client_side_proxy(
         kubeconfig = b64decode(kubeconfig).decode("utf-8")
 
         try:
-            print_or_merge_credentials(path, kubeconfig, True, context_name)
-            if path != "-":
-                if context_name is None:
-                    kubeconfig_obj = load_kubernetes_configuration(path)
-                    temp_context_name = kubeconfig_obj["current-context"]
-                else:
-                    temp_context_name = context_name
-                msg = (
-                    f"Start sending kubectl requests on '{temp_context_name}' context using kubeconfig "
-                    f"at {path}"
-                )
-                print(msg)
+            print_or_merge_credentials(
+                path,
+                kubeconfig,
+                True,
+                context_name,
+                flag == ProxyStatus.FirstRun,
+            )
+            if flag == ProxyStatus.FirstRun:
+                if path != "-":
+                    if context_name is None:
+                        kubeconfig_obj = load_kubernetes_configuration(path)
+                        temp_context_name = kubeconfig_obj["current-context"]
+                    else:
+                        temp_context_name = context_name
+                    msg = (
+                        f"Start sending kubectl requests on '{temp_context_name}' context using kubeconfig "
+                        f"at {path}"
+                    )
+                    print(msg)
 
-            print("Press Ctrl+C to close proxy.")
+                print("Press Ctrl+C to close proxy.")
 
         except AzCLIError:
             clientproxy_process.terminate()

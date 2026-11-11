@@ -1135,6 +1135,83 @@ def test_merge_kubernetes_configurations_does_not_rereport_az_cli_error(monkeypa
     report_error.assert_not_called()
 
 
+def test_merge_kubernetes_configurations_preserves_current_context_on_refresh(
+    tmp_path,
+):
+    existing_file = tmp_path / "existing.yaml"
+    addition_file = tmp_path / "addition.yaml"
+    existing_file.write_text(
+        custom.yaml.safe_dump(
+            {
+                "apiVersion": "v1",
+                "clusters": [
+                    {"name": "proxy", "cluster": {"server": "https://old"}},
+                    {"name": "other", "cluster": {"server": "https://other"}},
+                ],
+                "contexts": [
+                    {
+                        "name": "proxy",
+                        "context": {"cluster": "proxy", "user": "proxy"},
+                    },
+                    {
+                        "name": "other",
+                        "context": {"cluster": "other", "user": "other"},
+                    },
+                ],
+                "current-context": "other",
+                "kind": "Config",
+                "users": [
+                    {"name": "proxy", "user": {"token": "old-token"}},
+                    {"name": "other", "user": {"token": "other-token"}},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    addition_file.write_text(
+        custom.yaml.safe_dump(
+            {
+                "apiVersion": "v1",
+                "clusters": [
+                    {"name": "proxy", "cluster": {"server": "https://refreshed"}}
+                ],
+                "contexts": [
+                    {
+                        "name": "proxy",
+                        "context": {"cluster": "proxy", "user": "proxy"},
+                    }
+                ],
+                "current-context": "proxy",
+                "kind": "Config",
+                "users": [{"name": "proxy", "user": {"token": "refreshed-token"}}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    custom.merge_kubernetes_configurations(
+        str(existing_file),
+        str(addition_file),
+        True,
+        set_current_context=False,
+    )
+
+    merged = custom.yaml.safe_load(existing_file.read_text(encoding="utf-8"))
+    assert merged["current-context"] == "other"
+    assert (
+        next(user for user in merged["users"] if user["name"] == "proxy")["user"][
+            "token"
+        ]
+        == "refreshed-token"
+    )
+    assert (
+        next(cluster for cluster in merged["clusters"] if cluster["name"] == "proxy")[
+            "cluster"
+        ]["server"]
+        == "https://refreshed"
+    )
+
+
 def test_client_side_proxy_does_not_rereport_merge_az_cli_error(monkeypatch):
     expected = FileOperationError("already reported")
     process = MagicMock()
@@ -1182,6 +1259,90 @@ def test_client_side_proxy_does_not_rereport_merge_az_cli_error(monkeypatch):
     assert raised.value is expected
     process.terminate.assert_called_once()
     telemetry.set_exception.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "flag", [custom.ProxyStatus.HCTokenRefresh, custom.ProxyStatus.AllRefresh]
+)
+def test_client_side_proxy_updates_kubeconfig_after_reregistration(monkeypatch, flag):
+    process = MagicMock()
+    response = MagicMock()
+    response.text = '{"kubeconfigs": [{"value": "YXBpVmVyc2lvbjogdjE="}]}'
+    merge_credentials = MagicMock()
+
+    monkeypatch.setattr(custom, "get_subscription_id", MagicMock(return_value="sub"))
+    monkeypatch.setattr(
+        custom.proxylogic,
+        "get_cluster_user_credentials",
+        MagicMock(return_value=MagicMock()),
+    )
+    monkeypatch.setattr(
+        custom.clientproxyutils,
+        "prepare_clientproxy_data",
+        MagicMock(return_value={"hybridConnectionConfig": {"expirationTime": 123}}),
+    )
+    monkeypatch.setattr(
+        custom.proxylogic,
+        "post_register_to_proxy",
+        MagicMock(return_value=response),
+    )
+    monkeypatch.setattr(custom, "print_or_merge_credentials", merge_credentials)
+
+    hc_expiry, _, returned_process = custom.client_side_proxy(
+        MagicMock(),
+        "tenant",
+        MagicMock(),
+        "rg",
+        "cluster",
+        flag,
+        ["clientproxy"],
+        47010,
+        47011,
+        False,
+        token="service-account-token",
+        path="kubeconfig",
+        context_name="proxy-context",
+        clientproxy_process=process,
+    )
+
+    assert hc_expiry == 123
+    assert returned_process is process
+    merge_credentials.assert_called_once_with(
+        "kubeconfig", "apiVersion: v1", True, "proxy-context", False
+    )
+    process.terminate.assert_not_called()
+
+
+def test_client_side_proxy_does_not_merge_on_access_token_only_refresh(monkeypatch):
+    process = MagicMock()
+    merge_credentials = MagicMock()
+
+    monkeypatch.setattr(custom, "get_subscription_id", MagicMock(return_value="sub"))
+    monkeypatch.setattr(
+        custom.proxylogic,
+        "handle_post_at_to_csp",
+        MagicMock(return_value=456),
+    )
+    monkeypatch.setattr(custom, "print_or_merge_credentials", merge_credentials)
+
+    _, at_expiry, returned_process = custom.client_side_proxy(
+        MagicMock(),
+        "tenant",
+        MagicMock(),
+        "rg",
+        "cluster",
+        custom.ProxyStatus.AccessTokenRefresh,
+        ["clientproxy"],
+        47010,
+        47011,
+        False,
+        clientproxy_process=process,
+    )
+
+    assert at_expiry == 456
+    assert returned_process is process
+    merge_credentials.assert_not_called()
+    process.terminate.assert_not_called()
 
 
 def create_node(
