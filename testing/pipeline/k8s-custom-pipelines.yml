@@ -237,7 +237,7 @@ stages:
           current_dir=$(pwd)
           echo "Current directory: $current_dir"
           pip install pytest
-          cd /home/vsts/work/1/s/src/connectedk8s/azext_connectedk8s/tests/unittests
+          cd "$(Build.SourcesDirectory)/src/connectedk8s/azext_connectedk8s/tests/unittests"
           pytest --junitxml=test-results.xml
         displayName: 'Run UnitTests test'
       - task: PublishTestResults@2
@@ -283,6 +283,8 @@ stages:
           azdev --version
 
           azdev setup -c ../azure-cli -r ./ -e connectedk8s
+          # pytest-forked 1.7.5 cannot serialize pytest 9.2 NodeId test reports.
+          python -m pip install 'pytest<9.2'
           azdev test connectedk8s
         displayName: 'Run integration test and build test'
 

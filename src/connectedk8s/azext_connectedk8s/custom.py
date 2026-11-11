@@ -367,6 +367,12 @@ def create_connectedk8s(
         is_workload_identity_enabled=(enable_workload_identity or enable_oidc_issuer),
     )
 
+    # Reject unsupported locations before Kubernetes access or diagnostic installation.
+    print(
+        f"Step: {utils.get_utctimestring()}: Checking Connect RP is available in the Location passed in."
+    )
+    utils.validate_connect_rp_location(cmd, location)
+
     # Setting kubeconfig
     kube_config = set_kube_config(kube_config)
 
@@ -716,11 +722,6 @@ def create_connectedk8s(
             "https://go.microsoft.com/fwlink/?linkid=2144200",
         )
 
-    # Validate location
-    print(
-        f"Step: {utils.get_utctimestring()}: Checking Connect RP is available in the Location passed in."
-    )
-    utils.validate_connect_rp_location(cmd, location)
     resourceClient = cf_resource_groups(cmd.cli_ctx, subscription_id=subscription_id)
 
     # Validate location of private link scope resource. Throws error only if there is a location mismatch
@@ -1418,7 +1419,11 @@ def create_connectedk8s(
             f"state, with timeout of {consts.Agent_State_Timeout}"
         )
         terminal, connected_cluster = poll_for_agent_state(
-            client, resource_group_name, cluster_name
+            client,
+            resource_group_name,
+            cluster_name,
+            cmd=cmd,
+            operation="create",
         )
         if terminal:
             print(
@@ -1438,10 +1443,31 @@ def poll_for_agent_state(
     cluster_name: str,
     timeout_minutes: int = consts.Agent_State_Timeout,
     interval: int = 5,
+    *,
+    cmd: CLICommand | None = None,
+    operation: Literal["create", "update"] | None = None,
 ) -> tuple[bool, ConnectedCluster]:
     start_time = time.time()
     while True:
-        connected_cluster = client.get(resource_group_name, cluster_name)
+        try:
+            connected_cluster = client.get(resource_group_name, cluster_name)
+        except Exception as e:
+            if cmd is None or operation is None:
+                raise
+
+            operation_error = (
+                errors.CONNECTED_CLUSTER_CREATE_FAILED
+                if operation == "create"
+                else errors.CONNECTED_CLUSTER_UPDATE_FAILED
+            )
+            utils.arm_exception_handler(
+                e,
+                operation_error.fault_type,
+                f"Unable to poll connected cluster resource after {operation}",
+                cmd=cmd,
+                error=operation_error,
+            )
+            raise
         state: str | None = (
             None
             if connected_cluster.arc_agent_profile is None
@@ -3117,6 +3143,12 @@ def update_connected_cluster(
             and auto_upgrade is None
             and container_log_path is None
             and arm_properties_only_ahb_set
+            and enable_oidc_issuer is None
+            and disable_workload_identity is None
+            and enable_workload_identity is None
+            and gateway_resource_id == ""
+            and not disable_gateway
+            and not arc_agentry_configurations
         ):
             return patch_cc_response
 
@@ -3130,6 +3162,7 @@ def update_connected_cluster(
         and enable_workload_identity is None
         and gateway_resource_id == ""
         and not disable_gateway
+        and not arc_agentry_configurations
     ):
         raise utils.report_connectedk8s_error(
             cmd,
@@ -3306,8 +3339,16 @@ def update_connected_cluster(
             self_hosted_issuer == ""
             and kubernetes_distro in consts.Public_Cloud_Distribution_List
         ):
-            raise ValidationError(
-                f"Self hosted issuer is required for {kubernetes_distro} cluster when OIDC issuer is being enabled."
+            err_msg = (
+                f"Self hosted issuer is required for {kubernetes_distro} cluster "
+                "when OIDC issuer is being enabled."
+            )
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.INVALID_ARGUMENT_VALUE,
+                exception=ValidationError(err_msg),
+                user_fault=True,
+                details=err_msg,
             )
         oidc_profile = set_oidc_issuer_profile(enable_oidc_issuer, self_hosted_issuer)
 
@@ -3341,7 +3382,11 @@ def update_connected_cluster(
         f"Step: {utils.get_utctimestring()}: Wait for Agent State to reach terminal state, with timeout of {consts.Agent_State_Timeout}"
     )
     terminal_agent_state, connected_cluster = poll_for_agent_state(
-        client, resource_group_name, cluster_name
+        client,
+        resource_group_name,
+        cluster_name,
+        cmd=cmd,
+        operation="update",
     )
     maybe_has = "has" if terminal_agent_state else "has not"
     print(
@@ -3844,18 +3889,20 @@ def validate_release_namespace(
                 )
                 raise ArgumentUsageError(err_msg, recommendation=reco_msg)
         else:
-            telemetry.set_exception(
-                exception=Exception("The corresponding CC resource does not exist"),
-                fault_type=consts.Corresponding_CC_Resource_Deleted_Fault,
-                summary="CC resource corresponding to this cluster has been deleted by the customer",
-            )
             err_msg = "There exist no ConnectedCluster resource corresponding to this kubernetes Cluster."
             reco_msg = (
                 "Please cleanup the helm release first using 'az connectedk8s delete -n "
                 "<connected-cluster-name> -g <resource-group-name>' and re-onboard the cluster using "
                 "'az connectedk8s connect -n <connected-cluster-name> -g <resource-group-name>'"
             )
-            raise ClientRequestError(err_msg, recommendation=reco_msg)
+            raise utils.report_connectedk8s_error(
+                cmd,
+                errors.RESOURCE_NOT_FOUND,
+                exception=Exception(err_msg),
+                user_fault=True,
+                recommendation=reco_msg,
+                details=err_msg,
+            )
     else:
         details = (
             "The azure-arc release namespace couldn't be retrieved, which implies that the kubernetes "

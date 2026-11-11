@@ -20,6 +20,7 @@ from azure.cli.core.azclierror import (
     RequiredArgumentMissingError,
     ValidationError,
 )
+from azure.core.exceptions import ResourceNotFoundError
 from kubernetes.client.exceptions import ApiException
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
@@ -32,6 +33,7 @@ from kubernetes.client.models import (
 )
 
 import azext_connectedk8s._constants as consts
+import azext_connectedk8s._errors as errors
 from azext_connectedk8s import custom
 from azext_connectedk8s.custom import (
     _get_kubernetes_client_locations,
@@ -123,7 +125,9 @@ def _cmd_without_arm_id():
     return SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
 
 
-def _assert_standardized_telemetry(mock_telemetry, error, user_fault):
+def _assert_standardized_telemetry(
+    mock_telemetry, error, user_fault, extension_event_count=1
+):
     _, properties = mock_telemetry.add_extension_event.call_args.args
     assert properties["Context.Default.AzureCLI.errorCode"] == error.code
     assert properties["Context.Default.AzureCLI.errorName"] == error.name
@@ -132,12 +136,36 @@ def _assert_standardized_telemetry(mock_telemetry, error, user_fault):
         mock_telemetry.set_exception.call_args.kwargs["summary"]
         == properties["Context.Default.AzureCLI.errorMessage"]
     )
-    mock_telemetry.add_extension_event.assert_called_once()
+    assert mock_telemetry.add_extension_event.call_count == extension_event_count
     mock_telemetry.set_exception.assert_called_once()
     if user_fault:
         mock_telemetry.set_user_fault.assert_called_once_with()
     else:
         mock_telemetry.set_user_fault.assert_not_called()
+
+
+def test_poll_for_agent_state_reports_update_resource_not_found(monkeypatch):
+    source_error = ResourceNotFoundError(
+        "The connected cluster resource could not be found."
+    )
+    source_error.error = SimpleNamespace(code="ResourceNotFound")
+    client = MagicMock()
+    client.get.side_effect = source_error
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
+
+    with pytest.raises(AzCLIError, match="AZK8S0405"):
+        custom.poll_for_agent_state(
+            client,
+            "resource-group",
+            "cluster",
+            cmd=_cmd_without_arm_id(),
+            operation="update",
+        )
+
+    _assert_standardized_telemetry(
+        mock_telemetry, errors.RESOURCE_NOT_FOUND, user_fault=True
+    )
 
 
 def test_enable_features_reports_invalid_argument_value(monkeypatch):
@@ -217,6 +245,63 @@ def test_update_reports_standardized_parameter_errors(
 
     assert str(raised.value).startswith(f"[{error.code}] {error.name}:")
     _assert_standardized_telemetry(mock_telemetry, error, True)
+
+
+def test_update_reports_missing_self_hosted_issuer(monkeypatch):
+    cmd = _cmd_without_arm_id()
+    connected_cluster = SimpleNamespace(
+        kind=None,
+        id="/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Kubernetes/connectedClusters/cluster",
+        distribution=consts.Public_Cloud_Distribution_List[0],
+        infrastructure=None,
+    )
+    monkeypatch.setattr(
+        custom, "send_cloud_telemetry", MagicMock(return_value="AzureCloud")
+    )
+    monkeypatch.setattr(custom, "set_kube_config", lambda value: value)
+    monkeypatch.setattr(custom, "escape_proxy_settings", lambda value: value)
+    monkeypatch.setattr(custom.utils, "get_subscription_id", lambda _cli_ctx: "sub")
+    monkeypatch.setattr(
+        custom,
+        "add_config_protected_settings",
+        MagicMock(return_value=({}, {}, {})),
+    )
+    monkeypatch.setattr(custom, "load_kube_config", MagicMock())
+    monkeypatch.setattr(custom, "check_kube_connection", MagicMock(return_value="1.30"))
+    monkeypatch.setattr(
+        custom, "get_helm_client_location", MagicMock(return_value="/usr/bin/helm")
+    )
+    monkeypatch.setattr(
+        custom, "validate_release_namespace", MagicMock(return_value="azure-arc")
+    )
+    monkeypatch.setattr(
+        custom, "resolve_arc_proxy_bypass", MagicMock(return_value=None)
+    )
+    monkeypatch.setattr(
+        custom, "get_cc_resource", MagicMock(return_value=connected_cluster)
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
+
+    with pytest.raises(custom.InvalidArgumentValueError) as raised:
+        custom.update_connected_cluster(
+            cmd,
+            MagicMock(),
+            "resource-group",
+            "cluster",
+            enable_oidc_issuer=True,
+            enable_workload_identity=True,
+            yes=True,
+        )
+
+    assert str(raised.value).startswith("[AZK8S0100] InvalidArgumentValue:")
+    assert "Self hosted issuer is required" in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry,
+        custom.errors.INVALID_ARGUMENT_VALUE,
+        True,
+        extension_event_count=2,
+    )
 
 
 def test_proxy_cert_path_reports_not_found(monkeypatch):
@@ -371,6 +456,42 @@ def test_validate_release_namespace_reports_real_standardized_error(monkeypatch)
     assert "has not been onboarded" in str(raised.value)
     _assert_standardized_telemetry(
         mock_telemetry, custom.errors.RELEASE_NAMESPACE_NOT_FOUND, True
+    )
+
+
+def test_validate_release_namespace_reports_deleted_connected_cluster(monkeypatch):
+    monkeypatch.setattr(
+        custom.utils, "get_release_namespace", MagicMock(return_value="azure-arc")
+    )
+    config_map_api = MagicMock()
+    config_map_api.read_namespaced_config_map.return_value = SimpleNamespace(
+        data={
+            "AZURE_RESOURCE_GROUP": "resource-group",
+            "AZURE_RESOURCE_NAME": "cluster",
+        }
+    )
+    monkeypatch.setattr(custom.kube_client, "CoreV1Api", lambda: config_map_api)
+    monkeypatch.setattr(
+        custom, "connected_cluster_exists", MagicMock(return_value=False)
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(custom.utils, "telemetry", mock_telemetry)
+
+    with pytest.raises(ArgumentUsageError) as raised:
+        custom.validate_release_namespace(
+            _cmd_without_arm_id(),
+            MagicMock(),
+            "cluster",
+            "resource-group",
+            None,
+            None,
+            "/usr/bin/helm",
+        )
+
+    assert str(raised.value).startswith("[AZK8S0405] ConnectedClusterResourceNotFound:")
+    assert "There exist no ConnectedCluster resource" in str(raised.value)
+    _assert_standardized_telemetry(
+        mock_telemetry, custom.errors.RESOURCE_NOT_FOUND, True
     )
 
 
@@ -707,6 +828,22 @@ def onboarding_access_context(monkeypatch):
         "get_metadata": {},
     }.items():
         monkeypatch.setattr(custom.utils, name, MagicMock(return_value=value))
+    provider_client = MagicMock()
+    provider_client.get.return_value = SimpleNamespace(
+        resource_types=[
+            SimpleNamespace(
+                resource_type="connectedClusters", locations=["East US", "West US"]
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        custom.utils,
+        "resource_providers_client",
+        MagicMock(return_value=provider_client),
+    )
+    monkeypatch.setattr(
+        custom.utils, "get_subscription_id", lambda _cli_ctx: "subscription"
+    )
     monkeypatch.setattr(custom.config, "load_kube_config", MagicMock())
     version_api = MagicMock()
     version_api.get_code.return_value.git_version = "v1.30.0"
@@ -729,6 +866,121 @@ def onboarding_access_context(monkeypatch):
         helm_install=helm_install,
         version_api=version_api,
     )
+
+
+@pytest.mark.parametrize("custom_token_passed", [False, True])
+@pytest.mark.parametrize("skip_diagnostics", [False, True])
+def test_onboarding_invalid_location_precedes_cluster_work(
+    onboarding_access_context, monkeypatch, custom_token_passed, skip_diagnostics
+):
+    ctx = onboarding_access_context
+    monkeypatch.setenv("AZURE_SUBSCRIPTION_ID", "subscription")
+    monkeypatch.setattr(
+        custom.utils,
+        "validate_custom_token",
+        MagicMock(return_value=(custom_token_passed, "invalid-region")),
+    )
+    monkeypatch.delenv("AZURE_LOCAL_DISCONNECTED", raising=False)
+    ctx.core_api.list_node.return_value = V1NodeList(
+        items=[create_node(labels={"kubernetes.io/os": "linux"})]
+    )
+    monkeypatch.setattr(
+        custom.utils,
+        "create_folder_diagnosticlogs",
+        MagicMock(return_value=("diagnostic-logs", True)),
+    )
+    monkeypatch.setattr(custom.precheckutils, "fetching_cli_output_logs", MagicMock())
+    monkeypatch.setattr(custom.precheckutils, "diagnoser_output", [])
+    diagnostics = MagicMock(return_value=("Failed", True))
+    diagnostic_helm = MagicMock()
+    monkeypatch.setattr(
+        custom.precheckutils, "fetch_diagnostic_checks_results", diagnostics
+    )
+    monkeypatch.setattr(
+        custom.precheckutils,
+        "helm_install_release_cluster_diagnostic_checks",
+        diagnostic_helm,
+    )
+
+    with pytest.raises(custom.InvalidArgumentValueError, match=r"\[AZK8S0104\]"):
+        custom.create_connectedk8s(
+            ctx.cmd,
+            MagicMock(),
+            "rg",
+            "cluster",
+            location="invalid-region",
+            infrastructure="azure_stack_hci" if skip_diagnostics else "generic",
+            distribution="aks_edge_k3s" if skip_diagnostics else "generic",
+        )
+
+    custom.set_kube_config.assert_not_called()
+    custom.config.load_kube_config.assert_not_called()
+    ctx.version_api.get_code.assert_not_called()
+    ctx.core_api.list_node.assert_not_called()
+    custom.get_kubectl_client_location.assert_not_called()
+    custom.get_helm_client_location.assert_not_called()
+    diagnostics.assert_not_called()
+    diagnostic_helm.assert_not_called()
+    ctx.helm_install.assert_not_called()
+    ctx.telemetry.set_exception.assert_called_once()
+    assert (
+        ctx.telemetry.add_extension_event.call_args.args[1][
+            custom.consts.Telemetry_Error_Code_Key
+        ]
+        == "AZK8S0104"
+    )
+
+
+@pytest.mark.parametrize("location", ["eastus", "EASTUS"])
+def test_onboarding_valid_location_continues_through_prediagnostics(
+    onboarding_access_context, monkeypatch, location
+):
+    ctx = onboarding_access_context
+    monkeypatch.delenv("AZURE_LOCAL_DISCONNECTED", raising=False)
+    monkeypatch.setattr(
+        custom.utils,
+        "validate_custom_token",
+        MagicMock(return_value=(False, location)),
+    )
+    ctx.core_api.list_node.return_value = V1NodeList(
+        items=[create_node(labels={"kubernetes.io/os": "linux"})]
+    )
+    monkeypatch.setattr(
+        custom.utils,
+        "create_folder_diagnosticlogs",
+        MagicMock(return_value=("diagnostic-logs", True)),
+    )
+    diagnostics = MagicMock(return_value=(consts.Diagnostic_Check_Passed, True))
+    monkeypatch.setattr(
+        custom.precheckutils, "fetch_diagnostic_checks_results", diagnostics
+    )
+    monkeypatch.setattr(custom.precheckutils, "fetching_cli_output_logs", MagicMock())
+    monkeypatch.setattr(custom.precheckutils, "diagnoser_output", [])
+    workflow = MagicMock()
+    validate_location = MagicMock(wraps=custom.utils.validate_connect_rp_location)
+    monkeypatch.setattr(custom.utils, "validate_connect_rp_location", validate_location)
+    workflow.attach_mock(validate_location, "validate_location")
+    workflow.attach_mock(custom.config.load_kube_config, "load_kube_config")
+    workflow.attach_mock(diagnostics, "diagnostics")
+    workflow.attach_mock(ctx.permission, "check_permission")
+
+    # Stop at the existing post-diagnostics permission guard, before agent installation.
+    with pytest.raises(ValidationError, match="ClusterRoleBindingCreateForbidden"):
+        custom.create_connectedk8s(
+            ctx.cmd, MagicMock(), "rg", "cluster", location=location
+        )
+
+    validate_location.assert_called_once_with(ctx.cmd, location)
+    custom.config.load_kube_config.assert_called_once()
+    diagnostics.assert_called_once()
+    assert diagnostics.call_args.args[7] == location
+    ctx.permission.assert_called_once()
+    assert [call[0] for call in workflow.mock_calls] == [
+        "validate_location",
+        "load_kube_config",
+        "diagnostics",
+        "check_permission",
+    ]
 
 
 @pytest.mark.parametrize("node_os", ["linux", "windows"])
@@ -1656,8 +1908,89 @@ def _assert_proxy_configuration_has_no_ownership(environment):
 
 
 @pytest.mark.parametrize("no_proxy", ["", "1.1.1.1"])
-def test_update_with_only_protected_no_proxy_keeps_the_no_parameters_error(
+def test_update_with_only_protected_no_proxy_applies_settings(
     proxy_command_environment, no_proxy
+):
+    env = proxy_command_environment
+    env.helm_dp["helmValuesContent"]["global.noProxy"] = "redacted:proxy:no_proxy"
+    custom.update_connected_cluster(
+        env.cmd,
+        env.client,
+        "rg",
+        "cluster",
+        configuration_protected_settings={"proxy": {"no_proxy": no_proxy}},
+    )
+    custom.get_all_helm_values.assert_not_called()
+    custom.update_connected_cluster_internal.assert_not_called()
+    custom.put_cc_resource.assert_called_once()
+    custom.utils.helm_update_agent.assert_called_once()
+    payload = custom.utils.helm_update_agent.call_args.args[3]
+    assert payload["global.noProxy"] == no_proxy
+    _assert_proxy_configuration_has_no_ownership(env)
+
+
+@pytest.mark.parametrize("azure_hybrid_benefit", [None, "False"])
+@pytest.mark.parametrize(
+    "arguments,expected_settings,expected_protected",
+    [
+        (
+            {
+                "configuration_settings": {
+                    "workloadidentity": {
+                        "autoupgrademinorversion": "false",
+                        "version": "1.0.12",
+                    }
+                }
+            },
+            {"autoupgrademinorversion": "false", "version": "1.0.12"},
+            None,
+        ),
+        (
+            {
+                "configuration_protected_settings": {
+                    "workloadidentity": {"custom": "test-value"}
+                }
+            },
+            None,
+            {"custom": "redacted:workloadidentity:custom"},
+        ),
+    ],
+)
+def test_update_applies_configuration_settings_alone_or_with_hybrid_benefit(
+    proxy_command_environment,
+    azure_hybrid_benefit,
+    arguments,
+    expected_settings,
+    expected_protected,
+):
+    env = proxy_command_environment
+    custom.update_connected_cluster(
+        env.cmd,
+        env.client,
+        "rg",
+        "cluster",
+        azure_hybrid_benefit=azure_hybrid_benefit,
+        **deepcopy(arguments),
+    )
+
+    custom.put_cc_resource.assert_called_once()
+    custom.utils.helm_update_agent.assert_called_once()
+    configurations = env.dp_payload.arc_agentry_configurations
+    assert len(configurations) == 1
+    assert configurations[0].feature == "workloadidentity"
+    assert configurations[0].settings == expected_settings
+    assert configurations[0].protected_settings == expected_protected
+    arm_configurations = custom.put_cc_resource.call_args.args[
+        4
+    ].arc_agentry_configurations
+    assert len(arm_configurations) == 1
+    assert arm_configurations[0].feature == "workloadidentity"
+    assert arm_configurations[0].settings == expected_settings
+    assert arm_configurations[0].protected_settings is None
+
+
+def test_update_with_empty_configuration_settings_still_requires_parameters(
+    proxy_command_environment,
 ):
     env = proxy_command_environment
     with pytest.raises(
@@ -1668,11 +2001,9 @@ def test_update_with_only_protected_no_proxy_keeps_the_no_parameters_error(
             env.client,
             "rg",
             "cluster",
-            configuration_protected_settings={"proxy": {"no_proxy": no_proxy}},
+            configuration_settings={},
+            configuration_protected_settings={},
         )
-    custom.get_all_helm_values.assert_not_called()
-    custom.load_kube_config.assert_not_called()
-    custom.update_connected_cluster_internal.assert_not_called()
     custom.put_cc_resource.assert_not_called()
     custom.utils.helm_update_agent.assert_not_called()
 
@@ -2040,18 +2371,87 @@ def test_non_gateway_reconnect_still_rejects_adding_arc(proxy_command_environmen
     custom.utils.helm_update_agent.assert_not_called()
 
 
+@pytest.mark.parametrize("azure_hybrid_benefit", ["True", "False"])
 def test_arm_only_hybrid_benefit_update_does_not_need_proxy_or_helm(
-    proxy_command_environment,
+    proxy_command_environment, azure_hybrid_benefit
 ):
     env = proxy_command_environment
     result = custom.update_connected_cluster(
-        env.cmd, env.client, "rg", "cluster", azure_hybrid_benefit="False"
+        env.cmd,
+        env.client,
+        "rg",
+        "cluster",
+        azure_hybrid_benefit=azure_hybrid_benefit,
+        yes=True,
     )
     assert result is env.cluster
     custom.update_connected_cluster_internal.assert_called_once()
     custom.load_kube_config.assert_not_called()
     custom.get_all_helm_values.assert_not_called()
     custom.utils.helm_update_agent.assert_not_called()
+
+
+@pytest.mark.parametrize("azure_hybrid_benefit", ["True", "False"])
+@pytest.mark.parametrize(
+    "arguments,profile_name,expected_profile",
+    [
+        (
+            {"enable_oidc_issuer": True},
+            "oidc_issuer_profile",
+            {"enabled": True},
+        ),
+        (
+            {"enable_workload_identity": True},
+            "security_profile",
+            {"workloadIdentity": {"enabled": True}},
+        ),
+        (
+            {"enable_workload_identity": False},
+            "security_profile",
+            {"workloadIdentity": {"enabled": False}},
+        ),
+        (
+            {"disable_workload_identity": True},
+            "security_profile",
+            {"workloadIdentity": {"enabled": False}},
+        ),
+        (
+            {"gateway_resource_id": GATEWAY_RESOURCE_ID},
+            "gateway",
+            {"enabled": True},
+        ),
+        (
+            {"disable_gateway": True},
+            "gateway",
+            {"enabled": False},
+        ),
+    ],
+)
+def test_hybrid_benefit_update_also_applies_security_and_gateway_changes(
+    proxy_command_environment,
+    azure_hybrid_benefit,
+    arguments,
+    profile_name,
+    expected_profile,
+):
+    env = proxy_command_environment
+    custom.update_connected_cluster(
+        env.cmd,
+        env.client,
+        "rg",
+        "cluster",
+        azure_hybrid_benefit=azure_hybrid_benefit,
+        yes=True,
+        **arguments,
+    )
+
+    custom.update_connected_cluster_internal.assert_called_once_with(
+        env.cmd, env.client, "rg", "cluster", None, None, None, azure_hybrid_benefit
+    )
+    custom.put_cc_resource.assert_called_once()
+    request = custom.put_cc_resource.call_args.args[4]
+    assert getattr(request, profile_name).as_dict() == expected_profile
+    custom.utils.helm_update_agent.assert_called_once()
 
 
 @pytest.mark.parametrize("skip_range", ["", "10.0.0.0/8,.HIS.ARC.AZURE.COM"])

@@ -20,6 +20,11 @@ def _add_configuration_settings(
         try:
             key, value = item.split("=", 1)
             feature, setting = key.split(".")
+            feature = feature.strip()
+            setting = setting.strip()
+            value = value.strip()
+            if not feature or not setting:
+                raise ValueError("Feature and setting names must not be empty.")
         except ValueError as ex:
             raise ArgumentUsageError(
                 f"Usage error: {option_string} "

@@ -68,6 +68,7 @@ def test_configuration_settings_combine_feature_names_case_insensitively(
     [
         "workloadidentity.version=1.0.8",
         "WorkloadIdentity.VERSION=1.0.8",
+        " WorkloadIdentity . VERSION =1.0.8",
     ],
 )
 def test_configuration_settings_reject_duplicate_settings_case_insensitively(
@@ -86,3 +87,62 @@ def test_configuration_settings_reject_duplicate_settings_case_insensitively(
                 duplicate,
             ]
         )
+
+
+@pytest.mark.parametrize(
+    "action,option,dest",
+    [
+        (
+            AddConfigurationSettings,
+            "--configuration-settings",
+            "configuration_settings",
+        ),
+        (
+            AddConfigurationProtectedSettings,
+            "--configuration-protected-settings",
+            "configuration_protected_settings",
+        ),
+    ],
+)
+def test_configuration_settings_trim_names_and_values_across_repeated_options(
+    action, option, dest
+):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(option, action=action, nargs="+")
+
+    namespace = parser.parse_args(
+        [
+            option,
+            " \tworkloadidentity \t. version \t= \t1.0.12 \t",
+            option,
+            " WorkloadIdentity . autoupgrademinorversion = false ",
+            " logging . custom = value with spaces=preserved ",
+            " logging . empty = \t",
+        ]
+    )
+
+    assert getattr(namespace, dest) == {
+        "workloadidentity": {"version": "1.0.12", "autoupgrademinorversion": "false"},
+        "logging": {"custom": "value with spaces=preserved", "empty": ""},
+    }
+
+
+@pytest.mark.parametrize(
+    "action,option",
+    [
+        (AddConfigurationSettings, "--configuration-settings"),
+        (AddConfigurationProtectedSettings, "--configuration-protected-settings"),
+    ],
+)
+@pytest.mark.parametrize(
+    "item",
+    [" .version=1.0.12", "workloadidentity. =1.0.12", " . =value"],
+)
+def test_configuration_settings_reject_names_that_are_empty_after_trimming(
+    action, option, item
+):
+    parser = argparse.ArgumentParser()
+    parser.add_argument(option, action=action, nargs="+")
+
+    with pytest.raises(ArgumentUsageError, match="Usage error"):
+        parser.parse_args([option, item])
