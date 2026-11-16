@@ -2717,15 +2717,15 @@ def delete_connectedk8s(
             cmd, azure_cloud=azure_cloud
         )
 
-        if cluster_resource is not None:
-            delete_cc_resource(
-                cmd,
-                client,
-                resource_group_name,
-                cluster_name,
-                no_wait,
-                force=force_delete,
-            )
+        _delete_cc_resource_if_exists(
+            cmd,
+            client,
+            resource_group_name,
+            cluster_name,
+            cluster_resource,
+            no_wait,
+            force=force_delete,
+        )
 
         # Explicit CRD Deletion
         crd_cleanup_force_delete(
@@ -2746,15 +2746,15 @@ def delete_connectedk8s(
         return
 
     if not release_namespace:
-        if cluster_resource is not None:
-            delete_cc_resource(
-                cmd,
-                client,
-                resource_group_name,
-                cluster_name,
-                no_wait,
-                force=force_delete,
-            )
+        _delete_cc_resource_if_exists(
+            cmd,
+            client,
+            resource_group_name,
+            cluster_name,
+            cluster_resource,
+            no_wait,
+            force=force_delete,
+        )
         return
 
     # Loading config map
@@ -2810,15 +2810,15 @@ def delete_connectedk8s(
                 recommendation=reco_str,
             )
 
-        if cluster_resource is not None:
-            delete_cc_resource(
-                cmd,
-                client,
-                resource_group_name,
-                cluster_name,
-                no_wait,
-                force=force_delete,
-            )
+        _delete_cc_resource_if_exists(
+            cmd,
+            client,
+            resource_group_name,
+            cluster_name,
+            cluster_resource,
+            no_wait,
+            force=force_delete,
+        )
     else:
         err_msg = (
             "The current context in the kubeconfig file does not correspond "
@@ -2894,8 +2894,7 @@ def get_cc_resource(
     *,
     operation: Literal["update", "delete"],
     return_if_not_found: Literal[False] = False,
-) -> ConnectedCluster:
-    ...
+) -> ConnectedCluster: ...
 
 
 @overload
@@ -2905,10 +2904,9 @@ def get_cc_resource(
     resource_group_name: str,
     cluster_name: str,
     *,
-    operation: Literal["update", "delete"],
+    operation: Literal["delete"],
     return_if_not_found: Literal[True],
-) -> ConnectedCluster | None:
-    ...
+) -> ConnectedCluster | None: ...
 
 
 def get_cc_resource(
@@ -2970,6 +2968,28 @@ def patch_cc_resource(
         )
 
     assert False
+
+
+def _delete_cc_resource_if_exists(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    cluster_resource: ConnectedCluster | None,
+    no_wait: bool,
+    force: bool = False,
+) -> None:
+    if cluster_resource is None:
+        return
+
+    delete_cc_resource(
+        cmd,
+        client,
+        resource_group_name,
+        cluster_name,
+        no_wait,
+        force=force,
+    )
 
 
 def delete_cc_resource(
