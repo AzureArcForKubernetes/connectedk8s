@@ -30,6 +30,7 @@ import json
 import os
 import shutil
 import time
+from datetime import datetime, timezone
 from subprocess import PIPE, Popen
 from typing import TYPE_CHECKING, Any
 
@@ -38,8 +39,11 @@ from azure.cli.core.azclierror import (
     AzCLIError,
 )
 from knack.log import get_logger
+from kubernetes import __version__ as kubernetes_client_version
 from kubernetes import config, watch
 from kubernetes.client.rest import ApiException
+from urllib3.exceptions import MaxRetryError, ProtocolError
+from urllib3.exceptions import TimeoutError as Urllib3TimeoutError
 
 import azext_connectedk8s._constants as consts
 import azext_connectedk8s._errors as errors
@@ -50,6 +54,8 @@ from azext_connectedk8s._logutils import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from knack.commands import CLICommand
     from kubernetes.client import BatchV1Api, CoreV1Api
 
@@ -748,6 +754,96 @@ def _get_incomplete_job_diagnostic(  # pylint: disable=too-many-return-statement
     return "Review the saved pod description and container logs, then retry."
 
 
+def _watch_diagnostic_jobs(
+    batchv1_api_instance: BatchV1Api,
+    watcher: watch.Watch,
+    failure_diagnostics: dict[str, Any],
+) -> Iterator[dict[str, Any]]:
+    """Retry transient watch startup failures twice within a shared 180-second budget."""
+    context: dict[str, Any] = {
+        "startedAt": datetime.now(timezone.utc).isoformat(),
+        "namespace": "azure-arc-release",
+        "labelSelector": "",
+        "timeoutSeconds": 180,
+        "requestedResourceVersion": "<unset>",
+        "kubernetesClientVersion": kubernetes_client_version,
+    }
+    logger.debug("Starting diagnostic Job watch: %s", json.dumps(context))
+    started_at = time.monotonic()
+    events_received = 0
+    last_observed_resource_version = None
+    timeout_seconds = 180
+    for attempt in range(1, 4):
+        try:
+            for event in watcher.stream(
+                batchv1_api_instance.list_namespaced_job,
+                namespace=context["namespace"],
+                label_selector=context["labelSelector"],
+                timeout_seconds=timeout_seconds,
+                _request_timeout=timeout_seconds,
+            ):
+                events_received += 1
+                metadata = (
+                    getattr(event.get("object"), "metadata", None)
+                    if isinstance(event, dict)
+                    else None
+                )
+                resource_version = getattr(metadata, "resource_version", None)
+                if isinstance(resource_version, str):
+                    last_observed_resource_version = resource_version
+                yield event
+            return
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            elapsed = time.monotonic() - started_at
+            transport_error = e.reason if isinstance(e, MaxRetryError) else e
+            retryable = (
+                isinstance(e, ApiException) and e.status in (429, 500, 502, 503, 504)
+            ) or isinstance(
+                transport_error,
+                (ConnectionError, TimeoutError, ProtocolError, Urllib3TimeoutError),
+            )
+            retry_delay = attempt
+            if (
+                retryable
+                and events_received == 0
+                and attempt < 3
+                and 180 - elapsed >= retry_delay + 1
+            ):
+                logger.warning(
+                    "Diagnostic Job watch startup failed (attempt %s/3); "
+                    "retrying in %s second(s): %s",
+                    attempt,
+                    retry_delay,
+                    azext_utils.sanitize_telemetry_text(str(e)),
+                )
+                time.sleep(retry_delay)
+                elapsed = time.monotonic() - started_at
+                timeout_seconds = int(180 - elapsed)
+                if timeout_seconds >= 1:
+                    continue
+            tracked_resource_version = watcher.resource_version
+            failure_diagnostics.update(
+                context,
+                elapsedSeconds=round(elapsed, 3),
+                attempts=attempt,
+                eventsReceived=events_received,
+                lastObservedResourceVersion=last_observed_resource_version,
+                trackedResourceVersion=(
+                    tracked_resource_version
+                    if isinstance(tracked_resource_version, str)
+                    else None
+                ),
+                exceptionType=type(e).__name__,
+                status=e.status if isinstance(e, ApiException) else None,
+            )
+            logger.error(
+                "Diagnostic Job watch failed: %s; reason=%s",
+                json.dumps(failure_diagnostics),
+                azext_utils.sanitize_telemetry_text(str(e)),
+            )
+            raise
+
+
 def executing_cluster_diagnostic_checks_job(
     cmd: CLICommand,
     corev1_api_instance: CoreV1Api,
@@ -777,6 +873,7 @@ def executing_cluster_diagnostic_checks_job(
     job_name = "cluster-diagnostic-checks-job"
     # Setting the log output as Empty
     cluster_diagnostic_checks_container_log = ""
+    watch_failure_diagnostics: dict[str, Any] = {}
     release_namespace = azext_utils.get_release_namespace(
         kube_config,
         kube_context,
@@ -883,11 +980,8 @@ def executing_cluster_diagnostic_checks_job(
         job_reached_failure_limit = False
         is_job_scheduled = False
         # To watch for changes in pods' states till it reach completed state or exit if it takes more than 180 seconds
-        for job in w.stream(
-            batchv1_api_instance.list_namespaced_job,
-            namespace="azure-arc-release",
-            label_selector="",
-            timeout_seconds=180,
+        for job in _watch_diagnostic_jobs(
+            batchv1_api_instance, w, watch_failure_diagnostics
         ):
             logger.debug(
                 "Watching Cluster Diagnostic Checks Job to reach completed state"
@@ -1137,11 +1231,27 @@ def executing_cluster_diagnostic_checks_job(
     except Exception as e:  # pylint: disable=broad-exception-caught
         prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
+        details = str(e)
+        telemetry_properties = {}
+        if watch_failure_diagnostics:
+            watch_summary = " ".join(
+                f"{key}={value}" for key, value in watch_failure_diagnostics.items()
+            )
+            details = f"Job watch failed | {watch_summary} | {details}"
+            telemetry_properties = {
+                f"Context.Default.AzureCLI.prediagnosticWatch{key[0].upper()}{key[1:]}": value
+                for key, value in watch_failure_diagnostics.items()
+            }
+            for key, value in telemetry_properties.items():
+                telemetry.set_debug_info(
+                    key, azext_utils.sanitize_telemetry_text(str(value))
+                )
         raise azext_utils.report_connectedk8s_error(
             cmd,
             errors.PREDIAGNOSTICS_JOB_EXECUTION_FAILED,
             exception=e,
-            details=str(e),
+            telemetry_properties=telemetry_properties,
+            details=details,
         ) from e
     if is_job_complete:
         prediagnostic_job_execution_status = consts.Job_Status_Completed

@@ -10,10 +10,11 @@ import json
 import os
 import sys
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from kubernetes.client.rest import ApiException
+from urllib3.exceptions import MaxRetryError, ProtocolError, ReadTimeoutError, SSLError
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
@@ -1451,7 +1452,22 @@ def test_crd_compatibility_uses_current_job_and_container_state(
     assert result == expected
 
 
-def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
+@pytest.fixture
+def watch_clock(monkeypatch):
+    clock = SimpleNamespace(now=10.0)
+    monkeypatch.setattr(precheckutils.time, "monotonic", lambda: clock.now)
+
+    def sleep(seconds):
+        clock.now += seconds
+
+    monkeypatch.setattr(precheckutils.time, "sleep", MagicMock(side_effect=sleep))
+    return clock
+
+
+@pytest.mark.parametrize("watch_fails", [False, True])
+def test_diagnostic_job_watch_logs_and_reports_context(
+    monkeypatch, watch_fails, watch_clock
+):
     _reset_globals()
 
     complete_condition = MagicMock(type="Complete", status="True")
@@ -1461,6 +1477,15 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
     completed_job.status.conditions = [complete_condition]
     watcher = MagicMock()
     watcher.stream.return_value = iter([{"object": completed_job}])
+    failure = ApiException(
+        status=504,
+        reason=(
+            "Timeout: Too large resource version: 3445406, current: 236140; "
+            "token=private-value"
+        ),
+    )
+    if watch_fails:
+        watcher.stream.side_effect = failure
 
     batchv1_api = MagicMock()
 
@@ -1476,6 +1501,11 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
     monkeypatch.setattr(precheckutils.watch, "Watch", lambda: watcher)
     monkeypatch.setattr(precheckutils.config, "load_kube_config", MagicMock())
     monkeypatch.setattr(precheckutils, "Popen", MagicMock())
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(precheckutils, "telemetry", mock_telemetry)
+    monkeypatch.setattr(precheckutils.azext_utils, "telemetry", mock_telemetry)
+    logger = MagicMock()
+    monkeypatch.setattr(precheckutils, "logger", logger)
     monkeypatch.setattr(
         precheckutils,
         "helm_install_release_cluster_diagnostic_checks",
@@ -1495,31 +1525,322 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
         precheckutils.azext_utils, "get_chart_path", lambda *_args: "/fake/chart"
     )
 
-    precheckutils.executing_cluster_diagnostic_checks_job(
-        cmd=cmd,
-        corev1_api_instance=corev1_api,
-        batchv1_api_instance=batchv1_api,
-        helm_client_location="helm",
-        kubectl_client_location="kubectl",
-        kube_config=None,
-        kube_context=None,
-        location="eastus",
-        http_proxy="",
-        https_proxy="",
-        no_proxy="",
-        proxy_cert="",
-        azure_cloud="AZUREPUBLICCLOUD",
-        filepath_with_timestamp="/tmp/prediagnostics",
-        storage_space_available=False,
+    def execute_job():
+        return precheckutils.executing_cluster_diagnostic_checks_job(
+            cmd=cmd,
+            corev1_api_instance=corev1_api,
+            batchv1_api_instance=batchv1_api,
+            helm_client_location="helm",
+            kubectl_client_location="kubectl",
+            kube_config=None,
+            kube_context=None,
+            location="eastus",
+            http_proxy="",
+            https_proxy="",
+            no_proxy="",
+            proxy_cert="",
+            azure_cloud="AZUREPUBLICCLOUD",
+            filepath_with_timestamp="/tmp/prediagnostics",
+            storage_space_available=False,
+        )
+
+    if watch_fails:
+        with pytest.raises(precheckutils.AzCLIError) as raised:
+            execute_job()
+        assert raised.value.__cause__ is failure
+        _, properties = mock_telemetry.add_extension_event.call_args.args
+        assert (
+            properties[
+                "Context.Default.AzureCLI.prediagnosticWatchRequestedResourceVersion"
+            ]
+            == "<unset>"
+        )
+        assert properties["Context.Default.AzureCLI.prediagnosticWatchStatus"] == 504
+        assert properties["Context.Default.AzureCLI.prediagnosticWatchAttempts"] == 3
+        summary = mock_telemetry.set_exception.call_args.kwargs["summary"]
+        assert "requestedResourceVersion=<unset>" in summary
+        assert "eventsReceived=0" in summary
+        assert "status=504" in summary
+        assert "3445406, current: 236140" in summary
+        assert properties["Context.Default.AzureCLI.errorMessage"] == summary
+        assert "private-value" not in json.dumps(properties)
+        assert "private-value" not in summary
+        debug_info = dict(
+            call.args for call in mock_telemetry.set_debug_info.call_args_list
+        )
+        assert debug_info == {
+            key: str(value)
+            for key, value in properties.items()
+            if key.startswith("Context.Default.AzureCLI.prediagnosticWatch")
+        }
+        mock_telemetry.set_user_fault.assert_not_called()
+        logger.error.assert_called_once()
+    else:
+        execute_job()
+        logger.error.assert_not_called()
+        mock_telemetry.set_debug_info.assert_not_called()
+        assert (
+            precheckutils.prediagnostic_job_execution_status
+            == consts.Job_Status_Completed
+        )
+
+    start_call = next(
+        call
+        for call in logger.debug.call_args_list
+        if call.args[0] == "Starting diagnostic Job watch: %s"
+    )
+    start_context = json.loads(start_call.args[1])
+    assert start_context["requestedResourceVersion"] == "<unset>"
+    assert start_context["namespace"] == "azure-arc-release"
+    assert start_context["timeoutSeconds"] == 180
+    assert start_context["startedAt"].endswith("+00:00")
+
+    expected_timeouts = [180, 179, 177] if watch_fails else [180]
+    assert watcher.stream.call_args_list == [
+        call(
+            batchv1_api.list_namespaced_job,
+            namespace="azure-arc-release",
+            label_selector="",
+            timeout_seconds=timeout,
+            _request_timeout=timeout,
+        )
+        for timeout in expected_timeouts
+    ]
+    batchv1_api.read_namespaced_job.assert_not_called()
+
+
+@pytest.mark.parametrize("events_received", [0, 1])
+@pytest.mark.parametrize("api_error", [False, True])
+def test_job_watch_failure_distinguishes_requested_and_observed_revisions(
+    monkeypatch, events_received, api_error, watch_clock
+):
+    failure = (
+        ApiException(status=504, reason="Timeout: token=private-value")
+        if api_error
+        else OSError("connection reset")
+    )
+    watcher = MagicMock()
+    watcher.resource_version = None
+    event = {
+        "object": SimpleNamespace(metadata=SimpleNamespace(resource_version="3445406"))
+    }
+
+    def stream(*_args, **_kwargs):
+        watch_clock.now += 2.5
+        if events_received:
+            watcher.resource_version = "3445406"
+            yield event
+        raise failure
+
+    watcher.stream.side_effect = stream
+    logger = MagicMock()
+    monkeypatch.setattr(precheckutils, "logger", logger)
+    diagnostics = {}
+
+    with pytest.raises(type(failure)) as raised:
+        list(precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, diagnostics))
+
+    assert raised.value is failure
+    assert diagnostics["requestedResourceVersion"] == "<unset>"
+    assert diagnostics["eventsReceived"] == events_received
+    attempts = 3 if api_error and not events_received else 1
+    assert diagnostics["attempts"] == attempts
+    assert diagnostics["elapsedSeconds"] == (10.5 if attempts == 3 else 2.5)
+    expected_revision = "3445406" if events_received else None
+    assert diagnostics["lastObservedResourceVersion"] == expected_revision
+    assert diagnostics["trackedResourceVersion"] == expected_revision
+    assert diagnostics["status"] == (504 if api_error else None)
+    assert diagnostics["exceptionType"] == type(failure).__name__
+    assert json.loads(logger.error.call_args.args[1]) == diagnostics
+    assert "private-value" not in logger.error.call_args.args[2]
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        *(ApiException(status=status) for status in (429, 500, 502, 503, 504)),
+        ConnectionResetError("connection reset"),
+        TimeoutError("timed out"),
+        ProtocolError("connection aborted"),
+        ReadTimeoutError(None, "/apis/batch/v1/jobs", "timed out"),
+        MaxRetryError(None, "/apis/batch/v1/jobs", ConnectionRefusedError()),
+    ],
+)
+def test_job_watch_retries_transient_startup_failure(monkeypatch, watch_clock, failure):
+    watcher = MagicMock()
+    event = {"object": SimpleNamespace(metadata=SimpleNamespace(resource_version="42"))}
+    watcher.stream.side_effect = [failure, iter([event])]
+    logger = MagicMock()
+    monkeypatch.setattr(precheckutils, "logger", logger)
+    diagnostics = {}
+
+    assert list(
+        precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, diagnostics)
+    ) == [event]
+
+    assert watcher.stream.call_count == 2
+    precheckutils.time.sleep.assert_called_once_with(1)
+    assert watcher.stream.call_args.kwargs["timeout_seconds"] == 179
+    assert watcher.stream.call_args.kwargs["_request_timeout"] == 179
+    assert diagnostics == {}
+    logger.warning.assert_called_once()
+    logger.error.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        *(ApiException(status=status) for status in (400, 401, 403, 404, 410)),
+        ValueError("invalid event"),
+        OSError("unspecified OS error"),
+        SSLError("invalid certificate"),
+        MaxRetryError(None, "/apis/batch/v1/jobs", SSLError("invalid certificate")),
+    ],
+)
+def test_job_watch_does_not_retry_permanent_errors(watch_clock, failure):
+    watcher = MagicMock()
+    watcher.stream.side_effect = failure
+    diagnostics = {}
+
+    with pytest.raises(type(failure)) as raised:
+        list(precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, diagnostics))
+
+    assert raised.value is failure
+    watcher.stream.assert_called_once()
+    precheckutils.time.sleep.assert_not_called()
+    assert diagnostics["attempts"] == 1
+
+
+def test_job_watch_does_not_retry_connection_failure_after_event(watch_clock):
+    watcher = MagicMock()
+    failure = ConnectionResetError("connection reset")
+    event = {"object": SimpleNamespace(metadata=SimpleNamespace(resource_version="42"))}
+
+    def stream(*_args, **_kwargs):
+        yield event
+        raise failure
+
+    watcher.stream.side_effect = stream
+    diagnostics = {}
+
+    with pytest.raises(ConnectionResetError) as raised:
+        list(precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, diagnostics))
+
+    assert raised.value is failure
+    watcher.stream.assert_called_once()
+    precheckutils.time.sleep.assert_not_called()
+    assert diagnostics["eventsReceived"] == 1
+
+
+@pytest.mark.parametrize("elapsed", [178.5, 180, 200])
+def test_job_watch_skips_retry_without_remaining_budget(watch_clock, elapsed):
+    watcher = MagicMock()
+    failure = ApiException(status=504)
+
+    def stream(*_args, **_kwargs):
+        watch_clock.now += elapsed
+        raise failure
+
+    watcher.stream.side_effect = stream
+    diagnostics = {}
+
+    with pytest.raises(ApiException) as raised:
+        list(precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, diagnostics))
+
+    assert raised.value is failure
+    watcher.stream.assert_called_once()
+    precheckutils.time.sleep.assert_not_called()
+    assert diagnostics["elapsedSeconds"] == elapsed
+    assert diagnostics["attempts"] == 1
+
+
+def test_job_watch_rechecks_budget_after_retry_delay(monkeypatch, watch_clock):
+    watcher = MagicMock()
+    failure = ApiException(status=504)
+    watcher.stream.side_effect = failure
+
+    def oversleep(_seconds):
+        watch_clock.now += 181
+
+    monkeypatch.setattr(precheckutils.time, "sleep", oversleep)
+    diagnostics = {}
+
+    with pytest.raises(ApiException) as raised:
+        list(precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, diagnostics))
+
+    assert raised.value is failure
+    watcher.stream.assert_called_once()
+    assert diagnostics["elapsedSeconds"] == 181
+
+
+def test_job_watch_retry_warning_redacts_error(monkeypatch, watch_clock):
+    watcher = MagicMock()
+    watcher.stream.side_effect = [
+        ApiException(status=504, reason="Timeout: token=private-value"),
+        iter([]),
+    ]
+    logger = MagicMock()
+    monkeypatch.setattr(precheckutils, "logger", logger)
+
+    assert list(precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, {})) == []
+
+    assert "private-value" not in logger.warning.call_args.args[-1]
+    assert "[REDACTED]" in logger.warning.call_args.args[-1]
+    logger.error.assert_not_called()
+
+
+@pytest.mark.parametrize("failures", [1, 2])
+def test_job_watch_recovery_shares_budget_with_failed_attempts(watch_clock, failures):
+    watcher = MagicMock()
+    event = {"object": SimpleNamespace(metadata=SimpleNamespace(resource_version="42"))}
+
+    def stream(*_args, **_kwargs):
+        if watcher.stream.call_count <= failures:
+            watch_clock.now += 5
+            raise ApiException(status=503)
+        return iter([event])
+
+    watcher.stream.side_effect = stream
+    diagnostics = {}
+
+    assert list(
+        precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, diagnostics)
+    ) == [event]
+
+    assert watcher.stream.call_count == failures + 1
+    assert precheckutils.time.sleep.call_args_list == [
+        call(delay) for delay in range(1, failures + 1)
+    ]
+    assert [
+        attempt.kwargs["timeout_seconds"] for attempt in watcher.stream.call_args_list
+    ] == [180, 174, 167][: failures + 1]
+    assert diagnostics == {}
+
+
+def test_job_watch_does_not_retry_normal_empty_stream(watch_clock):
+    watcher = MagicMock()
+    watcher.stream.return_value = iter([])
+    diagnostics = {}
+
+    assert (
+        list(precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, diagnostics))
+        == []
     )
 
-    watcher.stream.assert_called_once_with(
-        batchv1_api.list_namespaced_job,
-        namespace="azure-arc-release",
-        label_selector="",
-        timeout_seconds=180,
-    )
-    batchv1_api.read_namespaced_job.assert_not_called()
-    assert (
-        precheckutils.prediagnostic_job_execution_status == consts.Job_Status_Completed
-    )
+    watcher.stream.assert_called_once()
+    precheckutils.time.sleep.assert_not_called()
+    assert diagnostics == {}
+
+
+def test_job_watch_preserves_malformed_events_for_caller(watch_clock):
+    watcher = MagicMock()
+    watcher.stream.return_value = iter([None])
+    diagnostics = {}
+
+    assert list(
+        precheckutils._watch_diagnostic_jobs(MagicMock(), watcher, diagnostics)
+    ) == [None]
+
+    watcher.stream.assert_called_once()
+    precheckutils.time.sleep.assert_not_called()
+    assert diagnostics == {}
