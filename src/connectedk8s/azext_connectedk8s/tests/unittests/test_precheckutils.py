@@ -1523,3 +1523,78 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
     assert (
         precheckutils.prediagnostic_job_execution_status == consts.Job_Status_Completed
     )
+
+
+@pytest.mark.parametrize(
+    ("reason", "is_watch_cache_error"),
+    [
+        (
+            "Timeout: Timeout: Too large resource version: 3445406, current: 236140",
+            True,
+        ),
+        (
+            "Timeout: Timeout: request did not complete within requested timeout",
+            False,
+        ),
+    ],
+)
+def test_job_watch_504_explains_watch_cache_error(
+    monkeypatch, reason, is_watch_cache_error
+):
+    _reset_globals()
+    api_error = ApiException(status=504, reason=reason)
+    watcher = MagicMock()
+    watcher.stream.side_effect = api_error
+    monkeypatch.setattr(precheckutils.watch, "Watch", lambda: watcher)
+    monkeypatch.setattr(precheckutils.config, "load_kube_config", MagicMock())
+    monkeypatch.setattr(precheckutils, "Popen", MagicMock())
+    monkeypatch.setattr(
+        precheckutils, "helm_install_release_cluster_diagnostic_checks", MagicMock()
+    )
+    monkeypatch.setattr(
+        precheckutils.azext_utils,
+        "get_release_namespace",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        precheckutils.azext_utils, "get_mcr_path", lambda *_args: "mcr.microsoft.com"
+    )
+    monkeypatch.setattr(
+        precheckutils.azext_utils, "get_chart_path", lambda *_args: "/fake/chart"
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(precheckutils.azext_utils, "telemetry", mock_telemetry)
+
+    with pytest.raises(precheckutils.AzCLIError) as raised:
+        precheckutils.executing_cluster_diagnostic_checks_job(
+            cmd=MagicMock(),
+            corev1_api_instance=MagicMock(),
+            batchv1_api_instance=MagicMock(),
+            helm_client_location="helm",
+            kubectl_client_location="kubectl",
+            kube_config=None,
+            kube_context=None,
+            location="eastus",
+            http_proxy="",
+            https_proxy="",
+            no_proxy="",
+            proxy_cert="",
+            azure_cloud="AZUREPUBLICCLOUD",
+            filepath_with_timestamp="/tmp/prediagnostics",
+            storage_space_available=False,
+        )
+
+    message = str(raised.value)
+    assert message.startswith("[AZK8S0601] PrediagnosticsJobExecutionFailed:")
+    assert raised.value.__cause__ is api_error
+    if is_watch_cache_error:
+        assert "Timeout: Timeout" not in message
+        assert "watch cache is behind its datastore" in message
+        assert "Too large resource version: 3445406, current: 236140" in message
+        assert any(
+            "kubectl get jobs -n azure-arc-release --watch" in recommendation
+            for recommendation in raised.value.recommendations
+        )
+    else:
+        assert str(api_error).rstrip() in message
+        assert not raised.value.recommendations
