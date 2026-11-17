@@ -27,6 +27,7 @@ Flow:
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -77,6 +78,8 @@ _prediagnostic_container_exited_one = False
 
 _POD_LOG_READ_MAX_ATTEMPTS = 4
 _TRANSIENT_KUBERNETES_API_STATUSES = frozenset({429, 500, 502, 503, 504})
+_DIAGNOSTIC_JOB_WATCH_TIMEOUT_SECONDS = 180
+_DIAGNOSTIC_JOB_WATCH_MAX_ATTEMPTS = 3
 
 
 def _read_diagnostic_pod_log(corev1_api_instance: CoreV1Api, pod_name: str) -> Any:
@@ -754,6 +757,51 @@ _TOO_LARGE_RESOURCE_VERSION_PATTERN = re.compile(
 )
 
 
+def _get_too_large_resource_version_detail(exception: Exception) -> str | None:
+    """Return the Kubernetes detail if the API server's watch cache is behind its datastore."""
+    if isinstance(exception, ApiException) and exception.status == 504:
+        match = _TOO_LARGE_RESOURCE_VERSION_PATTERN.search(str(exception))
+        if match:
+            return match.group(0)
+    return None
+
+
+def _stream_diagnostic_jobs(w: watch.Watch, batchv1_api_instance: BatchV1Api) -> Any:
+    """Stream Job events, retrying briefly when the API server's watch cache is behind.
+
+    The API server asks clients to retry this 504 after one second. Retries share the
+    overall watch timeout, so a cache that stays behind still fails within that time.
+    """
+    deadline = time.monotonic() + _DIAGNOSTIC_JOB_WATCH_TIMEOUT_SECONDS
+    for attempt in range(1, _DIAGNOSTIC_JOB_WATCH_MAX_ATTEMPTS + 1):
+        try:
+            yield from w.stream(
+                batchv1_api_instance.list_namespaced_job,
+                namespace="azure-arc-release",
+                label_selector="",
+                timeout_seconds=max(1, math.ceil(deadline - time.monotonic())),
+            )
+            return
+        except ApiException as exception:
+            detail = _get_too_large_resource_version_detail(exception)
+            retry_delay_seconds = 2 ** (attempt - 1)
+            if (
+                detail is None
+                or attempt == _DIAGNOSTIC_JOB_WATCH_MAX_ATTEMPTS
+                or deadline - time.monotonic() <= retry_delay_seconds
+            ):
+                raise
+            logger.warning(
+                "The Kubernetes API server's watch cache is behind its datastore (%s); "
+                "retrying the diagnostic job watch in %s seconds (attempt %s of %s)",
+                detail,
+                retry_delay_seconds,
+                attempt + 1,
+                _DIAGNOSTIC_JOB_WATCH_MAX_ATTEMPTS,
+            )
+            time.sleep(retry_delay_seconds)
+
+
 def _get_job_execution_failure_message(exception: Exception) -> tuple[str, str | None]:
     """Return customer-facing details and an optional recommendation for a job execution failure.
 
@@ -761,17 +809,16 @@ def _get_job_execution_failure_message(exception: Exception) -> tuple[str, str |
     reason "Timeout", and the Python client renders it as "Reason: Timeout: Timeout: ...". That
     reads like a diagnostic job timeout, so explain the control-plane cause instead.
     """
-    if isinstance(exception, ApiException) and exception.status == 504:
-        match = _TOO_LARGE_RESOURCE_VERSION_PATTERN.search(str(exception))
-        if match:
-            return (
-                "The Kubernetes API server could not serve requests for the diagnostic job because "
-                "its watch cache is behind its datastore (Kubernetes API server response, HTTP 504: "
-                f"{match.group(0)}). This indicates a cluster control-plane health issue, not a "
-                "diagnostic job timeout.",
-                "Check the health of the Kubernetes API server and its datastore, then retry "
-                "onboarding.",
-            )
+    detail = _get_too_large_resource_version_detail(exception)
+    if detail:
+        return (
+            "The Kubernetes API server could not serve requests for the diagnostic job because "
+            "its watch cache is behind its datastore (Kubernetes API server response, HTTP 504: "
+            f"{detail}). This indicates a cluster control-plane health issue, not a "
+            "diagnostic job timeout.",
+            "Check the health of the Kubernetes API server and its datastore, then retry "
+            "onboarding.",
+        )
     return str(exception), None
 
 
@@ -910,12 +957,7 @@ def executing_cluster_diagnostic_checks_job(
         job_reached_failure_limit = False
         is_job_scheduled = False
         # To watch for changes in pods' states till it reach completed state or exit if it takes more than 180 seconds
-        for job in w.stream(
-            batchv1_api_instance.list_namespaced_job,
-            namespace="azure-arc-release",
-            label_selector="",
-            timeout_seconds=180,
-        ):
+        for job in _stream_diagnostic_jobs(w, batchv1_api_instance):
             logger.debug(
                 "Watching Cluster Diagnostic Checks Job to reach completed state"
             )
