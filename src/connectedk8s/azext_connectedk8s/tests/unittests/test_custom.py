@@ -983,6 +983,53 @@ def test_onboarding_valid_location_continues_through_prediagnostics(
     ]
 
 
+def test_onboarding_reports_cluster_info_when_prediagnostics_fail(
+    onboarding_access_context, monkeypatch
+):
+    ctx = onboarding_access_context
+    monkeypatch.delenv("AZURE_LOCAL_DISCONNECTED", raising=False)
+    ctx.core_api.list_node.return_value = V1NodeList(
+        items=[
+            create_node(
+                labels={
+                    "kubernetes.io/os": "linux",
+                    "snap.microk8s.io/cluster": "true",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(
+        custom.utils,
+        "create_folder_diagnosticlogs",
+        MagicMock(return_value=("diagnostic-logs", True)),
+    )
+    monkeypatch.setattr(
+        custom.precheckutils,
+        "fetch_diagnostic_checks_results",
+        MagicMock(return_value=(consts.Diagnostic_Check_Incomplete, True)),
+    )
+    monkeypatch.setattr(custom.precheckutils, "fetching_cli_output_logs", MagicMock())
+    monkeypatch.setattr(custom.precheckutils, "diagnoser_output", [])
+
+    with pytest.raises(ValidationError, match="PrediagnosticsIncomplete"):
+        custom.create_connectedk8s(ctx.cmd, MagicMock(), "rg", "cluster")
+
+    cluster_info_events = [
+        call.args[1]
+        for call in ctx.telemetry.add_extension_event.call_args_list
+        if "Context.Default.AzureCLI.KubernetesVersion" in call.args[1]
+    ]
+    assert len(cluster_info_events) == 1
+    assert cluster_info_events[0]["Context.Default.AzureCLI.KubernetesVersion"] == (
+        "v1.30.0"
+    )
+    assert cluster_info_events[0]["Context.Default.AzureCLI.KubernetesDistro"] == (
+        "microk8s"
+    )
+    assert "Context.Default.AzureCLI.KubernetesInfra" in cluster_info_events[0]
+    ctx.permission.assert_not_called()
+
+
 @pytest.mark.parametrize("node_os", ["linux", "windows"])
 @pytest.mark.parametrize("permission", [False, "Unknown"])
 def test_onboarding_permission_failure_emits_one_fault(
