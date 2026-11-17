@@ -1592,7 +1592,7 @@ def test_job_watch_504_explains_watch_cache_error(
         assert "watch cache is behind its datastore" in message
         assert "Too large resource version: 3445406, current: 236140" in message
         assert any(
-            "kubectl get jobs -n azure-arc-release --watch" in recommendation
+            "API server and its datastore" in recommendation
             for recommendation in raised.value.recommendations
         )
     else:

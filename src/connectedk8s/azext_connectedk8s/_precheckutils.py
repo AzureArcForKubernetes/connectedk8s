@@ -769,9 +769,8 @@ def _get_job_execution_failure_message(exception: Exception) -> tuple[str, str |
                 "its watch cache is behind its datastore (Kubernetes API server response, HTTP 504: "
                 f"{match.group(0)}). This indicates a cluster control-plane health issue, not a "
                 "diagnostic job timeout.",
-                "Check the health of the Kubernetes API server and its datastore (for example, "
-                "etcd). Confirm that 'kubectl get jobs -n azure-arc-release --watch' runs without "
-                "errors, then retry onboarding.",
+                "Check the health of the Kubernetes API server and its datastore, then retry "
+                "onboarding.",
             )
     return str(exception), None
 
