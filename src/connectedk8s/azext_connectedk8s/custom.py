@@ -467,6 +467,32 @@ def create_connectedk8s(
 
     required_node_exists = check_linux_node(node_api_response)
 
+    print(
+        f"Step: {utils.get_utctimestring()}: Determining Cluster Distribution and Infrastructure"
+    )
+    # Get kubernetes cluster info
+    if distribution == "generic":
+        kubernetes_distro = get_kubernetes_distro(
+            node_api_response, cmd=cmd
+        )  # (cluster heuristics)
+    else:
+        kubernetes_distro = distribution
+
+    if infrastructure == "generic":
+        kubernetes_infra = get_kubernetes_infra(
+            node_api_response
+        )  # (cluster heuristics)
+    else:
+        kubernetes_infra = infrastructure
+
+    # Report cluster info before the pre-onboarding checks so it is recorded when they fail.
+    kubernetes_properties = {
+        "Context.Default.AzureCLI.KubernetesVersion": kubernetes_version,
+        "Context.Default.AzureCLI.KubernetesDistro": kubernetes_distro,
+        "Context.Default.AzureCLI.KubernetesInfra": kubernetes_infra,
+    }
+    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
+
     # check if this is aks_hci low bandwith scenario
     lowbandwidth = False
     lowbandwith_distros = [
@@ -685,31 +711,6 @@ def create_connectedk8s(
             ),
             details=err_msg,
         )
-
-    print(
-        f"Step: {utils.get_utctimestring()}: Determining Cluster Distribution and Infrastructure"
-    )
-    # Get kubernetes cluster info
-    if distribution == "generic":
-        kubernetes_distro = get_kubernetes_distro(
-            node_api_response, cmd=cmd
-        )  # (cluster heuristics)
-    else:
-        kubernetes_distro = distribution
-
-    if infrastructure == "generic":
-        kubernetes_infra = get_kubernetes_infra(
-            node_api_response
-        )  # (cluster heuristics)
-    else:
-        kubernetes_infra = infrastructure
-
-    kubernetes_properties = {
-        "Context.Default.AzureCLI.KubernetesVersion": kubernetes_version,
-        "Context.Default.AzureCLI.KubernetesDistro": kubernetes_distro,
-        "Context.Default.AzureCLI.KubernetesInfra": kubernetes_infra,
-    }
-    utils.add_connectedk8s_telemetry_event(cmd, kubernetes_properties)
 
     # Checking if it is an AKS cluster
     is_aks_cluster = check_aks_cluster(kube_config, kube_context, cmd=cmd)
