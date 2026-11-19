@@ -68,6 +68,7 @@ diagnoser_output: list[
     str
 ] = []  # Collects human-readable log lines for display to the user
 prediagnostic_job_execution_status = consts.Job_Status_Not_Started
+prediagnostic_job_execution_details = ""
 prediagnostic_dns_check = consts.Diagnostic_Check_Starting
 prediagnostic_outbound_check = consts.Diagnostic_Check_Starting
 prediagnostic_entra_check = consts.Diagnostic_Check_Starting
@@ -293,6 +294,8 @@ def send_prediagnostic_job_execution_error_telemetry(
     between not-scheduled, not-completed, cleanup-failed, etc. without relying
     on add_extension_event properties (which get stripped by GDPR pipeline).
     """
+    if not reason and prediagnostic_job_execution_status == consts.Job_Status_Not_Completed:
+        reason = prediagnostic_job_execution_details
     # Build structured message for add_extension_event (best-effort, may be stripped)
     msg: dict[str, Any] = {"jobExecutionStatus": prediagnostic_job_execution_status}
     if reason:
@@ -462,11 +465,12 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
           - Diagnostic_Check_Failed: at least one check failed, onboarding may be blocked
           - Diagnostic_Check_Incomplete: job didn't run or checks couldn't be determined
     """
-    global prediagnostic_job_execution_status, prediagnostic_dns_check, prediagnostic_outbound_check, prediagnostic_entra_check, prediagnostic_crd_check  # pylint: disable=global-statement
+    global prediagnostic_job_execution_status, prediagnostic_job_execution_details, prediagnostic_dns_check, prediagnostic_outbound_check, prediagnostic_entra_check, prediagnostic_crd_check  # pylint: disable=global-statement
     global _prediagnostic_container_exited_one  # pylint: disable=global-statement
     try:
         diagnoser_output.clear()
         prediagnostic_job_execution_status = consts.Job_Status_Not_Started
+        prediagnostic_job_execution_details = ""
         prediagnostic_dns_check = consts.Diagnostic_Check_Starting
         prediagnostic_outbound_check = consts.Diagnostic_Check_Starting
         prediagnostic_entra_check = consts.Diagnostic_Check_Starting
@@ -689,63 +693,99 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
 # ---------------------------------------------------------------------------
 
 
-def _get_incomplete_job_diagnostic(  # pylint: disable=too-many-return-statements
-    pod: Any,
-) -> str:
+def _get_incomplete_job_diagnostic(pod: Any) -> str:
     """Return actionable guidance for a diagnostic pod that did not finish."""
     pod_status = getattr(pod, "status", None)
     if pod_status is None:
         return "Review the saved pod description and retry the operation."
 
-    for container_status in getattr(pod_status, "container_statuses", None) or []:
-        state = getattr(container_status, "state", None)
-        waiting = getattr(state, "waiting", None)
-        waiting_reason = getattr(waiting, "reason", None)
-        if waiting_reason in ("ErrImagePull", "ImagePullBackOff"):
-            return (
-                f"Pod reason: {waiting_reason}. The diagnostic image could not be pulled. "
-                "Verify connectivity to MCR and proxy settings, then retry."
-            )
-        if waiting_reason == "CrashLoopBackOff":
-            return (
-                "Pod reason: CrashLoopBackOff. The diagnostic container repeatedly failed. "
-                "Review the saved container logs, then retry."
-            )
+    evidence: list[str] = []
+    reasons: set[str] = set()
 
-        terminated = getattr(state, "terminated", None)
-        terminated_reason = getattr(terminated, "reason", None)
-        exit_code = getattr(terminated, "exit_code", None)
-        if terminated_reason == "OOMKilled":
-            return (
-                "Pod reason: OOMKilled. The diagnostic container exceeded its memory limit. "
-                "Ensure the cluster has sufficient memory, then retry."
-            )
-        if terminated is not None and exit_code not in (None, 0):
-            reason = terminated_reason or "ContainerFailed"
-            return (
-                f"Pod reason: {reason} (exit code {exit_code}). The diagnostic container failed. "
-                "Review the saved container logs, then retry."
-            )
+    def add_evidence(reason: str, message: Any, context: str = "") -> None:
+        detail = f"Pod reason: {reason}"
+        if context:
+            detail += f" ({context})"
+        if isinstance(message, str) and message:
+            safe_message = azext_utils.sanitize_telemetry_text(message)
+            detail += f": {azext_utils._truncate_timeout_diagnostic_message(safe_message)}"
+        evidence.append(detail + ".")
+
+    for field, kind in (
+        ("init_container_statuses", "init container"),
+        ("container_statuses", "container"),
+    ):
+        for container_status in getattr(pod_status, field, None) or []:
+            context = f"{kind} {getattr(container_status, 'name', '') or ''}".strip()
+            state = getattr(container_status, "state", None)
+            waiting = getattr(state, "waiting", None)
+            waiting_reason = getattr(waiting, "reason", None)
+            if isinstance(waiting_reason, str) and waiting_reason:
+                reasons.add(waiting_reason)
+                add_evidence(waiting_reason, getattr(waiting, "message", None), context)
+
+            for state_field, state_context in (
+                ("state", context),
+                ("last_state", f"{context}, previous termination"),
+            ):
+                terminated = getattr(
+                    getattr(container_status, state_field, None), "terminated", None
+                )
+                reason = getattr(terminated, "reason", None)
+                exit_code = getattr(terminated, "exit_code", None)
+                if terminated is None or (
+                    reason != "OOMKilled" and exit_code in (None, 0)
+                ):
+                    continue
+                if not isinstance(exit_code, int):
+                    continue
+                reason = reason or "ContainerFailed"
+                reasons.add(reason)
+                add_evidence(
+                    f"{reason} (exit code {exit_code})",
+                    getattr(terminated, "message", None),
+                    state_context,
+                )
+                evidence.append("Review the saved container logs, then retry.")
 
     for condition in getattr(pod_status, "conditions", None) or []:
-        if (
-            getattr(condition, "type", None) == "PodScheduled"
-            and getattr(condition, "status", None) == "False"
-        ):
-            reason = getattr(condition, "reason", None) or "Unschedulable"
-            return (
-                f"Pod reason: {reason}. The diagnostic pod could not be scheduled. "
-                "Verify node resources, taints, and namespace quotas, then retry."
+        if getattr(condition, "status", None) == "False":
+            condition_type = getattr(condition, "type", None)
+            reason = getattr(condition, "reason", None) or (
+                "Unschedulable" if condition_type == "PodScheduled" else condition_type
             )
+            if reason:
+                reasons.add(reason)
+                add_evidence(reason, getattr(condition, "message", None))
 
     pod_reason = getattr(pod_status, "reason", None)
-    if pod_reason:
-        return (
-            f"Pod reason: {pod_reason}. Review the saved pod description and container logs, "
-            "then retry."
-        )
+    pod_phase = getattr(pod_status, "phase", None)
+    if isinstance(pod_phase, str) and pod_phase:
+        evidence.append(f"Pod phase: {pod_phase}.")
+    if isinstance(pod_reason, str) and pod_reason:
+        add_evidence(pod_reason, getattr(pod_status, "message", None))
 
-    return "Review the saved pod description and container logs, then retry."
+    if reasons & {"ErrImagePull", "ImagePullBackOff"}:
+        evidence.append(
+            "The diagnostic image could not be pulled. "
+            "Verify connectivity to MCR and proxy settings, then retry."
+        )
+    if "CrashLoopBackOff" in reasons:
+        evidence.append(
+            "The diagnostic container repeatedly failed. "
+            "Review the saved container logs, then retry."
+        )
+    if "OOMKilled" in reasons:
+        evidence.append(
+            "The diagnostic container exceeded its memory limit. "
+            "Ensure the cluster has sufficient memory, then retry."
+        )
+    if "Unschedulable" in reasons:
+        evidence.append(
+            "Verify node resources, taints, and namespace quotas, then retry."
+        )
+    evidence.append("Review the saved pod description and container logs, then retry.")
+    return azext_utils.sanitize_telemetry_text(" ".join(evidence))
 
 
 def executing_cluster_diagnostic_checks_job(
@@ -771,9 +811,10 @@ def executing_cluster_diagnostic_checks_job(
         - Container log string if the job ran (may be empty if pod produced no output)
         - None if the job could not be scheduled or cleanup of a stale release failed
     """
-    global prediagnostic_job_execution_status  # pylint: disable=global-statement
+    global prediagnostic_job_execution_status, prediagnostic_job_execution_details  # pylint: disable=global-statement
     global _prediagnostic_container_exited_one  # pylint: disable=global-statement
     _prediagnostic_container_exited_one = False
+    prediagnostic_job_execution_details = ""
     job_name = "cluster-diagnostic-checks-job"
     # Setting the log output as Empty
     cluster_diagnostic_checks_container_log = ""
@@ -985,7 +1026,9 @@ def executing_cluster_diagnostic_checks_job(
         if is_job_complete is False:
             prediagnostic_job_execution_status = consts.Job_Status_Not_Completed
             incomplete_job_diagnostic = (
-                "Review the saved pod description and container logs, then retry."
+                "No diagnostic pod was found in namespace azure-arc-release. "
+                "Review the job events for pod creation failures, security policies, "
+                "and namespace quotas, then retry."
             )
             # Job was scheduled successfully, but didn't complete. We will fetch the logs and delete helm release.
             logger.debug(
@@ -1064,6 +1107,7 @@ def executing_cluster_diagnostic_checks_job(
                     _report_prediagnostic_log_save_failure(cmd, e)
 
             details = incomplete_job_diagnostic
+            prediagnostic_job_execution_details = details
             message = errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.format(details=details)
             azext_utils.add_connectedk8s_telemetry_event(
                 cmd,
