@@ -45,6 +45,7 @@ def _reset_globals():
     """Reset module-level globals to a clean state before each test."""
     precheckutils.diagnoser_output = []
     precheckutils.prediagnostic_job_execution_status = consts.Job_Status_Not_Started
+    precheckutils.prediagnostic_job_execution_details = ""
     precheckutils.prediagnostic_entra_check = consts.Diagnostic_Check_Starting
     precheckutils.prediagnostic_crd_check = consts.Diagnostic_Check_Starting
     precheckutils._prediagnostic_container_exited_one = False
@@ -460,6 +461,7 @@ class TestSendJobExecutionErrorTelemetry:
 
     @patch("azext_connectedk8s._precheckutils.telemetry")
     def test_message_omits_reason_when_empty(self, mock_telemetry):
+        precheckutils.prediagnostic_job_execution_details = "stale pod diagnostic"
         precheckutils.send_prediagnostic_job_execution_error_telemetry()
 
         props = mock_telemetry.add_extension_event.call_args[0][1]
@@ -1451,14 +1453,148 @@ def test_crd_compatibility_uses_current_job_and_container_state(
     assert result == expected
 
 
-def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
+@pytest.mark.parametrize("status_field", ["container_statuses", "init_container_statuses"])
+@pytest.mark.parametrize(
+    ("reason", "message"),
+    [
+        ("CreateContainerConfigError", "secret arc-proxy-cert not found"),
+        ("CreateContainerError", "failed to create container task"),
+        ("ImagePullBackOff", "registry returned 403 Forbidden"),
+    ],
+)
+def test_incomplete_job_diagnostic_includes_container_reason_and_message(
+    status_field, reason, message
+):
+    container = SimpleNamespace(
+        name="diagnostic",
+        state=SimpleNamespace(
+            waiting=SimpleNamespace(reason=reason, message=message), terminated=None
+        ),
+    )
+    pod = SimpleNamespace(status=SimpleNamespace(**{status_field: [container]}))
+
+    diagnostic = precheckutils._get_incomplete_job_diagnostic(pod)
+
+    assert reason in diagnostic
+    assert message in diagnostic
+    assert "diagnostic" in diagnostic
+
+
+def test_incomplete_job_diagnostic_includes_previous_termination():
+    container = SimpleNamespace(
+        name="diagnostic",
+        state=SimpleNamespace(
+            waiting=SimpleNamespace(reason="CrashLoopBackOff", message="back-off restarting")
+        ),
+        last_state=SimpleNamespace(
+            terminated=SimpleNamespace(
+                reason="OOMKilled", exit_code=137, message="memory limit exceeded"
+            )
+        ),
+    )
+    pod = SimpleNamespace(status=SimpleNamespace(container_statuses=[container]))
+
+    diagnostic = precheckutils._get_incomplete_job_diagnostic(pod)
+
+    for detail in ("CrashLoopBackOff", "previous", "OOMKilled", "137", "memory limit exceeded"):
+        assert detail in diagnostic
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        SimpleNamespace(
+            conditions=[
+                SimpleNamespace(
+                    type="PodScheduled", status="False", reason="Unschedulable",
+                    message="0/2 nodes are available: 2 Insufficient memory",
+                )
+            ]
+        ),
+        SimpleNamespace(
+            phase="Failed", reason="Evicted", message="The node was low on resource: memory"
+        ),
+        SimpleNamespace(phase="Running"),
+    ],
+)
+def test_incomplete_job_diagnostic_includes_pod_status(status):
+    diagnostic = precheckutils._get_incomplete_job_diagnostic(SimpleNamespace(status=status))
+
+    if getattr(status, "conditions", None):
+        assert status.conditions[0].message in diagnostic
+    else:
+        assert status.phase in diagnostic
+        if getattr(status, "message", None):
+            assert status.message in diagnostic
+
+
+def test_incomplete_job_diagnostic_sanitizes_and_bounds_messages():
+    pod = SimpleNamespace(
+        status=SimpleNamespace(
+            reason="Evicted",
+            message="token=secret-value\n" + "repeated message " * 100,
+        )
+    )
+
+    diagnostic = precheckutils._get_incomplete_job_diagnostic(pod)
+
+    assert "token=[REDACTED]" in diagnostic
+    assert "secret-value" not in diagnostic
+    assert "\n" not in diagnostic
+    assert len(diagnostic) < 500
+
+
+def test_incomplete_job_diagnostic_keeps_reasons_from_multiple_containers():
+    pod = SimpleNamespace(
+        status=SimpleNamespace(
+            container_statuses=[
+                SimpleNamespace(
+                    name="completed",
+                    state=SimpleNamespace(
+                        terminated=SimpleNamespace(reason="Completed", exit_code=0)
+                    ),
+                ),
+                SimpleNamespace(
+                    name="diagnostic",
+                    state=SimpleNamespace(
+                        waiting=SimpleNamespace(
+                            reason="ImagePullBackOff", message="registry unavailable"
+                        )
+                    ),
+                ),
+                SimpleNamespace(
+                    name="sidecar",
+                    state=SimpleNamespace(
+                        terminated=SimpleNamespace(
+                            reason="Error", exit_code=2, message="invalid configuration"
+                        )
+                    ),
+                ),
+            ]
+        )
+    )
+
+    diagnostic = precheckutils._get_incomplete_job_diagnostic(pod)
+
+    assert "Completed" not in diagnostic
+    for detail in (
+        "ImagePullBackOff", "registry unavailable", "sidecar",
+        "Error (exit code 2)", "invalid configuration",
+    ):
+        assert detail in diagnostic
+
+
+@pytest.mark.parametrize(
+    "outcome", ["complete", "incomplete", "logs-unavailable", "no-pods"]
+)
+def test_diagnostic_job_watch_reports_outcome(monkeypatch, outcome):
     _reset_globals()
 
     complete_condition = MagicMock(type="Complete", status="True")
     completed_job = MagicMock()
     completed_job.metadata.name = "cluster-diagnostic-checks-job"
     completed_job.status.failed = None
-    completed_job.status.conditions = [complete_condition]
+    completed_job.status.conditions = [complete_condition] if outcome == "complete" else []
     watcher = MagicMock()
     watcher.stream.return_value = iter([{"object": completed_job}])
 
@@ -1467,15 +1603,45 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
     pod = MagicMock()
     pod.metadata.name = "cluster-diagnostic-checks-job-abc12"
     pod.metadata.creation_timestamp = "2026-08-21T23:02:22Z"
+    pod.status = SimpleNamespace(
+        init_container_statuses=[
+            SimpleNamespace(
+                name="proxy-init",
+                state=SimpleNamespace(
+                    waiting=SimpleNamespace(
+                        reason="CreateContainerConfigError",
+                        message="secret arc-proxy-cert not found",
+                    )
+                ),
+            )
+        ]
+    )
     corev1_api = MagicMock()
-    corev1_api.list_namespaced_pod.return_value = MagicMock(items=[pod])
+    corev1_api.list_namespaced_pod.return_value = SimpleNamespace(
+        items=[] if outcome == "no-pods" else [pod]
+    )
     corev1_api.read_namespaced_pod_log.return_value = "diagnostic output"
+    if outcome == "logs-unavailable":
+        corev1_api.read_namespaced_pod_log.side_effect = RuntimeError("container is waiting")
 
     cmd = MagicMock()
     cmd.cli_ctx.cloud.endpoints.active_directory = "https://login.microsoftonline.com"
     monkeypatch.setattr(precheckutils.watch, "Watch", lambda: watcher)
     monkeypatch.setattr(precheckutils.config, "load_kube_config", MagicMock())
     monkeypatch.setattr(precheckutils, "Popen", MagicMock())
+    save_description = MagicMock()
+    add_event = MagicMock()
+    set_exception = MagicMock()
+    warning = MagicMock()
+    monkeypatch.setattr(
+        precheckutils.azext_utils, "save_cluster_diagnostic_checks_pod_description",
+        save_description,
+    )
+    monkeypatch.setattr(
+        precheckutils.azext_utils, "add_connectedk8s_telemetry_event", add_event
+    )
+    monkeypatch.setattr(precheckutils.telemetry, "set_exception", set_exception)
+    monkeypatch.setattr(precheckutils.logger, "warning", warning)
     monkeypatch.setattr(
         precheckutils,
         "helm_install_release_cluster_diagnostic_checks",
@@ -1495,7 +1661,7 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
         precheckutils.azext_utils, "get_chart_path", lambda *_args: "/fake/chart"
     )
 
-    precheckutils.executing_cluster_diagnostic_checks_job(
+    result = precheckutils.executing_cluster_diagnostic_checks_job(
         cmd=cmd,
         corev1_api_instance=corev1_api,
         batchv1_api_instance=batchv1_api,
@@ -1520,6 +1686,34 @@ def test_diagnostic_job_watch_uses_180_second_timeout(monkeypatch):
         timeout_seconds=180,
     )
     batchv1_api.read_namespaced_job.assert_not_called()
-    assert (
-        precheckutils.prediagnostic_job_execution_status == consts.Job_Status_Completed
-    )
+    if outcome == "complete":
+        assert precheckutils.prediagnostic_job_execution_status == consts.Job_Status_Completed
+        assert result == "diagnostic output"
+        add_event.assert_not_called()
+        save_description.assert_not_called()
+    else:
+        assert precheckutils.prediagnostic_job_execution_status == consts.Job_Status_Not_Completed
+        assert result == ("" if outcome in ("logs-unavailable", "no-pods") else "diagnostic output")
+        save_description.assert_called_once()
+        properties = add_event.call_args.args[1]
+        assert properties[consts.Telemetry_Error_Code_Key] == "AZK8S0605"
+        message = properties[consts.Telemetry_Error_Message_Key]
+        if outcome == "no-pods":
+            assert "No diagnostic pod was found" in message
+        else:
+            assert "CreateContainerConfigError" in message
+            assert "secret arc-proxy-cert not found" in message
+            assert "proxy-init" in message
+        assert set_exception.call_args.kwargs["summary"] == message
+        assert str(set_exception.call_args.kwargs["exception"]) == message
+        warning.assert_called_once_with(message)
+        onboarding_event = MagicMock()
+        monkeypatch.setattr(
+            precheckutils, "_send_onboarding_telemetry_event", onboarding_event
+        )
+        precheckutils.send_prediagnostic_job_execution_error_telemetry(cmd=cmd)
+        followup = json.loads(
+            add_event.call_args.args[1][consts.Telemetry_Onboarding_Error_Message_Key]
+        )
+        assert followup["reason"] in message
+        assert followup["reason"][:200] in onboarding_event.call_args.args[1]

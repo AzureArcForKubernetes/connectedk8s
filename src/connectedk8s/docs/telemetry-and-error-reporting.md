@@ -27,6 +27,24 @@ their existing call sites are migrated.
 | Error reporter | `_utils.py :: report_connectedk8s_error` | Emits standardized telemetry and returns the matching CLI exception |
 | Helm timeout reporter | `_utils.py :: report_helm_timeout_error` | Reports classified Helm timeout diagnostics through the standard reporter |
 
+### Incomplete pre-onboarding diagnostic jobs
+
+`AZK8S0605` retains its existing timeout and fault type. Its details include
+current and previous failed container terminations (including exit codes),
+waiting reasons for regular and init containers, false pod conditions, and pod
+phase/reason. Kubernetes messages identify causes such as a missing Secret,
+image registry rejection, insufficient resources, or eviction, even when
+container logs are unavailable.
+
+Messages are redacted with the shared telemetry sanitizer, normalized to one
+line, and limited to 240 characters per Kubernetes message. The same rendered
+diagnostic is used in the CLI warning and error telemetry. If no diagnostic pod
+exists, the message directs the user to job events, security policies, and
+namespace quotas. Follow-up job-execution telemetry also retains this reason
+instead of reporting "no additional details"; its fault summary retains the
+existing 200-character reason limit. Pod-description saving, partial-log collection, cleanup,
+and the 180-second job watch remain unchanged.
+
 ## High-level flow
 
 ```text
