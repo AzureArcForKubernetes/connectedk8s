@@ -27,6 +27,12 @@ their existing call sites are migrated.
 | Error reporter | `_utils.py :: report_connectedk8s_error` | Emits standardized telemetry and returns the matching CLI exception |
 | Helm timeout reporter | `_utils.py :: report_helm_timeout_error` | Reports classified Helm timeout diagnostics through the standard reporter |
 
+When a pre-onboarding diagnostic Job has no matching pod, warning and follow-up
+telemetry include up to three distinct warning events scoped to the current Job
+UID. Event details are redacted and limited to 240 characters each. Event reads
+use a 10-second request timeout; missing permissions or unavailable events leave
+the existing error classification and fallback messages unchanged.
+
 ## High-level flow
 
 ```text
