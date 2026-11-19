@@ -4,6 +4,7 @@
 # --------------------------------------------------------------------------------------------
 import json
 import os
+import socket
 import sys
 from base64 import b64encode
 from types import SimpleNamespace
@@ -29,6 +30,7 @@ from azure.cli.core.azclierror import (
 import azext_connectedk8s._constants as consts
 import azext_connectedk8s._errors as errors_module
 import azext_connectedk8s._utils as utils_module
+import azext_connectedk8s.clientproxyhelper._utils as clientproxy_utils
 from azext_connectedk8s._errors import ArcError
 from azext_connectedk8s._utils import (
     HelmTimeoutReport,
@@ -63,6 +65,14 @@ def _build_test_proxy_url(username, password):
     # Avoid storing credential-shaped URLs in the test source.
     credentials = f"{username}:{password}"
     return urlunsplit(("http", f"{credentials}@example.com:8080", "", "", ""))
+
+
+def test_check_if_port_is_open_detects_loopback_listener():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+
+        assert clientproxy_utils.check_if_port_is_open(listener.getsockname()[1])
 
 
 def test_check_provider_registrations_reports_unregistered_provider(monkeypatch):
