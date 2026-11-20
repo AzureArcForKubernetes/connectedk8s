@@ -3001,7 +3001,7 @@ def delete_cc_resource(
     cluster_name: str,
     no_wait: bool,
     force: bool = False,
-) -> LROPoller[None]:
+) -> LROPoller[None] | None:
     print(f"Step: {utils.get_utctimestring()}: Deleting ARM resource")
     try:
         poller: LROPoller[None]
@@ -3027,9 +3027,17 @@ def delete_cc_resource(
             e,
             consts.Delete_ConnectedCluster_Fault_Type,
             "Unable to delete connected cluster resource",
+            # The resource can be removed between the initial lookup and this delete.
+            return_if_not_found=True,
             cmd=cmd,
             error=errors.CONNECTED_CLUSTER_DELETE_FAILED,
         )
+
+        logger.warning(
+            "The Azure connected cluster resource was already deleted. "
+            "Proceeding with local cleanup."
+        )
+        return None
 
     assert False
 

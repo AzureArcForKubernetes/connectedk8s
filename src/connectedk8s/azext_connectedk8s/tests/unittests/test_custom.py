@@ -173,6 +173,53 @@ def test_get_cc_resource_raises_for_non_not_found_errors(monkeypatch, status_cod
     assert raised.value is expected_error
 
 
+@pytest.mark.parametrize("force", [False, True])
+def test_delete_cc_resource_returns_none_when_resource_deleted_concurrently(force):
+    response = MagicMock(status_code=404)
+    source_error = HttpResponseError(message="Resource not found", response=response)
+    source_error.error = SimpleNamespace(code="ResourceNotFound")
+    client = MagicMock()
+    client.begin_delete.side_effect = source_error
+
+    result = custom.delete_cc_resource(
+        _cmd_without_arm_id(),
+        client,
+        "resource-group",
+        "cluster",
+        no_wait=False,
+        force=force,
+    )
+
+    assert result is None
+    client.begin_delete.assert_called_once()
+
+
+@pytest.mark.parametrize("status_code", [403, 500])
+def test_delete_cc_resource_raises_for_non_not_found_errors(monkeypatch, status_code):
+    response = MagicMock(status_code=status_code)
+    source_error = HttpResponseError(message="ARM request failed", response=response)
+    source_error.error = SimpleNamespace(code="ArmRequestFailed")
+    expected_error = RuntimeError("reported")
+    monkeypatch.setattr(
+        custom.utils,
+        "report_connectedk8s_error",
+        MagicMock(return_value=expected_error),
+    )
+    client = MagicMock()
+    client.begin_delete.side_effect = source_error
+
+    with pytest.raises(RuntimeError) as raised:
+        custom.delete_cc_resource(
+            _cmd_without_arm_id(),
+            client,
+            "resource-group",
+            "cluster",
+            no_wait=False,
+        )
+
+    assert raised.value is expected_error
+
+
 def test_delete_cleans_up_agents_when_arm_resource_is_missing(monkeypatch):
     cmd = _cmd_without_arm_id()
     client = MagicMock()
