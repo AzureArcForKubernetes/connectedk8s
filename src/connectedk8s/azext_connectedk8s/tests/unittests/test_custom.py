@@ -147,9 +147,7 @@ def test_get_connectedk8s_does_not_classify_other_errors_as_resource_not_found(
     monkeypatch.setattr(custom.utils, "report_connectedk8s_error", report_error)
 
     with pytest.raises(RuntimeError) as raised:
-        custom.get_connectedk8s.__wrapped__(
-            cmd, client, "resource-group", "cluster"
-        )
+        custom.get_connectedk8s.__wrapped__(cmd, client, "resource-group", "cluster")
 
     assert raised.value is source_error
     report_error.assert_not_called()
