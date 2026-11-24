@@ -25,9 +25,6 @@ The code identifies the connectedk8s operation or failure category. The text
 after the code carries the specific resource, endpoint, operation, or source
 error. Record both when investigating or reporting the failure.
 
-`AZK8S0001` doesn't by itself identify whether the problem originated in Azure,
-Kubernetes, or the local computer.
-
 ### Multiple error codes
 
 Prioritize the most specific code. During onboarding, keep a specific
