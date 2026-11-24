@@ -199,10 +199,10 @@ KUBECONFIG_LOAD_FAILED = _define(
     fault_type=consts.Load_Kubeconfig_Fault_Type,
     az_error_cls=FileOperationError,
 )
-CONFIGMAP_READ_FAILED = _define(
+ARC_CLUSTER_CONFIGMAP_READ_FAILED = _define(
     code="AZK8S0201",
-    name="ConfigMapReadFailed",
-    description="Failed to read the ConfigMap.",
+    name="ArcClusterConfigMapReadFailed",
+    description="Failed to read the Azure Arc cluster registration ConfigMap.",
     fault_type=consts.Read_ConfigMap_Fault_Type,
     az_error_cls=ValidationError,
 )
@@ -263,15 +263,8 @@ KUBERNETES_PRIVATE_KEY_INJECTION_FAILED = _define(
     fault_type_aliases=(consts.Inject_PrivateKey_Secret_Fault_Type,),
     az_error_cls=CLIInternalError,
 )
-ARC_CLUSTER_CONFIGMAP_READ_FAILED = _define(
-    code="AZK8S0210",
-    name="ArcClusterConfigMapReadFailed",
-    description="Failed to read the Azure Arc cluster registration ConfigMap.",
-    fault_type=consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
-    az_error_cls=ValidationError,
-)
 CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED = _define(
-    code="AZK8S0211",
+    code="AZK8S0210",
     name="ContainerInsightsConfigMapReadFailed",
     description="Failed to read the Container Insights ConfigMap.",
     fault_type=consts.Container_Insights_ConfigMap_Read_Fault_Type,
@@ -673,7 +666,7 @@ ALL_ERRORS: tuple[ArcError, ...] = (
     INVALID_GATEWAY_ARM_ID,
     PROXY_BYPASS_STATE_INVALID,
     KUBECONFIG_LOAD_FAILED,
-    CONFIGMAP_READ_FAILED,
+    ARC_CLUSTER_CONFIGMAP_READ_FAILED,
     KUBERNETES_CONNECTIVITY_FAILED,
     KUBERNETES_DISTRIBUTION_DETECTION_FAILED,
     KUBERNETES_NAMESPACE_GET_FAILED,
@@ -682,7 +675,6 @@ ALL_ERRORS: tuple[ArcError, ...] = (
     KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
     KUBERNETES_CONFIGURATION_LOAD_FAILED,
     CONFIGMAP_WRITE_FAILED,
-    ARC_CLUSTER_CONFIGMAP_READ_FAILED,
     CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED,
     DATA_PLANE_HEALTH_CHECK_FAILED,
     DNS_NXDOMAIN,

@@ -786,7 +786,7 @@ def create_connectedk8s(
             )
             utils.kubernetes_exception_handler(
                 e,
-                consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
+                consts.Read_ConfigMap_Fault_Type,
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
@@ -2765,7 +2765,7 @@ def delete_connectedk8s(
         )
         utils.kubernetes_exception_handler(
             e,
-            consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
+            consts.Read_ConfigMap_Fault_Type,
             "Unable to read ConfigMap",
             error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
             message_for_not_found=err_msg,
@@ -3575,7 +3575,7 @@ def upgrade_agents(
             )
             utils.kubernetes_exception_handler(
                 e,
-                consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
+                consts.Read_ConfigMap_Fault_Type,
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
@@ -3862,7 +3862,7 @@ def validate_release_namespace(
             )
             utils.kubernetes_exception_handler(
                 e,
-                consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
+                consts.Read_ConfigMap_Fault_Type,
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,

@@ -157,7 +157,6 @@ Pls_Resource_Not_Found = "pls-resource-not-found"
 Invalid_Argument_Fault_Type = "argument-validation-error"
 Load_Kubeconfig_Fault_Type = "kubeconfig-load-error"
 Read_ConfigMap_Fault_Type = "configmap-read-error"
-Arc_Cluster_ConfigMap_Read_Fault_Type = "arc-cluster-configmap-read-error"
 Container_Insights_ConfigMap_Read_Fault_Type = (
     "container-insights-configmap-read-error"
 )
