@@ -23,7 +23,7 @@ import time
 from base64 import b64decode, b64encode
 from concurrent.futures import ThreadPoolExecutor
 from subprocess import DEVNULL, PIPE, Popen
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, overload
 
 import oras.client  # type: ignore[import-untyped]
 import yaml
@@ -43,7 +43,7 @@ from azure.cli.core.azclierror import (
 from azure.cli.core.commands import LongRunningOperation
 from azure.cli.core.commands.client_factory import get_subscription_id
 from azure.cli.core.util import sdk_no_wait
-from azure.core.exceptions import HttpResponseError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.mgmt.core.tools import is_valid_resource_id, parse_resource_id
 from Crypto.IO import PEM
 from Crypto.PublicKey import RSA
@@ -466,6 +466,9 @@ def create_connectedk8s(
     is_arm64_cluster = check_arm64_node(node_api_response)
 
     required_node_exists = check_linux_node(node_api_response)
+    ready_linux_node_exists = required_node_exists and check_ready_linux_node(
+        node_api_response
+    )
 
     print(
         f"Step: {utils.get_utctimestring()}: Determining Cluster Distribution and Infrastructure"
@@ -688,6 +691,23 @@ def create_connectedk8s(
             "Please ensure that this Kubernetes cluster has any nodes with OS 'linux', for scheduling the "
             "Arc-Agents onto and connecting to Azure. Learn more at %s",
             "https://aka.ms/ArcK8sSupportedOSArchitecture",
+        )
+    elif not ready_linux_node_exists:
+        linux_node_error = (
+            "Linux nodes were found, but none report Kubernetes Ready=True."
+        )
+        utils.report_connectedk8s_warning(
+            cmd,
+            errors.LINUX_NODE_NOT_READY,
+            telemetry_properties=precheckutils.get_post_diagnostic_precheck_telemetry_properties(
+                check_name="LinuxNodeReady",
+                reason=linux_node_error,
+            ),
+            details=linux_node_error,
+        )
+        logger.warning(
+            "Azure Arc agents may not be scheduled until at least one Linux node is Ready. "
+            "Onboarding will continue."
         )
 
     print(
@@ -2337,6 +2357,29 @@ def check_linux_node(api_response: V1NodeList) -> bool:
     return False
 
 
+def check_ready_linux_node(api_response: V1NodeList) -> bool:
+    try:
+        for item in api_response.items:
+            labels = item.metadata.labels or {}
+            if labels.get("kubernetes.io/os") != "linux":
+                continue
+            conditions = item.status.conditions or [] if item.status else []
+            if any(
+                condition.type == "Ready" and condition.status == "True"
+                for condition in conditions
+            ):
+                return True
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug("Error occured while checking linux node readiness: %s", e)
+        utils.kubernetes_exception_handler(
+            e,
+            consts.Kubernetes_Node_Type_Fetch_Fault_OS,
+            "Unable to determine linux node readiness",
+            raise_error=False,
+        )
+    return False
+
+
 def check_arm64_node(api_response: V1NodeList) -> bool:
     try:
         for item in api_response.items:
@@ -2605,7 +2648,17 @@ def get_connectedk8s(
     utils.set_connected_cluster_arm_id_telemetry_context(
         cmd, resource_group_name, cluster_name
     )
-    return client.get(resource_group_name, cluster_name)
+    try:
+        return client.get(resource_group_name, cluster_name)
+    except ResourceNotFoundError as ex:
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.RESOURCE_NOT_FOUND,
+            exception=ex,
+            user_fault=True,
+            operation="show",
+            details=str(ex),
+        ) from ex
 
 
 @_telemetry_catch_all
@@ -2658,9 +2711,12 @@ def delete_connectedk8s(
         resource_group_name,
         cluster_name,
         operation="delete",
+        return_if_not_found=True,
     )
-    if (cluster_resource.kind is not None) and (
-        cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind
+    if (
+        cluster_resource is not None
+        and (cluster_resource.kind is not None)
+        and (cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind)
     ):
         err_msg = (
             "Deleting a Provisioned Cluster is not supported from the Connected Cluster CLI. Please use the "
@@ -2714,11 +2770,12 @@ def delete_connectedk8s(
             cmd, azure_cloud=azure_cloud
         )
 
-        delete_cc_resource(
+        _delete_cc_resource_if_exists(
             cmd,
             client,
             resource_group_name,
             cluster_name,
+            cluster_resource,
             no_wait,
             force=force_delete,
         )
@@ -2742,11 +2799,12 @@ def delete_connectedk8s(
         return
 
     if not release_namespace:
-        delete_cc_resource(
+        _delete_cc_resource_if_exists(
             cmd,
             client,
             resource_group_name,
             cluster_name,
+            cluster_resource,
             no_wait,
             force=force_delete,
         )
@@ -2805,11 +2863,12 @@ def delete_connectedk8s(
                 recommendation=reco_str,
             )
 
-        delete_cc_resource(
+        _delete_cc_resource_if_exists(
             cmd,
             client,
             resource_group_name,
             cluster_name,
+            cluster_resource,
             no_wait,
             force=force_delete,
         )
@@ -2879,6 +2938,7 @@ def put_cc_resource(
     assert False
 
 
+@overload
 def get_cc_resource(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -2886,7 +2946,33 @@ def get_cc_resource(
     cluster_name: str,
     *,
     operation: Literal["update", "delete"],
+    return_if_not_found: Literal[False] = False,
 ) -> ConnectedCluster:
+    pass
+
+
+@overload
+def get_cc_resource(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    *,
+    operation: Literal["delete"],
+    return_if_not_found: Literal[True],
+) -> ConnectedCluster | None:
+    pass
+
+
+def get_cc_resource(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    *,
+    operation: Literal["update", "delete"],
+    return_if_not_found: bool = False,
+) -> ConnectedCluster | None:
     operation_error = (
         errors.CONNECTED_CLUSTER_UPDATE_FAILED
         if operation == "update"
@@ -2899,9 +2985,17 @@ def get_cc_resource(
             e,
             operation_error.fault_type,
             f"Unable to get connected cluster resource for {operation}",
+            return_if_not_found=return_if_not_found,
             cmd=cmd,
             error=operation_error,
         )
+
+        if return_if_not_found:
+            logger.warning(
+                "Could not find the Azure connected cluster resource. "
+                "Proceeding with local cleanup."
+            )
+            return None
 
     assert False
 
@@ -2931,6 +3025,28 @@ def patch_cc_resource(
     assert False
 
 
+def _delete_cc_resource_if_exists(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    cluster_resource: ConnectedCluster | None,
+    no_wait: bool,
+    force: bool = False,
+) -> None:
+    if cluster_resource is None:
+        return
+
+    delete_cc_resource(
+        cmd,
+        client,
+        resource_group_name,
+        cluster_name,
+        no_wait,
+        force=force,
+    )
+
+
 def delete_cc_resource(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -2938,7 +3054,7 @@ def delete_cc_resource(
     cluster_name: str,
     no_wait: bool,
     force: bool = False,
-) -> LROPoller[None]:
+) -> LROPoller[None] | None:
     print(f"Step: {utils.get_utctimestring()}: Deleting ARM resource")
     try:
         poller: LROPoller[None]
@@ -2964,9 +3080,17 @@ def delete_cc_resource(
             e,
             consts.Delete_ConnectedCluster_Fault_Type,
             "Unable to delete connected cluster resource",
+            # The resource can be removed between the initial lookup and this delete.
+            return_if_not_found=True,
             cmd=cmd,
             error=errors.CONNECTED_CLUSTER_DELETE_FAILED,
         )
+
+        logger.warning(
+            "The Azure connected cluster resource was already deleted. "
+            "Proceeding with local cleanup."
+        )
+        return None
 
     assert False
 

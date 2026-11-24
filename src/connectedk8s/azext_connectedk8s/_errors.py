@@ -254,6 +254,13 @@ CONFIGMAP_WRITE_FAILED = _define(
     fault_type=consts.Create_ConfigMap_Fault_Type,
     az_error_cls=ValidationError,
 )
+LINUX_NODE_NOT_READY = _define(
+    code="AZK8S0211",
+    name="LinuxNodeNotReady",
+    description="Linux nodes are available, but none report Kubernetes Ready status.",
+    fault_type=consts.Linux_Node_Not_Ready_Fault_Type,
+    az_error_cls=ValidationError,
+)
 
 KUBERNETES_PRIVATE_KEY_INJECTION_FAILED = _define(
     code="AZK8S0208",
@@ -676,6 +683,7 @@ ALL_ERRORS: tuple[ArcError, ...] = (
     KUBERNETES_CONFIGURATION_LOAD_FAILED,
     CONFIGMAP_WRITE_FAILED,
     CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED,
+    LINUX_NODE_NOT_READY,
     DATA_PLANE_HEALTH_CHECK_FAILED,
     DNS_NXDOMAIN,
     DNS_TIMEOUT,

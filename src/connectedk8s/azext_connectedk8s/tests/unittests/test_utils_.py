@@ -489,7 +489,7 @@ def test_error_catalog_contains_allocated_codes_and_fault_type_aliases():
     expected_codes = {
         *(f"AZK8S{code:04d}" for code in range(1, 4)),
         *(f"AZK8S{code:04d}" for code in range(100, 108)),
-        *(f"AZK8S{code:04d}" for code in range(200, 211)),
+        *(f"AZK8S{code:04d}" for code in range(200, 212)),
         *(f"AZK8S{code:04d}" for code in range(300, 310)),
         *(f"AZK8S{code:04d}" for code in range(400, 410)),
         *(f"AZK8S{code:04d}" for code in range(500, 516)),
@@ -552,7 +552,6 @@ def test_container_insights_configmap_read_error_uses_new_code():
         "Failed to read the Container Insights ConfigMap."
     )
     assert not hasattr(errors_module, "CONFIGMAP_READ_FAILED")
-    assert "AZK8S0211" not in errors_module.ERROR_CATALOG
 
 
 def test_error_catalog_codes_use_standard_format():
@@ -602,6 +601,7 @@ def test_error_catalog_uses_proposed_exception_classes():
         "AZK8S0206": ValidationError,
         "AZK8S0209": ValidationError,
         "AZK8S0210": ValidationError,
+        "AZK8S0211": ValidationError,
         "AZK8S0403": ArgumentUsageError,
         "AZK8S0404": ArgumentUsageError,
         "AZK8S0405": ArgumentUsageError,
