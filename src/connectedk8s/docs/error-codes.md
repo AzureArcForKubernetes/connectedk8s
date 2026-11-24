@@ -60,7 +60,7 @@ and Cluster Connect service behavior, use the linked Cluster Connect guidance.
 
 | Code | Description | Possible cause |
 | --- | --- | --- |
-| `AZK8S0001` `UnexpectedError` | The command encountered an unexpected error. | Follow the detailed error, update Azure CLI and the extension, and retry once. Verify the subscription, resource group, and cluster name when the command targets an existing resource. Contact support if the error repeats. |
+| `AZK8S0001` `UnexpectedError` | The command encountered an unexpected error. | Follow the detailed error, update Azure CLI and the extension, and retry once. Verify the subscription, resource group, and cluster name when the command targets an existing resource. |
 | `AZK8S0002` `UnsupportedOperatingSystem` | The command is running on an unsupported operating system. | Azure CLI is running on an unsupported platform or the platform couldn't be identified. Use a supported Azure CLI platform listed in [Install Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli). |
 | `AZK8S0003` `UnsupportedProvisionedClusterOperation` | The requested operation isn't supported for an AKS Arc provisioned cluster. | A connectedk8s lifecycle command was used for a provisioned cluster managed through `az aksarc`. Use the `az aksarc` command named in the error. |
 | `AZK8S0100` `InvalidArgumentValue` | A command argument is invalid. | The named value is malformed, outside its supported range, or incompatible with the operation. Correct the named value using `az connectedk8s <command> --help`. |
@@ -70,7 +70,7 @@ and Cluster Connect service behavior, use the linked Cluster Connect guidance.
 | `AZK8S0104` `InvalidLocation` | The requested Azure location isn't supported. | The location name is invalid or isn't available for connected clusters. Select a location returned for `Microsoft.Kubernetes/connectedClusters`. |
 | `AZK8S0105` `PrivateLinkScopeLocationMismatch` | The connected cluster and Azure Arc Private Link Scope locations differ. | The selected Private Link Scope was created in a different Azure location. Use matching locations as required by [Azure Arc Private Link](https://learn.microsoft.com/azure/azure-arc/kubernetes/private-link). |
 | `AZK8S0106` `InvalidGatewayArmId` | The gateway resource ID is invalid or identifies the wrong resource type. | The ID is malformed, the resource doesn't exist, or it isn't a `Microsoft.HybridCompute/gateways` resource. Supply an existing `Microsoft.HybridCompute/gateways` resource ID. |
-| `AZK8S0107` `ProxyBypassStateInvalid` | The saved proxy-bypass state doesn't match the Helm configuration. | Proxy bypass values were changed outside the CLI or the saved state is unreadable. Contact support with sanitized Helm values. |
+| `AZK8S0107` `ProxyBypassStateInvalid` | The saved proxy-bypass state doesn't match the Helm configuration. | The saved proxy-bypass information is inconsistent or unreadable. Contact Azure support and provide sanitized Helm values. |
 
 ### Kubernetes access
 
@@ -101,7 +101,7 @@ routing changes.
 
 | Code | Description | Possible cause |
 | --- | --- | --- |
-| `AZK8S0300` `DataPlaneHealthCheckFailed` | The authenticated Arc data-plane health request failed. | DNS, proxy, TLS, routing, authentication, authorization, throttling, or service health blocked the request. Follow the detailed status; escalate persistent authenticated `429` or `5xx` responses. |
+| `AZK8S0300` `DataPlaneHealthCheckFailed` | The authenticated Arc data-plane health request failed. | DNS, proxy, TLS, routing, authentication, authorization, throttling, or service health blocked the request. Follow the detailed status. Contact Azure support for persistent authenticated `429` or `5xx` responses. |
 | `AZK8S0301` `DnsNxDomain` | Cluster DNS returned `NXDOMAIN`. | The hostname, forwarding rule, or private DNS configuration is incorrect. Correct the hostname, forwarding, or private DNS configuration. |
 | `AZK8S0302` `DnsTimeout` | Cluster DNS repeatedly timed out. | A resolver is unavailable or DNS traffic is blocked. Check resolver availability and DNS access with the cluster or network administrator. |
 | `AZK8S0303` `DnsServerFailure` | Cluster DNS returned `SERVFAIL`. | The resolver couldn't complete the query through its upstream path. Correct the resolver's upstream or forwarding configuration. |
@@ -110,14 +110,19 @@ routing changes.
 | `AZK8S0306` `OnboardingOutboundConnectivityFailed` | A required endpoint returned no HTTP response. | DNS, routing, firewall, outbound proxy, or TLS prevented an HTTP response. Allow the required endpoint and port. |
 | `AZK8S0307` `ClusterConnectOutboundConnectivityFailed` | The Cluster Connect endpoint returned no HTTP response. | Cluster Connect websocket or Service Bus access is blocked. Apply the [Cluster Connect network requirements](https://learn.microsoft.com/azure/azure-arc/kubernetes/network-requirements). |
 | `AZK8S0308` `OutboundEndpointNonSuccessResponse` | An endpoint returned HTTP `4xx` or `5xx`; network reachability was established. | The endpoint rejected or couldn't complete the operation after the network request arrived. Use the HTTP status and detailed error to troubleshoot the request. Don't change networking for this code alone. |
-| `AZK8S0309` `CertificatePulldownFailed` | Arc identity certificate synchronization failed. | Arc agents aren't healthy or the required certificate Secret wasn't synchronized. Use [Azure Arc platform troubleshooting](https://learn.microsoft.com/azure/azure-arc/kubernetes/troubleshooting) and contact support if agent health doesn't identify the cause. |
+| `AZK8S0309` `CertificatePulldownFailed` | Arc identity certificate synchronization failed. | Arc agents aren't healthy or the required certificate Secret wasn't synchronized. Use [Azure Arc platform troubleshooting](https://learn.microsoft.com/azure/azure-arc/kubernetes/troubleshooting). |
 
 ### Azure resources, Helm, and agents
 
-Work with an Azure resource administrator for account scope, RBAC, provider
-registration, and connected-cluster state. Work with a cluster operator for
-Helm, scheduling, image pulls, and Arc agent health. Use
-[Azure Arc platform troubleshooting](https://learn.microsoft.com/azure/azure-arc/kubernetes/troubleshooting).
+Use the guidance that matches the error:
+
+- **Account scope or RBAC:** Review the
+  [minimum onboarding permissions](troubleshooting-prerequisites.md#minimum-onboarding-permissions).
+- **`Microsoft.Kubernetes` registration:** Review
+  [resource provider registration](https://learn.microsoft.com/azure/azure-resource-manager/management/resource-providers-and-types#register-resource-provider).
+- **Helm, scheduling, image pulls, or agent health:** Use
+  [Azure Arc platform troubleshooting](https://learn.microsoft.com/azure/azure-arc/kubernetes/troubleshooting)
+  with the cluster operator.
 
 | Code | Description | Possible cause |
 | --- | --- | --- |
@@ -130,15 +135,15 @@ Helm, scheduling, image pulls, and Arc agent health. Use
 | `AZK8S0406` `InvalidDeleteRequest` | The kubeconfig used by `az connectedk8s delete` doesn't match the requested Azure resource. | The delete command targets a different subscription, resource group, or name than the existing Arc registration. Use matching cluster and Azure identities. |
 | `AZK8S0407` `ResourceProviderFetchFailed` | Azure couldn't return resource-provider information. | Account scope, authorization, proxy access, or Azure service health blocked the provider query. Verify account scope, authorization, proxy access, and Azure service health. |
 | `AZK8S0408` `ConnectedClusterProviderNotRegistered` | `Microsoft.Kubernetes` isn't registered. | The subscription hasn't completed connected-cluster provider registration. Ask the subscription administrator to register the provider. |
-| `AZK8S0409` `ConnectedClusterResourceIdMissing` | Azure returned incomplete connected-cluster information. | Retry once, then contact support if the resource information remains incomplete. |
+| `AZK8S0409` `ConnectedClusterResourceIdMissing` | Azure returned incomplete connected-cluster information. | Retry once, then contact Azure support if the resource information remains incomplete. |
 | `AZK8S0500` `HelmReleaseInstallFailed` | The Arc Helm release couldn't be installed or upgraded. | Helm or Kubernetes reported a chart, admission, scheduling, image, timeout, or cluster-access failure. Use the Helm error and Kubernetes events to resolve the underlying cluster cause. |
 | `AZK8S0501` `HelmReleaseDeleteFailed` | The Arc Helm release couldn't be removed. | Helm or Kubernetes rejected or couldn't complete release deletion. Resolve the Helm error through the supported delete workflow. |
 | `AZK8S0502` `HelmChartPullFailed` | The Arc chart couldn't be pulled. | Registry DNS, TLS, proxy, authentication, or network access failed. Verify registry access against the [Azure Arc network requirements](https://learn.microsoft.com/azure/azure-arc/kubernetes/network-requirements). |
 | `AZK8S0503` `HelmChartExportFailed` | The expected exported chart wasn't created. | Local storage, file permissions, archive handling, or endpoint security blocked export. Verify local storage and endpoint-security policy, then retry once. |
 | `AZK8S0504` `HelmRepositoryAddFailed` | Helm couldn't add the configured repository. | The repository name or URL is invalid, unreachable, or rejected. Correct the repository configuration and access path. |
 | `AZK8S0505` `HelmReleaseListFailed` | Helm couldn't query release metadata. | Cluster access, Kubernetes RBAC, or release metadata retrieval failed. Run the [Kubernetes access checks](troubleshooting-prerequisites.md#kubernetes-access) and review the detailed Helm error. |
-| `AZK8S0506` `AgentStateTimeout` | Azure didn't report whether the Arc agents became ready before timeout. | Arc agents remained unhealthy or disconnected, or Azure didn't receive their latest status. Check Arc agent health, then contact support if the agents are healthy. |
-| `AZK8S0507` `KeyPairGenerationFailed` | Local key generation failed. | The supported cryptography operation failed in the local process. Retry once on a supported platform; contact support if it repeats. |
+| `AZK8S0506` `AgentStateTimeout` | Azure didn't report whether the Arc agents became ready before timeout. | Arc agents remained unhealthy or disconnected, or Azure didn't receive their latest status. Check Arc agent health, then contact Azure support if the agents are healthy. |
+| `AZK8S0507` `KeyPairGenerationFailed` | Local key generation failed. | The supported cryptography operation failed in the local process. Retry once on a supported platform. |
 | `AZK8S0508` `ReleaseNamespaceNotFound` | The Arc Helm release namespace wasn't found. | An unintended cluster is selected, the release is absent, or release metadata is inconsistent. Confirm the intended cluster and use the supported recovery path from platform troubleshooting. |
 | `AZK8S0509` `HelmValuesGetFailed` | Helm couldn't read the current release values. | Cluster access, Kubernetes RBAC, or release state prevented the query. Run the [Kubernetes access checks](troubleshooting-prerequisites.md#kubernetes-access) and review the detailed Helm error. |
 | `AZK8S0510` `HelmNotInstalled` | A required local Helm client wasn't found. | Helm isn't installed or isn't available on `PATH` in an environment that requires it. Install the supported Helm version for the environment. |
@@ -192,7 +197,8 @@ and the [`az connectedk8s proxy` reference](https://learn.microsoft.com/cli/azur
 
 ## Contact support
 
-If the linked guidance doesn't resolve the problem, provide Azure support:
+If the linked guidance doesn't resolve the problem, provide the following
+information to Azure support:
 
 - The `AZK8Snnnn` code and complete sanitized error text.
 - Azure CLI and extension versions.
