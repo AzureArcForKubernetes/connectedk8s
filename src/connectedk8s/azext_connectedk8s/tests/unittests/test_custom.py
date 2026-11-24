@@ -107,6 +107,54 @@ def test_registered_command_handlers_use_telemetry_catch_all(handler):
     assert hasattr(handler, "__wrapped__")
 
 
+def test_get_connectedk8s_reports_resource_not_found(monkeypatch):
+    cmd = _cmd_without_arm_id()
+    client = MagicMock()
+    monkeypatch.setattr(
+        custom.utils, "set_connected_cluster_arm_id_telemetry_context", MagicMock()
+    )
+    source_error = ResourceNotFoundError(
+        "The connected cluster resource could not be found."
+    )
+    client.get.side_effect = source_error
+    reported_error = ArgumentUsageError("[AZK8S0405] resource not found")
+    report_error = MagicMock(return_value=reported_error)
+    monkeypatch.setattr(custom.utils, "report_connectedk8s_error", report_error)
+
+    with pytest.raises(ArgumentUsageError) as raised:
+        custom.get_connectedk8s(cmd, client, "resource-group", "cluster")
+
+    assert raised.value is reported_error
+    report_error.assert_called_once_with(
+        cmd,
+        errors.RESOURCE_NOT_FOUND,
+        exception=source_error,
+        user_fault=True,
+        operation="show",
+        details=str(source_error),
+    )
+
+
+def test_get_connectedk8s_does_not_classify_other_errors_as_resource_not_found(
+    monkeypatch,
+):
+    cmd = _cmd_without_arm_id()
+    client = MagicMock()
+    monkeypatch.setattr(
+        custom.utils, "set_connected_cluster_arm_id_telemetry_context", MagicMock()
+    )
+    source_error = RuntimeError("request failed")
+    client.get.side_effect = source_error
+    report_error = MagicMock()
+    monkeypatch.setattr(custom.utils, "report_connectedk8s_error", report_error)
+
+    with pytest.raises(RuntimeError) as raised:
+        custom.get_connectedk8s.__wrapped__(cmd, client, "resource-group", "cluster")
+
+    assert raised.value is source_error
+    report_error.assert_not_called()
+
+
 def test_telemetry_catch_all_does_not_report_classified_error_twice(monkeypatch):
     expected = custom.AzCLIError("[AZK8S0400] ConnectedClusterCreateFailed")
     report_error = MagicMock()
