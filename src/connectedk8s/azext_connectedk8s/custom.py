@@ -23,7 +23,7 @@ import time
 from base64 import b64decode, b64encode
 from concurrent.futures import ThreadPoolExecutor
 from subprocess import DEVNULL, PIPE, Popen
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, overload
 
 import oras.client  # type: ignore[import-untyped]
 import yaml
@@ -2701,9 +2701,12 @@ def delete_connectedk8s(
         resource_group_name,
         cluster_name,
         operation="delete",
+        return_if_not_found=True,
     )
-    if (cluster_resource.kind is not None) and (
-        cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind
+    if (
+        cluster_resource is not None
+        and (cluster_resource.kind is not None)
+        and (cluster_resource.kind.lower() == consts.Provisioned_Cluster_Kind)
     ):
         err_msg = (
             "Deleting a Provisioned Cluster is not supported from the Connected Cluster CLI. Please use the "
@@ -2757,11 +2760,12 @@ def delete_connectedk8s(
             cmd, azure_cloud=azure_cloud
         )
 
-        delete_cc_resource(
+        _delete_cc_resource_if_exists(
             cmd,
             client,
             resource_group_name,
             cluster_name,
+            cluster_resource,
             no_wait,
             force=force_delete,
         )
@@ -2785,11 +2789,12 @@ def delete_connectedk8s(
         return
 
     if not release_namespace:
-        delete_cc_resource(
+        _delete_cc_resource_if_exists(
             cmd,
             client,
             resource_group_name,
             cluster_name,
+            cluster_resource,
             no_wait,
             force=force_delete,
         )
@@ -2848,11 +2853,12 @@ def delete_connectedk8s(
                 recommendation=reco_str,
             )
 
-        delete_cc_resource(
+        _delete_cc_resource_if_exists(
             cmd,
             client,
             resource_group_name,
             cluster_name,
+            cluster_resource,
             no_wait,
             force=force_delete,
         )
@@ -2922,6 +2928,7 @@ def put_cc_resource(
     assert False
 
 
+@overload
 def get_cc_resource(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -2929,7 +2936,33 @@ def get_cc_resource(
     cluster_name: str,
     *,
     operation: Literal["update", "delete"],
+    return_if_not_found: Literal[False] = False,
 ) -> ConnectedCluster:
+    pass
+
+
+@overload
+def get_cc_resource(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    *,
+    operation: Literal["delete"],
+    return_if_not_found: Literal[True],
+) -> ConnectedCluster | None:
+    pass
+
+
+def get_cc_resource(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    *,
+    operation: Literal["update", "delete"],
+    return_if_not_found: bool = False,
+) -> ConnectedCluster | None:
     operation_error = (
         errors.CONNECTED_CLUSTER_UPDATE_FAILED
         if operation == "update"
@@ -2942,9 +2975,17 @@ def get_cc_resource(
             e,
             operation_error.fault_type,
             f"Unable to get connected cluster resource for {operation}",
+            return_if_not_found=return_if_not_found,
             cmd=cmd,
             error=operation_error,
         )
+
+        if return_if_not_found:
+            logger.warning(
+                "Could not find the Azure connected cluster resource. "
+                "Proceeding with local cleanup."
+            )
+            return None
 
     assert False
 
@@ -2974,6 +3015,28 @@ def patch_cc_resource(
     assert False
 
 
+def _delete_cc_resource_if_exists(
+    cmd: CLICommand,
+    client: ConnectedClusterOperations,
+    resource_group_name: str,
+    cluster_name: str,
+    cluster_resource: ConnectedCluster | None,
+    no_wait: bool,
+    force: bool = False,
+) -> None:
+    if cluster_resource is None:
+        return
+
+    delete_cc_resource(
+        cmd,
+        client,
+        resource_group_name,
+        cluster_name,
+        no_wait,
+        force=force,
+    )
+
+
 def delete_cc_resource(
     cmd: CLICommand,
     client: ConnectedClusterOperations,
@@ -2981,7 +3044,7 @@ def delete_cc_resource(
     cluster_name: str,
     no_wait: bool,
     force: bool = False,
-) -> LROPoller[None]:
+) -> LROPoller[None] | None:
     print(f"Step: {utils.get_utctimestring()}: Deleting ARM resource")
     try:
         poller: LROPoller[None]
@@ -3007,9 +3070,17 @@ def delete_cc_resource(
             e,
             consts.Delete_ConnectedCluster_Fault_Type,
             "Unable to delete connected cluster resource",
+            # The resource can be removed between the initial lookup and this delete.
+            return_if_not_found=True,
             cmd=cmd,
             error=errors.CONNECTED_CLUSTER_DELETE_FAILED,
         )
+
+        logger.warning(
+            "The Azure connected cluster resource was already deleted. "
+            "Proceeding with local cleanup."
+        )
+        return None
 
     assert False
 
