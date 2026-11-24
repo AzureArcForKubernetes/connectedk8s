@@ -90,7 +90,7 @@ for the supported diagnostic collection workflow.
 | DNS, outbound access, firewall, outbound proxy, or private routing | Cluster and network administrators | Required endpoints and routes are allowed, but the same Arc diagnostic still fails. |
 | Azure subscription, provider registration, resource state, or Azure RBAC | Azure subscription or resource administrator | Account scope, resource state, registration, and required role are correct, but Azure still rejects the request. |
 | Pod scheduling, image pull, Helm release, or Arc agent health | Cluster operator | Kubernetes events and platform troubleshooting don't identify a customer-controlled cause. |
-| Connectedk8s error classification, diagnostic workflow, or client-proxy lifecycle | Azure support | All prerequisite checks pass and the same extension stage still fails. |
+| Connectedk8s error reporting, diagnostic workflow, or client-proxy lifecycle | Azure support | All prerequisite checks pass and the same error persists. |
 
 ## Protect diagnostic data
 
