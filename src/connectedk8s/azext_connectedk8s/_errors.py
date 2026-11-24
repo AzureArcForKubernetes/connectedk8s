@@ -201,8 +201,8 @@ KUBECONFIG_LOAD_FAILED = _define(
 )
 CONFIGMAP_READ_FAILED = _define(
     code="AZK8S0201",
-    name="AzureArcConfigMapReadFailed",
-    description="Failed to read an Azure Arc ConfigMap.",
+    name="ConfigMapReadFailed",
+    description="Failed to read the ConfigMap.",
     fault_type=consts.Read_ConfigMap_Fault_Type,
     az_error_cls=ValidationError,
 )
@@ -262,6 +262,20 @@ KUBERNETES_PRIVATE_KEY_INJECTION_FAILED = _define(
     fault_type=consts.Failed_To_Inject_Private_Key_Fault_Type,
     fault_type_aliases=(consts.Inject_PrivateKey_Secret_Fault_Type,),
     az_error_cls=CLIInternalError,
+)
+ARC_CLUSTER_CONFIGMAP_READ_FAILED = _define(
+    code="AZK8S0210",
+    name="ArcClusterConfigMapReadFailed",
+    description="Failed to read the Azure Arc cluster registration ConfigMap.",
+    fault_type=consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
+    az_error_cls=ValidationError,
+)
+CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED = _define(
+    code="AZK8S0211",
+    name="ContainerInsightsConfigMapReadFailed",
+    description="Failed to read the Container Insights ConfigMap.",
+    fault_type=consts.Container_Insights_ConfigMap_Read_Fault_Type,
+    az_error_cls=ValidationError,
 )
 
 # Network & Connectivity (AZK8S0300-AZK8S0399)
@@ -668,6 +682,8 @@ ALL_ERRORS: tuple[ArcError, ...] = (
     KUBERNETES_PRIVATE_KEY_INJECTION_FAILED,
     KUBERNETES_CONFIGURATION_LOAD_FAILED,
     CONFIGMAP_WRITE_FAILED,
+    ARC_CLUSTER_CONFIGMAP_READ_FAILED,
+    CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED,
     DATA_PLANE_HEALTH_CHECK_FAILED,
     DNS_NXDOMAIN,
     DNS_TIMEOUT,

@@ -786,11 +786,11 @@ def create_connectedk8s(
             )
             utils.kubernetes_exception_handler(
                 e,
-                consts.Read_ConfigMap_Fault_Type,
+                consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
-                arc_error=errors.CONFIGMAP_READ_FAILED,
+                arc_error=errors.ARC_CLUSTER_CONFIGMAP_READ_FAILED,
                 cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
@@ -2765,11 +2765,11 @@ def delete_connectedk8s(
         )
         utils.kubernetes_exception_handler(
             e,
-            consts.Read_ConfigMap_Fault_Type,
+            consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
             "Unable to read ConfigMap",
             error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
             message_for_not_found=err_msg,
-            arc_error=errors.CONFIGMAP_READ_FAILED,
+            arc_error=errors.ARC_CLUSTER_CONFIGMAP_READ_FAILED,
             cmd=cmd,
         )
 
@@ -3575,11 +3575,11 @@ def upgrade_agents(
             )
             utils.kubernetes_exception_handler(
                 e,
-                consts.Read_ConfigMap_Fault_Type,
+                consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
-                arc_error=errors.CONFIGMAP_READ_FAILED,
+                arc_error=errors.ARC_CLUSTER_CONFIGMAP_READ_FAILED,
                 cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
@@ -3862,11 +3862,11 @@ def validate_release_namespace(
             )
             utils.kubernetes_exception_handler(
                 e,
-                consts.Read_ConfigMap_Fault_Type,
+                consts.Arc_Cluster_ConfigMap_Read_Fault_Type,
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
-                arc_error=errors.CONFIGMAP_READ_FAILED,
+                arc_error=errors.ARC_CLUSTER_CONFIGMAP_READ_FAILED,
                 cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]

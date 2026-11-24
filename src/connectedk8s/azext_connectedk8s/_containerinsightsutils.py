@@ -186,7 +186,7 @@ def ensure_container_insights_proxy_bypass_configmap(
             return
         report_container_insights_configmap_failure(
             e,
-            errors.CONFIGMAP_READ_FAILED,
+            errors.CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED,
             "read",
             cmd=cmd,
         )
@@ -305,7 +305,7 @@ def remove_container_insights_proxy_bypass_configmap(
             return
         report_container_insights_configmap_failure(
             e,
-            errors.CONFIGMAP_READ_FAILED,
+            errors.CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED,
             "read",
             raise_on_failure,
             error_message=consts.CI_ConfigMap_Removal_Error_Message,
