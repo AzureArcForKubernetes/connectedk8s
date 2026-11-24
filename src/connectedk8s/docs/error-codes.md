@@ -3,8 +3,7 @@
 Use this reference when an `az connectedk8s` command reports an error in the
 `AZK8Snnnn` format. Complete the
 [troubleshooting prerequisites](troubleshooting-prerequisites.md) first, then
-find the complete code below. This reference was validated against the
-published `connectedk8s` extension version 1.11.6.
+find the reported error code in the catalog below.
 
 ## What this guide covers
 
