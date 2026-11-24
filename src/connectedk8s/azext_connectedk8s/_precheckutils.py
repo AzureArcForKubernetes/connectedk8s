@@ -41,6 +41,7 @@ from azure.cli.core.azclierror import (
 from knack.log import get_logger
 from kubernetes import config, watch
 from kubernetes.client.rest import ApiException
+from urllib3.exceptions import HTTPError
 
 import azext_connectedk8s._constants as consts
 import azext_connectedk8s._errors as errors
@@ -69,6 +70,7 @@ diagnoser_output: list[
     str
 ] = []  # Collects human-readable log lines for display to the user
 prediagnostic_job_execution_status = consts.Job_Status_Not_Started
+prediagnostic_job_execution_details = ""
 prediagnostic_dns_check = consts.Diagnostic_Check_Starting
 prediagnostic_outbound_check = consts.Diagnostic_Check_Starting
 prediagnostic_entra_check = consts.Diagnostic_Check_Starting
@@ -294,6 +296,11 @@ def send_prediagnostic_job_execution_error_telemetry(
     between not-scheduled, not-completed, cleanup-failed, etc. without relying
     on add_extension_event properties (which get stripped by GDPR pipeline).
     """
+    if not reason and prediagnostic_job_execution_status in (
+        consts.Job_Status_Not_Scheduled,
+        consts.Job_Status_Not_Completed,
+    ):
+        reason = prediagnostic_job_execution_details
     # Build structured message for add_extension_event (best-effort, may be stripped)
     msg: dict[str, Any] = {"jobExecutionStatus": prediagnostic_job_execution_status}
     if reason:
@@ -463,11 +470,12 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
           - Diagnostic_Check_Failed: at least one check failed, onboarding may be blocked
           - Diagnostic_Check_Incomplete: job didn't run or checks couldn't be determined
     """
-    global prediagnostic_job_execution_status, prediagnostic_dns_check, prediagnostic_outbound_check, prediagnostic_entra_check, prediagnostic_crd_check  # pylint: disable=global-statement
+    global prediagnostic_job_execution_status, prediagnostic_job_execution_details, prediagnostic_dns_check, prediagnostic_outbound_check, prediagnostic_entra_check, prediagnostic_crd_check  # pylint: disable=global-statement
     global _prediagnostic_container_exited_one  # pylint: disable=global-statement
     try:
         diagnoser_output.clear()
         prediagnostic_job_execution_status = consts.Job_Status_Not_Started
+        prediagnostic_job_execution_details = ""
         prediagnostic_dns_check = consts.Diagnostic_Check_Starting
         prediagnostic_outbound_check = consts.Diagnostic_Check_Starting
         prediagnostic_entra_check = consts.Diagnostic_Check_Starting
@@ -690,6 +698,65 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
 # ---------------------------------------------------------------------------
 
 
+def _get_diagnostic_job_events(  # pylint: disable=protected-access
+    corev1_api_instance: CoreV1Api,
+    batchv1_api_instance: BatchV1Api,
+    job_uid: str | None,
+) -> str:
+    """Collect bounded warning evidence for the current diagnostic Job only."""
+    try:
+        if not job_uid:
+            job = batchv1_api_instance.read_namespaced_job(
+                name="cluster-diagnostic-checks-job",
+                namespace="azure-arc-release",
+                _request_timeout=10,
+            )
+            job_uid = getattr(getattr(job, "metadata", None), "uid", None)
+        if not isinstance(job_uid, str) or not job_uid:
+            logger.debug(
+                "Diagnostic Job UID is unavailable; skipping event collection."
+            )
+            return ""
+        events = (
+            corev1_api_instance.list_namespaced_event(
+                namespace="azure-arc-release",
+                field_selector=f"involvedObject.uid={job_uid},involvedObject.kind=Job,type=Warning",
+                limit=20,
+                _request_timeout=10,
+            ).items
+            or []
+        )
+    except (ApiException, HTTPError, OSError) as exception:
+        logger.debug(
+            "Unable to collect diagnostic Job events: %s",
+            azext_utils._truncate_timeout_diagnostic_message(
+                azext_utils.sanitize_telemetry_text(str(exception))
+            ),
+        )
+        return ""
+
+    evidence: list[str] = []
+    for event in sorted(events, key=azext_utils._get_event_timestamp, reverse=True):
+        involved_object = getattr(event, "involved_object", None)
+        if (
+            getattr(event, "type", None) != "Warning"
+            or getattr(involved_object, "kind", None) != "Job"
+            or getattr(involved_object, "uid", None) != job_uid
+        ):
+            continue
+        reason = getattr(event, "reason", None) or "Unknown"
+        message = getattr(event, "message", None) or ""
+        detail = azext_utils._truncate_timeout_diagnostic_message(
+            azext_utils.sanitize_telemetry_text(f"{reason} - {message}")
+        )
+        warning = f"Job warning: {detail}"
+        if warning not in evidence:
+            evidence.append(warning)
+        if len(evidence) == 3:
+            break
+    return "; ".join(evidence)
+
+
 def _get_incomplete_job_diagnostic(  # pylint: disable=too-many-return-statements
     pod: Any,
 ) -> str:
@@ -798,9 +865,10 @@ def executing_cluster_diagnostic_checks_job(
         - Container log string if the job ran (may be empty if pod produced no output)
         - None if the job could not be scheduled or cleanup of a stale release failed
     """
-    global prediagnostic_job_execution_status  # pylint: disable=global-statement
+    global prediagnostic_job_execution_status, prediagnostic_job_execution_details  # pylint: disable=global-statement
     global _prediagnostic_container_exited_one  # pylint: disable=global-statement
     _prediagnostic_container_exited_one = False
+    prediagnostic_job_execution_details = ""
     job_name = "cluster-diagnostic-checks-job"
     # Setting the log output as Empty
     cluster_diagnostic_checks_container_log = ""
@@ -909,6 +977,7 @@ def executing_cluster_diagnostic_checks_job(
         is_job_complete = False
         job_reached_failure_limit = False
         is_job_scheduled = False
+        job_uid: str | None = None
         # To watch for changes in pods' states till it reach completed state or exit if it takes more than 180 seconds
         for job in w.stream(
             batchv1_api_instance.list_namespaced_job,
@@ -923,6 +992,7 @@ def executing_cluster_diagnostic_checks_job(
                 # Checking if job get scheduled or not
                 if job["object"].metadata.name == "cluster-diagnostic-checks-job":
                     is_job_scheduled = True
+                    job_uid = getattr(job["object"].metadata, "uid", None)
                     failure_condition = next(
                         (
                             condition
@@ -986,6 +1056,11 @@ def executing_cluster_diagnostic_checks_job(
                 "Possible causes include a security policy, SecurityContextConstraint (SCC), or "
                 "ResourceQuota blocking pod creation in the 'azure-arc-release' namespace."
             )
+            prediagnostic_job_execution_details = _get_diagnostic_job_events(
+                corev1_api_instance, batchv1_api_instance, job_uid
+            )
+            if prediagnostic_job_execution_details:
+                details = f"{prediagnostic_job_execution_details}. {details}"
             message = errors.PREDIAGNOSTICS_JOB_NOT_SCHEDULED.format(details=details)
             azext_utils.add_connectedk8s_telemetry_event(
                 cmd,
@@ -1089,6 +1164,13 @@ def executing_cluster_diagnostic_checks_job(
                 # To handle any exception that may occur during the execution
                 except (ValueError, TypeError) as e:
                     _report_prediagnostic_log_save_failure(cmd, e)
+
+            else:
+                prediagnostic_job_execution_details = _get_diagnostic_job_events(
+                    corev1_api_instance, batchv1_api_instance, job_uid
+                )
+                if prediagnostic_job_execution_details:
+                    incomplete_job_diagnostic = f"{prediagnostic_job_execution_details}. {incomplete_job_diagnostic}"
 
             details = incomplete_job_diagnostic
             message = errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.format(details=details)
