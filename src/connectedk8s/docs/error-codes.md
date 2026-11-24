@@ -47,10 +47,9 @@ succeeded.
 
 ### Local client proxy
 
-The `AZK8S0800` series applies to the local Cluster Connect client proxy
-started by `az connectedk8s proxy`, not the outbound HTTP or HTTPS proxy used
-for Arc onboarding. For authentication, Azure permissions, connected state,
-and Cluster Connect service behavior, use the linked Cluster Connect guidance.
+The `AZK8S0800` series applies only to `az connectedk8s proxy`, which creates a
+local connection to the cluster through Cluster Connect. It doesn't apply to
+the outbound proxy configured for Arc onboarding.
 
 ## Error catalog
 
@@ -60,7 +59,7 @@ and Cluster Connect service behavior, use the linked Cluster Connect guidance.
 | --- | --- | --- |
 | `AZK8S0001` `UnexpectedError` | The command encountered an unexpected error. | Follow the detailed error, update Azure CLI and the extension, and retry once. Verify the subscription, resource group, and cluster name when the command targets an existing resource. |
 | `AZK8S0002` `UnsupportedOperatingSystem` | The command is running on an unsupported operating system. | Azure CLI is running on an unsupported platform or the platform couldn't be identified. Use a supported Azure CLI platform listed in [Install Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli). |
-| `AZK8S0003` `UnsupportedProvisionedClusterOperation` | The requested operation isn't supported for an AKS Arc provisioned cluster. | A connectedk8s lifecycle command was used for a provisioned cluster managed through `az aksarc`. Use the `az aksarc` command named in the error. |
+| `AZK8S0003` `UnsupportedProvisionedClusterOperation` | The requested operation isn't supported for an AKS Arc provisioned cluster. | An `az connectedk8s` management command was used for an AKS Arc provisioned cluster. Use the `az aksarc` command named in the error. |
 | `AZK8S0100` `InvalidArgumentValue` | A command argument is invalid. | The named value is malformed, outside its supported range, or incompatible with the operation. Correct the named value using `az connectedk8s <command> --help`. |
 | `AZK8S0101` `UpdateNoParameters` | No changes were specified for `az connectedk8s update`. | Supply at least one supported update option. |
 | `AZK8S0102` `UpdateProxyParameterConflict` | `az connectedk8s update` included both proxy settings and `--disable-proxy`. | The command requests proxy configuration and proxy removal at the same time. Choose either proxy configuration or proxy removal. |
