@@ -201,8 +201,8 @@ KUBECONFIG_LOAD_FAILED = _define(
 )
 CONFIGMAP_READ_FAILED = _define(
     code="AZK8S0201",
-    name="ConfigMapReadFailed",
-    description="Failed to read the ConfigMap.",
+    name="AzureArcConfigMapReadFailed",
+    description="Failed to read an Azure Arc ConfigMap.",
     fault_type=consts.Read_ConfigMap_Fault_Type,
     az_error_cls=ValidationError,
 )

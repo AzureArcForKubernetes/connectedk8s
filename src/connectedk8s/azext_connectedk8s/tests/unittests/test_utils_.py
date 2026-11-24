@@ -522,6 +522,20 @@ def test_error_catalog_contains_allocated_codes_and_fault_type_aliases():
     )
 
 
+def test_configmap_read_error_has_azure_arc_specific_name():
+    error = errors_module.get_error("AZK8S0201")
+
+    assert error is errors_module.CONFIGMAP_READ_FAILED
+    assert error.code == "AZK8S0201"
+    assert error.name == "AzureArcConfigMapReadFailed"
+    assert error.fault_type == errors_module.consts.Read_ConfigMap_Fault_Type
+    assert error.az_error_cls is ValidationError
+    assert error.format(details="Access was denied.") == (
+        "[AZK8S0201] AzureArcConfigMapReadFailed: "
+        "Failed to read an Azure Arc ConfigMap. Access was denied."
+    )
+
+
 def test_error_catalog_codes_use_standard_format():
     assert all(
         len(error.code) == 9
