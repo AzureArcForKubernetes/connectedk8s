@@ -41,10 +41,9 @@ kubectl --kubeconfig "<path>" --context "<context>" auth can-i get namespaces
 ```
 
 The context must exist, `/version` must return Kubernetes version data, and the
-authorization check must return `yes`. If these checks fail, restore the
-provider-approved access path before troubleshooting connectedk8s behavior.
-Contact the cluster administrator or Kubernetes provider for kubeconfig
-issuance, API-server availability, and Kubernetes RBAC.
+authorization check must return `yes`. If these checks fail, contact the
+cluster administrator or Kubernetes provider for kubeconfig issuance,
+API-server availability, or Kubernetes RBAC.
 
 ## Minimum onboarding permissions
 
