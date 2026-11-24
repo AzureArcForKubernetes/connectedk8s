@@ -8,7 +8,7 @@ import sys
 from base64 import b64decode, b64encode
 from copy import deepcopy
 from types import SimpleNamespace
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from unittest.mock import MagicMock, create_autospec
 
 import pytest
@@ -20,15 +20,17 @@ from azure.cli.core.azclierror import (
     RequiredArgumentMissingError,
     ValidationError,
 )
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from kubernetes.client.exceptions import ApiException
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
 from kubernetes.client.models import (
     V1Node,
+    V1NodeCondition,
     V1NodeList,
     V1NodeSpec,
+    V1NodeStatus,
     V1ObjectMeta,
 )
 
@@ -123,6 +125,167 @@ def test_telemetry_catch_all_does_not_report_classified_error_twice(monkeypatch)
 
 def _cmd_without_arm_id():
     return SimpleNamespace(cli_ctx=SimpleNamespace(data={}))
+
+
+def test_get_cc_resource_returns_none_for_expected_not_found(monkeypatch):
+    response = MagicMock(status_code=404)
+    source_error = HttpResponseError(
+        message="Resource group was not found", response=response
+    )
+    source_error.error = SimpleNamespace(code="ResourceGroupNotFound")
+    client = MagicMock()
+    client.get.side_effect = source_error
+
+    result = custom.get_cc_resource(
+        _cmd_without_arm_id(),
+        client,
+        "resource-group",
+        "cluster",
+        operation="delete",
+        return_if_not_found=True,
+    )
+
+    assert result is None
+
+
+@pytest.mark.parametrize("status_code", [403, 500])
+def test_get_cc_resource_raises_for_non_not_found_errors(monkeypatch, status_code):
+    response = MagicMock(status_code=status_code)
+    source_error = HttpResponseError(message="ARM request failed", response=response)
+    source_error.error = SimpleNamespace(code="ArmRequestFailed")
+    expected_error = RuntimeError("reported")
+    monkeypatch.setattr(
+        custom.utils,
+        "report_connectedk8s_error",
+        MagicMock(return_value=expected_error),
+    )
+    client = MagicMock()
+    client.get.side_effect = source_error
+
+    with pytest.raises(RuntimeError) as raised:
+        custom.get_cc_resource(
+            _cmd_without_arm_id(),
+            client,
+            "resource-group",
+            "cluster",
+            operation="delete",
+            return_if_not_found=True,
+        )
+
+    assert raised.value is expected_error
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_delete_cc_resource_returns_none_when_resource_deleted_concurrently(force):
+    response = MagicMock(status_code=404)
+    source_error = HttpResponseError(message="Resource not found", response=response)
+    source_error.error = SimpleNamespace(code="ResourceNotFound")
+    client = MagicMock()
+    client.begin_delete.side_effect = source_error
+
+    result = custom.delete_cc_resource(
+        _cmd_without_arm_id(),
+        client,
+        "resource-group",
+        "cluster",
+        no_wait=False,
+        force=force,
+    )
+
+    assert result is None
+    client.begin_delete.assert_called_once()
+
+
+@pytest.mark.parametrize("status_code", [403, 500])
+def test_delete_cc_resource_raises_for_non_not_found_errors(monkeypatch, status_code):
+    response = MagicMock(status_code=status_code)
+    source_error = HttpResponseError(message="ARM request failed", response=response)
+    source_error.error = SimpleNamespace(code="ArmRequestFailed")
+    expected_error = RuntimeError("reported")
+    monkeypatch.setattr(
+        custom.utils,
+        "report_connectedk8s_error",
+        MagicMock(return_value=expected_error),
+    )
+    client = MagicMock()
+    client.begin_delete.side_effect = source_error
+
+    with pytest.raises(RuntimeError) as raised:
+        custom.delete_cc_resource(
+            _cmd_without_arm_id(),
+            client,
+            "resource-group",
+            "cluster",
+            no_wait=False,
+        )
+
+    assert raised.value is expected_error
+
+
+def test_delete_cleans_up_agents_when_arm_resource_is_missing(monkeypatch):
+    cmd = _cmd_without_arm_id()
+    client = MagicMock()
+    api_instance = MagicMock()
+    api_instance.read_namespaced_config_map.return_value = SimpleNamespace(
+        data={
+            "AZURE_RESOURCE_GROUP": "resource-group",
+            "AZURE_RESOURCE_NAME": "cluster",
+            "AZURE_SUBSCRIPTION_ID": "subscription",
+        }
+    )
+    get_cc_resource = MagicMock(return_value=None)
+    delete_cc_resource = MagicMock()
+    delete_arc_agents = MagicMock()
+
+    monkeypatch.setattr(
+        custom.utils, "set_connected_cluster_arm_id_telemetry_context", MagicMock()
+    )
+    monkeypatch.setattr(custom.utils, "user_confirmation", MagicMock())
+    monkeypatch.setattr(custom, "get_cc_resource", get_cc_resource)
+    monkeypatch.setattr(
+        custom, "send_cloud_telemetry", MagicMock(return_value="AzureCloud")
+    )
+    monkeypatch.setattr(custom, "set_kube_config", MagicMock(return_value="config"))
+    monkeypatch.setattr(custom, "load_kube_config", MagicMock())
+    monkeypatch.setattr(custom, "check_kube_connection", MagicMock())
+    monkeypatch.setattr(
+        custom, "get_helm_client_location", MagicMock(return_value="helm")
+    )
+    monkeypatch.setattr(
+        custom.utils,
+        "get_release_namespace",
+        MagicMock(return_value="azure-arc"),
+    )
+    monkeypatch.setattr(
+        custom.kube_client, "CoreV1Api", MagicMock(return_value=api_instance)
+    )
+    monkeypatch.setattr(
+        custom.utils, "validate_node_api_response", MagicMock(return_value=[])
+    )
+    monkeypatch.setattr(custom, "check_arm64_node", MagicMock(return_value=False))
+    monkeypatch.setattr(
+        custom.containerinsightsutils,
+        "remove_container_insights_proxy_bypass_configmap",
+        MagicMock(),
+    )
+    monkeypatch.setattr(
+        custom, "get_subscription_id", MagicMock(return_value="subscription")
+    )
+    monkeypatch.setattr(custom, "check_proxy_kubeconfig", MagicMock(return_value=False))
+    monkeypatch.setattr(custom, "delete_cc_resource", delete_cc_resource)
+    monkeypatch.setattr(custom.utils, "delete_arc_agents", delete_arc_agents)
+
+    custom.delete_connectedk8s(
+        cmd,
+        client,
+        "resource-group",
+        "cluster",
+        yes=True,
+    )
+
+    assert get_cc_resource.call_args.kwargs["return_if_not_found"] is True
+    delete_cc_resource.assert_not_called()
+    delete_arc_agents.assert_called_once()
 
 
 def _assert_standardized_telemetry(
@@ -1072,6 +1235,51 @@ def test_onboarding_permission_failure_emits_one_fault(
         if custom.consts.Telemetry_Warning_Code_Key in call.args[1]
     ]
     assert len(warning_events) == (0 if node_os == "linux" else 1)
+    if node_os == "windows":
+        assert warning_events[0][custom.consts.Telemetry_Warning_Code_Key] == (
+            custom.errors.LINUX_NODE_NOT_FOUND.code
+        )
+
+
+@pytest.mark.parametrize("ready_status", ["False", "Unknown"])
+def test_onboarding_warns_when_linux_nodes_are_not_ready_and_continues(
+    onboarding_access_context, ready_status
+):
+    ctx = onboarding_access_context
+    ctx.core_api.list_node.return_value = V1NodeList(
+        items=[
+            create_node(
+                labels={"kubernetes.io/os": "linux"},
+                conditions=[V1NodeCondition(type="Ready", status=ready_status)],
+            )
+        ]
+    )
+
+    with pytest.raises(ValidationError, match="ClusterRoleBindingCreateForbidden"):
+        custom.create_connectedk8s(
+            ctx.cmd,
+            MagicMock(),
+            "rg",
+            "cluster",
+            infrastructure="azure_stack_hci",
+            distribution="aks_edge_k3s",
+        )
+
+    warning_events = [
+        call.args[1]
+        for call in ctx.telemetry.add_extension_event.call_args_list
+        if custom.consts.Telemetry_Warning_Code_Key in call.args[1]
+    ]
+    assert len(warning_events) == 1
+    assert warning_events[0][custom.consts.Telemetry_Warning_Code_Key] == (
+        custom.errors.LINUX_NODE_NOT_READY.code
+    )
+    assert warning_events[0][custom.consts.Telemetry_Warning_Name_Key] == (
+        custom.errors.LINUX_NODE_NOT_READY.name
+    )
+    ctx.permission.assert_called_once()
+    ctx.telemetry.set_exception.assert_called_once()
+    ctx.helm_install.assert_not_called()
 
 
 @pytest.mark.parametrize("failure_point", ["kubeconfig", "connectivity"])
@@ -1235,10 +1443,76 @@ def create_node(
     provider_id: Optional[str] = None,
     labels: Optional[Dict[str, str]] = None,
     annotations: Optional[Dict[str, str]] = None,
+    conditions: Optional[List[V1NodeCondition]] = None,
 ) -> V1Node:
     spec = V1NodeSpec(provider_id=provider_id)
     metadata = V1ObjectMeta(labels=labels or {}, annotations=annotations or {})
-    return V1Node(spec=spec, metadata=metadata)
+    status = V1NodeStatus(
+        conditions=conditions
+        if conditions is not None
+        else [V1NodeCondition(type="Ready", status="True")]
+    )
+    return V1Node(spec=spec, metadata=metadata, status=status)
+
+
+@pytest.mark.parametrize(
+    "nodes, expected",
+    [
+        (
+            [
+                create_node(
+                    labels={"kubernetes.io/os": "linux"},
+                    conditions=[V1NodeCondition(type="Ready", status="True")],
+                )
+            ],
+            True,
+        ),
+        (
+            [
+                create_node(
+                    labels={"kubernetes.io/os": "linux"},
+                    conditions=[V1NodeCondition(type="Ready", status="False")],
+                )
+            ],
+            False,
+        ),
+        (
+            [
+                create_node(
+                    labels={"kubernetes.io/os": "linux"},
+                    conditions=[V1NodeCondition(type="Ready", status="Unknown")],
+                )
+            ],
+            False,
+        ),
+        (
+            [create_node(labels={"kubernetes.io/os": "linux"}, conditions=[])],
+            False,
+        ),
+        (
+            [
+                create_node(labels={"kubernetes.io/os": "windows"}),
+                create_node(
+                    labels={"kubernetes.io/os": "linux"},
+                    conditions=[V1NodeCondition(type="Ready", status="False")],
+                ),
+            ],
+            False,
+        ),
+        (
+            [
+                create_node(
+                    labels={"kubernetes.io/os": "linux"},
+                    conditions=[V1NodeCondition(type="Ready", status="False")],
+                ),
+                create_node(labels={"kubernetes.io/os": "linux"}),
+            ],
+            True,
+        ),
+    ],
+)
+def test_check_ready_linux_node_returns_expected_status(nodes, expected):
+    assert custom.check_ready_linux_node(V1NodeList(items=nodes)) is expected
 
 
 @pytest.mark.parametrize(

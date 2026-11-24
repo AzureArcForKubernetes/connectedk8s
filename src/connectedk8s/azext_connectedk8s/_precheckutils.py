@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 from subprocess import PIPE, Popen
@@ -697,7 +698,7 @@ def fetch_diagnostic_checks_results(  # pylint: disable=too-many-return-statemen
 # ---------------------------------------------------------------------------
 
 
-def _get_diagnostic_job_events(
+def _get_diagnostic_job_events(  # pylint: disable=protected-access
     corev1_api_instance: CoreV1Api,
     batchv1_api_instance: BatchV1Api,
     job_uid: str | None,
@@ -712,14 +713,19 @@ def _get_diagnostic_job_events(
             )
             job_uid = getattr(getattr(job, "metadata", None), "uid", None)
         if not isinstance(job_uid, str) or not job_uid:
-            logger.debug("Diagnostic Job UID is unavailable; skipping event collection.")
+            logger.debug(
+                "Diagnostic Job UID is unavailable; skipping event collection."
+            )
             return ""
-        events = corev1_api_instance.list_namespaced_event(
-            namespace="azure-arc-release",
-            field_selector=f"involvedObject.uid={job_uid},involvedObject.kind=Job,type=Warning",
-            limit=20,
-            _request_timeout=10,
-        ).items or []
+        events = (
+            corev1_api_instance.list_namespaced_event(
+                namespace="azure-arc-release",
+                field_selector=f"involvedObject.uid={job_uid},involvedObject.kind=Job,type=Warning",
+                limit=20,
+                _request_timeout=10,
+            ).items
+            or []
+        )
     except (ApiException, HTTPError, OSError) as exception:
         logger.debug(
             "Unable to collect diagnostic Job events: %s",
@@ -808,6 +814,32 @@ def _get_incomplete_job_diagnostic(  # pylint: disable=too-many-return-statement
         )
 
     return "Review the saved pod description and container logs, then retry."
+
+
+_TOO_LARGE_RESOURCE_VERSION_PATTERN = re.compile(
+    r"Too large resource version: \d+, current: \d+"
+)
+
+
+def _get_job_execution_failure_message(exception: Exception) -> tuple[str, str | None]:
+    """Return customer-facing details and an optional recommendation for a job execution failure.
+
+    The Kubernetes API server reports a watch cache that is behind its datastore as HTTP 504 with
+    reason "Timeout", and the Python client renders it as "Reason: Timeout: Timeout: ...". That
+    reads like a diagnostic job timeout, so explain the control-plane cause instead.
+    """
+    if isinstance(exception, ApiException) and exception.status == 504:
+        match = _TOO_LARGE_RESOURCE_VERSION_PATTERN.search(str(exception))
+        if match:
+            return (
+                "The Kubernetes API server could not serve requests for the diagnostic job because "
+                "its watch cache is behind its datastore (Kubernetes API server response, HTTP 504: "
+                f"{match.group(0)}). This indicates a cluster control-plane health issue, not a "
+                "diagnostic job timeout.",
+                "Check the health of the Kubernetes API server and its datastore, then retry "
+                "onboarding.",
+            )
+    return str(exception), None
 
 
 def executing_cluster_diagnostic_checks_job(
@@ -1138,9 +1170,7 @@ def executing_cluster_diagnostic_checks_job(
                     corev1_api_instance, batchv1_api_instance, job_uid
                 )
                 if prediagnostic_job_execution_details:
-                    incomplete_job_diagnostic = (
-                        f"{prediagnostic_job_execution_details}. {incomplete_job_diagnostic}"
-                    )
+                    incomplete_job_diagnostic = f"{prediagnostic_job_execution_details}. {incomplete_job_diagnostic}"
 
             details = incomplete_job_diagnostic
             message = errors.PREDIAGNOSTICS_JOB_NOT_COMPLETE.format(details=details)
@@ -1216,11 +1246,13 @@ def executing_cluster_diagnostic_checks_job(
     except Exception as e:  # pylint: disable=broad-exception-caught
         prediagnostic_job_execution_status = consts.Job_Status_Execution_Failed
         Popen(cmd_helm_delete, stdout=PIPE, stderr=PIPE)
+        details, recommendation = _get_job_execution_failure_message(e)
         raise azext_utils.report_connectedk8s_error(
             cmd,
             errors.PREDIAGNOSTICS_JOB_EXECUTION_FAILED,
             exception=e,
-            details=str(e),
+            recommendation=recommendation,
+            details=details,
         ) from e
     if is_job_complete:
         prediagnostic_job_execution_status = consts.Job_Status_Completed

@@ -91,7 +91,9 @@ def test_diagnostic_job_events_only_include_current_job_warnings():
 def test_diagnostic_job_events_are_sanitized_bounded_and_newest_first():
     corev1_api = MagicMock()
     events = [
-        _job_warning(f'policy-{index}: password="secret-value"\n' + "long message " * 60)
+        _job_warning(
+            f'policy-{index}: password="secret-value"\n' + "long message " * 60
+        )
         for index in range(5)
     ]
     for index, event in enumerate(events):
@@ -109,12 +111,13 @@ def test_diagnostic_job_events_are_sanitized_bounded_and_newest_first():
         assert 'password="[REDACTED]"' in message
         assert "secret-value" not in message
         assert "\n" not in message
-        assert len(message[len("Job warning: "):]) == 240
+        assert len(message) - len("Job warning: ") == 240
         assert message.endswith("...")
 
 
 @pytest.mark.parametrize(
-    "error", [ApiException(status=403), ReadTimeoutError(None, None, "events timed out")]
+    "error",
+    [ApiException(status=403), ReadTimeoutError(None, None, "events timed out")],
 )
 def test_diagnostic_job_events_read_failure_keeps_fallback(monkeypatch, error):
     corev1_api = MagicMock()
@@ -122,9 +125,10 @@ def test_diagnostic_job_events_read_failure_keeps_fallback(monkeypatch, error):
     debug = MagicMock()
     monkeypatch.setattr(precheckutils.logger, "debug", debug)
 
-    assert precheckutils._get_diagnostic_job_events(
-        corev1_api, MagicMock(), "current-job"
-    ) == ""
+    assert (
+        precheckutils._get_diagnostic_job_events(corev1_api, MagicMock(), "current-job")
+        == ""
+    )
     debug.assert_called_once()
 
 
@@ -1575,14 +1579,18 @@ def test_diagnostic_job_watch_reports_events_without_changing_outcome(
     monkeypatch, outcome, event_error
 ):
     _reset_globals()
-    precheckutils.prediagnostic_job_execution_details = "stale event from previous invocation"
+    precheckutils.prediagnostic_job_execution_details = (
+        "stale event from previous invocation"
+    )
 
     complete_condition = MagicMock(type="Complete", status="True")
     completed_job = MagicMock()
     completed_job.metadata.name = "cluster-diagnostic-checks-job"
     completed_job.metadata.uid = "current-job"
     completed_job.status.failed = None
-    completed_job.status.conditions = [complete_condition] if outcome == "complete" else []
+    completed_job.status.conditions = (
+        [complete_condition] if outcome == "complete" else []
+    )
     watcher = MagicMock()
     watcher.stream.return_value = iter(
         [] if outcome == "unobserved-job" else [{"object": completed_job}]
@@ -1594,16 +1602,16 @@ def test_diagnostic_job_watch_reports_events_without_changing_outcome(
     pod = MagicMock()
     pod.metadata.name = "cluster-diagnostic-checks-job-abc12"
     pod.metadata.creation_timestamp = "2026-08-21T23:02:22Z"
-    pod.status = SimpleNamespace(
-        container_statuses=[], conditions=[], reason=None
-    )
+    pod.status = SimpleNamespace(container_statuses=[], conditions=[], reason=None)
     corev1_api = MagicMock()
     corev1_api.list_namespaced_pod.return_value = SimpleNamespace(
         items=[pod] if outcome in ("complete", "pod-present") else []
     )
     corev1_api.read_namespaced_pod_log.return_value = "diagnostic output"
     corev1_api.list_namespaced_event.return_value = SimpleNamespace(
-        items=[] if outcome == "no-events" else [_job_warning("exceeded quota: diagnostic-quota")]
+        items=[]
+        if outcome == "no-events"
+        else [_job_warning("exceeded quota: diagnostic-quota")]
     )
     corev1_api.list_namespaced_event.side_effect = event_error
 
@@ -1619,7 +1627,8 @@ def test_diagnostic_job_watch_reports_events_without_changing_outcome(
     monkeypatch.setattr(precheckutils.logger, "warning", warning)
     monkeypatch.setattr(precheckutils.telemetry, "set_exception", set_exception)
     monkeypatch.setattr(
-        precheckutils.azext_utils, "save_cluster_diagnostic_checks_pod_description",
+        precheckutils.azext_utils,
+        "save_cluster_diagnostic_checks_pod_description",
         MagicMock(),
     )
     monkeypatch.setattr(
@@ -1679,9 +1688,13 @@ def test_diagnostic_job_watch_reports_events_without_changing_outcome(
         expected_status = consts.Job_Status_Not_Scheduled
     else:
         batchv1_api.read_namespaced_job.assert_not_called()
-        assert result == ("diagnostic output" if outcome in ("complete", "pod-present") else "")
+        assert result == (
+            "diagnostic output" if outcome in ("complete", "pod-present") else ""
+        )
         expected_status = (
-            consts.Job_Status_Completed if outcome == "complete" else consts.Job_Status_Not_Completed
+            consts.Job_Status_Completed
+            if outcome == "complete"
+            else consts.Job_Status_Not_Completed
         )
     assert precheckutils.prediagnostic_job_execution_status == expected_status
 
@@ -1731,3 +1744,78 @@ def test_diagnostic_job_watch_reports_events_without_changing_outcome(
         assert followup["reason"] in onboarding_event.call_args.args[1]
     else:
         assert "reason" not in followup
+
+
+@pytest.mark.parametrize(
+    ("reason", "is_watch_cache_error"),
+    [
+        (
+            "Timeout: Timeout: Too large resource version: 3445406, current: 236140",
+            True,
+        ),
+        (
+            "Timeout: Timeout: request did not complete within requested timeout",
+            False,
+        ),
+    ],
+)
+def test_job_watch_504_explains_watch_cache_error(
+    monkeypatch, reason, is_watch_cache_error
+):
+    _reset_globals()
+    api_error = ApiException(status=504, reason=reason)
+    watcher = MagicMock()
+    watcher.stream.side_effect = api_error
+    monkeypatch.setattr(precheckutils.watch, "Watch", lambda: watcher)
+    monkeypatch.setattr(precheckutils.config, "load_kube_config", MagicMock())
+    monkeypatch.setattr(precheckutils, "Popen", MagicMock())
+    monkeypatch.setattr(
+        precheckutils, "helm_install_release_cluster_diagnostic_checks", MagicMock()
+    )
+    monkeypatch.setattr(
+        precheckutils.azext_utils,
+        "get_release_namespace",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        precheckutils.azext_utils, "get_mcr_path", lambda *_args: "mcr.microsoft.com"
+    )
+    monkeypatch.setattr(
+        precheckutils.azext_utils, "get_chart_path", lambda *_args: "/fake/chart"
+    )
+    mock_telemetry = MagicMock()
+    monkeypatch.setattr(precheckutils.azext_utils, "telemetry", mock_telemetry)
+
+    with pytest.raises(precheckutils.AzCLIError) as raised:
+        precheckutils.executing_cluster_diagnostic_checks_job(
+            cmd=MagicMock(),
+            corev1_api_instance=MagicMock(),
+            batchv1_api_instance=MagicMock(),
+            helm_client_location="helm",
+            kubectl_client_location="kubectl",
+            kube_config=None,
+            kube_context=None,
+            location="eastus",
+            http_proxy="",
+            https_proxy="",
+            no_proxy="",
+            proxy_cert="",
+            azure_cloud="AZUREPUBLICCLOUD",
+            filepath_with_timestamp="/tmp/prediagnostics",
+            storage_space_available=False,
+        )
+
+    message = str(raised.value)
+    assert message.startswith("[AZK8S0601] PrediagnosticsJobExecutionFailed:")
+    assert raised.value.__cause__ is api_error
+    if is_watch_cache_error:
+        assert "Timeout: Timeout" not in message
+        assert "watch cache is behind its datastore" in message
+        assert "Too large resource version: 3445406, current: 236140" in message
+        assert any(
+            "API server and its datastore" in recommendation
+            for recommendation in raised.value.recommendations
+        )
+    else:
+        assert str(api_error).rstrip() in message
+        assert not raised.value.recommendations
