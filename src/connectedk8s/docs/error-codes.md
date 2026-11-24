@@ -156,7 +156,20 @@ Use the guidance that matches the error:
 ### Pre-onboarding diagnostics
 
 Run `az connectedk8s troubleshoot` and keep any specific `AZK8S0300`-series
-result with the summary code.
+result with the summary code. Use the guidance that matches the error:
+
+- **Run or configure diagnostics:** Review the
+  [`az connectedk8s troubleshoot` reference](https://learn.microsoft.com/cli/azure/connectedk8s#az-connectedk8s-troubleshoot).
+- **Kubernetes API or RBAC:** Run the
+  [Kubernetes access checks](troubleshooting-prerequisites.md#kubernetes-access).
+- **DNS or outbound connectivity:** Use
+  [Diagnose connection issues](https://learn.microsoft.com/azure/azure-arc/kubernetes/diagnose-connection-issues)
+  and review the
+  [Azure Arc network requirements](https://learn.microsoft.com/azure/azure-arc/kubernetes/network-requirements).
+- **Job scheduling, admission, Helm, or image pulls:** Review Kubernetes events
+  and use
+  [Azure Arc platform troubleshooting](https://learn.microsoft.com/azure/azure-arc/kubernetes/troubleshooting).
+- **Saving logs locally:** Check local storage and file permissions.
 
 | Code | Description | Possible cause |
 | --- | --- | --- |
@@ -182,9 +195,16 @@ For Custom Locations behavior, permissions, and recovery, use the
 
 The following codes apply to the local Cluster Connect client proxy started by
 `az connectedk8s proxy`, not the outbound HTTP or HTTPS proxy configured for
-Arc onboarding. Follow [Cluster Connect setup and authentication](https://learn.microsoft.com/azure/azure-arc/kubernetes/cluster-connect),
-[Cluster Connect troubleshooting](https://learn.microsoft.com/azure/azure-arc/kubernetes/troubleshooting#cluster-connect-problems),
-and the [`az connectedk8s proxy` reference](https://learn.microsoft.com/cli/azure/connectedk8s#az-connectedk8s-proxy).
+Arc onboarding. Use the guidance that matches the error:
+
+- **Setup, authentication, or Azure roles:** Review
+  [Cluster Connect setup and authentication](https://learn.microsoft.com/azure/azure-arc/kubernetes/cluster-connect).
+- **Disconnected agents or connection failures:** Use
+  [Cluster Connect troubleshooting](https://learn.microsoft.com/azure/azure-arc/kubernetes/troubleshooting#cluster-connect-problems).
+- **Ports or command options:** Review the
+  [`az connectedk8s proxy` reference](https://learn.microsoft.com/cli/azure/connectedk8s#az-connectedk8s-proxy).
+- **MCR or outbound access:** Review the
+  [Azure Arc network requirements](https://learn.microsoft.com/azure/azure-arc/kubernetes/network-requirements).
 
 | Code | Description | Possible cause |
 | --- | --- | --- |
