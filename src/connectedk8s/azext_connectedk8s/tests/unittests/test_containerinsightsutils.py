@@ -241,7 +241,7 @@ def test_ensure_reports_a_read_failure(monkeypatch):
 
     ensure_container_insights_proxy_bypass_configmap(api)
 
-    assert report.call_args.args[1] is errors.CONFIGMAP_READ_FAILED
+    assert report.call_args.args[1] is errors.CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED
     api.create_namespaced_config_map.assert_not_called()
     api.replace_namespaced_config_map.assert_not_called()
 
@@ -350,7 +350,7 @@ def test_remove_passes_the_raise_flag_to_the_reporter(monkeypatch, raise_on_fail
 
     remove_container_insights_proxy_bypass_configmap(api, raise_on_failure)
 
-    assert report.call_args.args[1] is errors.CONFIGMAP_READ_FAILED
+    assert report.call_args.args[1] is errors.CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED
     assert report.call_args.args[3] is raise_on_failure
 
 

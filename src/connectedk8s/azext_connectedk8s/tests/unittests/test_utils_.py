@@ -489,8 +489,7 @@ def test_error_catalog_contains_allocated_codes_and_fault_type_aliases():
     expected_codes = {
         *(f"AZK8S{code:04d}" for code in range(1, 4)),
         *(f"AZK8S{code:04d}" for code in range(100, 108)),
-        *(f"AZK8S{code:04d}" for code in range(200, 210)),
-        "AZK8S0211",
+        *(f"AZK8S{code:04d}" for code in range(200, 212)),
         *(f"AZK8S{code:04d}" for code in range(300, 310)),
         *(f"AZK8S{code:04d}" for code in range(400, 410)),
         *(f"AZK8S{code:04d}" for code in range(500, 516)),
@@ -521,6 +520,38 @@ def test_error_catalog_contains_allocated_codes_and_fault_type_aliases():
         )
         is errors_module.HELM_CLIENT_ERROR
     )
+
+
+def test_arc_cluster_configmap_read_error_uses_existing_code():
+    error = errors_module.get_error("AZK8S0201")
+
+    assert error is errors_module.ARC_CLUSTER_CONFIGMAP_READ_FAILED
+    assert error.code == "AZK8S0201"
+    assert error.name == "ArcClusterConfigMapReadFailed"
+    assert error.fault_type == errors_module.consts.Read_ConfigMap_Fault_Type
+    assert error.az_error_cls is ValidationError
+    assert error.format(details="Access was denied.") == (
+        "[AZK8S0201] ArcClusterConfigMapReadFailed: "
+        "Failed to read the Azure Arc cluster registration ConfigMap. "
+        "Access was denied."
+    )
+
+
+def test_container_insights_configmap_read_error_uses_new_code():
+    error = errors_module.get_error("AZK8S0210")
+
+    assert error is errors_module.CONTAINER_INSIGHTS_CONFIGMAP_READ_FAILED
+    assert error.name == "ContainerInsightsConfigMapReadFailed"
+    assert (
+        error.fault_type
+        == errors_module.consts.Container_Insights_ConfigMap_Read_Fault_Type
+    )
+    assert error.az_error_cls is ValidationError
+    assert error.format() == (
+        "[AZK8S0210] ContainerInsightsConfigMapReadFailed: "
+        "Failed to read the Container Insights ConfigMap."
+    )
+    assert not hasattr(errors_module, "CONFIGMAP_READ_FAILED")
 
 
 def test_error_catalog_codes_use_standard_format():
@@ -569,6 +600,7 @@ def test_error_catalog_uses_proposed_exception_classes():
         "AZK8S0205": ValidationError,
         "AZK8S0206": ValidationError,
         "AZK8S0209": ValidationError,
+        "AZK8S0210": ValidationError,
         "AZK8S0211": ValidationError,
         "AZK8S0403": ArgumentUsageError,
         "AZK8S0404": ArgumentUsageError,

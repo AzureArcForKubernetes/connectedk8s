@@ -810,7 +810,7 @@ def create_connectedk8s(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
-                arc_error=errors.CONFIGMAP_READ_FAILED,
+                arc_error=errors.ARC_CLUSTER_CONFIGMAP_READ_FAILED,
                 cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
@@ -2827,7 +2827,7 @@ def delete_connectedk8s(
             "Unable to read ConfigMap",
             error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
             message_for_not_found=err_msg,
-            arc_error=errors.CONFIGMAP_READ_FAILED,
+            arc_error=errors.ARC_CLUSTER_CONFIGMAP_READ_FAILED,
             cmd=cmd,
         )
 
@@ -3703,7 +3703,7 @@ def upgrade_agents(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
-                arc_error=errors.CONFIGMAP_READ_FAILED,
+                arc_error=errors.ARC_CLUSTER_CONFIGMAP_READ_FAILED,
                 cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
@@ -3990,7 +3990,7 @@ def validate_release_namespace(
                 "Unable to read ConfigMap",
                 error_message="Unable to read ConfigMap 'azure-clusterconfig' in 'azure-arc' namespace: ",
                 message_for_not_found=not_found_msg,
-                arc_error=errors.CONFIGMAP_READ_FAILED,
+                arc_error=errors.ARC_CLUSTER_CONFIGMAP_READ_FAILED,
                 cmd=cmd,
             )
         configmap_rg_name = configmap.data["AZURE_RESOURCE_GROUP"]
