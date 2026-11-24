@@ -466,6 +466,9 @@ def create_connectedk8s(
     is_arm64_cluster = check_arm64_node(node_api_response)
 
     required_node_exists = check_linux_node(node_api_response)
+    ready_linux_node_exists = required_node_exists and check_ready_linux_node(
+        node_api_response
+    )
 
     print(
         f"Step: {utils.get_utctimestring()}: Determining Cluster Distribution and Infrastructure"
@@ -688,6 +691,23 @@ def create_connectedk8s(
             "Please ensure that this Kubernetes cluster has any nodes with OS 'linux', for scheduling the "
             "Arc-Agents onto and connecting to Azure. Learn more at %s",
             "https://aka.ms/ArcK8sSupportedOSArchitecture",
+        )
+    elif not ready_linux_node_exists:
+        linux_node_error = (
+            "Linux nodes were found, but none report Kubernetes Ready=True."
+        )
+        utils.report_connectedk8s_warning(
+            cmd,
+            errors.LINUX_NODE_NOT_READY,
+            telemetry_properties=precheckutils.get_post_diagnostic_precheck_telemetry_properties(
+                check_name="LinuxNodeReady",
+                reason=linux_node_error,
+            ),
+            details=linux_node_error,
+        )
+        logger.warning(
+            "Azure Arc agents may not be scheduled until at least one Linux node is Ready. "
+            "Onboarding will continue."
         )
 
     print(
@@ -2332,6 +2352,29 @@ def check_linux_node(api_response: V1NodeList) -> bool:
             e,
             consts.Kubernetes_Node_Type_Fetch_Fault_OS,
             "Unable to find a linux node",
+            raise_error=False,
+        )
+    return False
+
+
+def check_ready_linux_node(api_response: V1NodeList) -> bool:
+    try:
+        for item in api_response.items:
+            labels = item.metadata.labels or {}
+            if labels.get("kubernetes.io/os") != "linux":
+                continue
+            conditions = item.status.conditions or [] if item.status else []
+            if any(
+                condition.type == "Ready" and condition.status == "True"
+                for condition in conditions
+            ):
+                return True
+    except Exception as e:  # pylint: disable=broad-except
+        logger.debug("Error occured while checking linux node readiness: %s", e)
+        utils.kubernetes_exception_handler(
+            e,
+            consts.Kubernetes_Node_Type_Fetch_Fault_OS,
+            "Unable to determine linux node readiness",
             raise_error=False,
         )
     return False
