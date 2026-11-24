@@ -43,7 +43,7 @@ from azure.cli.core.azclierror import (
 from azure.cli.core.commands import LongRunningOperation
 from azure.cli.core.commands.client_factory import get_subscription_id
 from azure.cli.core.util import sdk_no_wait
-from azure.core.exceptions import HttpResponseError
+from azure.core.exceptions import HttpResponseError, ResourceNotFoundError
 from azure.mgmt.core.tools import is_valid_resource_id, parse_resource_id
 from Crypto.IO import PEM
 from Crypto.PublicKey import RSA
@@ -2605,7 +2605,17 @@ def get_connectedk8s(
     utils.set_connected_cluster_arm_id_telemetry_context(
         cmd, resource_group_name, cluster_name
     )
-    return client.get(resource_group_name, cluster_name)
+    try:
+        return client.get(resource_group_name, cluster_name)
+    except ResourceNotFoundError as ex:
+        raise utils.report_connectedk8s_error(
+            cmd,
+            errors.RESOURCE_NOT_FOUND,
+            exception=ex,
+            user_fault=True,
+            operation="show",
+            details=str(ex),
+        ) from ex
 
 
 @_telemetry_catch_all
