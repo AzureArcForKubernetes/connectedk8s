@@ -1564,6 +1564,8 @@ def test_job_watch_504_explains_watch_cache_error(
     )
     mock_telemetry = MagicMock()
     monkeypatch.setattr(precheckutils.azext_utils, "telemetry", mock_telemetry)
+    sleep = MagicMock()
+    monkeypatch.setattr(precheckutils.time, "sleep", sleep)
 
     with pytest.raises(precheckutils.AzCLIError) as raised:
         precheckutils.executing_cluster_diagnostic_checks_job(
@@ -1595,6 +1597,40 @@ def test_job_watch_504_explains_watch_cache_error(
             "API server and its datastore" in recommendation
             for recommendation in raised.value.recommendations
         )
+        assert (
+            watcher.stream.call_count
+            == precheckutils._DIAGNOSTIC_JOB_WATCH_MAX_ATTEMPTS
+        )
+        assert [call.args[0] for call in sleep.call_args_list] == [1, 2]
     else:
         assert str(api_error).rstrip() in message
         assert not raised.value.recommendations
+        watcher.stream.assert_called_once()
+        sleep.assert_not_called()
+
+
+def test_diagnostic_job_watch_retry_recovers_within_overall_timeout(monkeypatch):
+    event = {"object": MagicMock()}
+    watcher = MagicMock()
+    watcher.stream.side_effect = [
+        ApiException(
+            status=504,
+            reason="Timeout: Timeout: Too large resource version: 3445406, current: 236140",
+        ),
+        iter([event]),
+    ]
+    sleep = MagicMock()
+    clock = iter([0, 0, 10, 10])
+    monkeypatch.setattr(
+        precheckutils,
+        "time",
+        SimpleNamespace(monotonic=lambda: next(clock), sleep=sleep),
+    )
+
+    events = list(precheckutils._stream_diagnostic_jobs(watcher, MagicMock()))
+
+    assert events == [event]
+    assert [
+        call.kwargs["timeout_seconds"] for call in watcher.stream.call_args_list
+    ] == [180, 170]
+    sleep.assert_called_once_with(1)
