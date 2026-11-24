@@ -36,7 +36,7 @@ Prioritize the most specific code. During onboarding, keep a specific
 `AZK8S0600`-series code indicates that the diagnostic command didn't complete.
 Include both codes when troubleshooting or contacting support.
 
-### Nonfatal error codes
+### Codes that may be nonfatal
 
 The following codes might not cause the command to fail:
 
@@ -45,7 +45,8 @@ The following codes might not cause the command to fail:
 - `AZK8S0701`: The command might continue without Custom Locations when another
   requested feature succeeds.
 
-Check the final command result and review all reported error codes.
+Use the final command result to determine whether the requested operation
+succeeded.
 
 ### Local client proxy
 
@@ -173,7 +174,7 @@ result with the summary code. Use the guidance that matches the error:
 
 | Code | Description | Possible cause |
 | --- | --- | --- |
-| `AZK8S0600` `PrediagnosticsFailed` | The diagnostic workflow failed unexpectedly. | Follow the detailed error and any specific code reported with it. |
+| `AZK8S0600` `PrediagnosticsFailed` | The diagnostic workflow failed unexpectedly. | An unexpected error interrupted diagnostics. Follow the detailed error and any specific code reported with it. |
 | `AZK8S0601` `PrediagnosticsJobExecutionFailed` | The diagnostic Job workflow was interrupted. | Kubernetes API access, scheduling, or Job execution failed. Use the Kubernetes error or event to resolve access, scheduling, or API health. |
 | `AZK8S0602` `PostDiagnosticPrecheckFailed` | At least one required check failed. | A DNS, outbound connectivity, or identity connectivity check reported failure. Fix each specific failed check before retrying onboarding. |
 | `AZK8S0603` `PrediagnosticsIncomplete` | The diagnostic result wasn't conclusive. | The Job wasn't scheduled, didn't finish, or didn't produce a required result. Resolve the accompanying Job, scheduling, or log-access result. |
@@ -208,12 +209,12 @@ Arc onboarding. Use the guidance that matches the error:
 
 | Code | Description | Possible cause |
 | --- | --- | --- |
-| `AZK8S0800` `ClientProxyDownloadFailed` | `az connectedk8s proxy` couldn't prepare the local client proxy. | MCR access, local storage, archive extraction, architecture selection, file permission, or endpoint security blocked preparation. Verify the documented prerequisites, local storage, MCR access, and endpoint-security policy. |
+| `AZK8S0800` `ClientProxyDownloadFailed` | `az connectedk8s proxy` couldn't prepare the local client proxy. | MCR access, local storage, archive extraction, architecture selection, file permission, or endpoint security blocked preparation. Verify MCR access, local storage, file permissions, architecture, and endpoint-security policy. |
 | `AZK8S0801` `ClientProxyPortInUse` | A local port required by `az connectedk8s proxy` is occupied. | Another process or proxy session is using one of the required local ports. Stop that process or select another supported `--port`. |
 | `AZK8S0802` `ClientProxyStartFailed` | `az connectedk8s proxy` couldn't start the local proxy process. | Local execution permission, architecture, process policy, or endpoint security blocked creation. Correct local execution permission or endpoint-security policy. |
 | `AZK8S0803` `ClientProxyConfigCreateFailed` | `az connectedk8s proxy` couldn't replace the local proxy configuration. | Local storage, file permission, file locking, or endpoint security blocked the write. Correct local storage or file permissions; don't share the configuration. |
 | `AZK8S0804` `ClientProxyClosed` | The proxy started by `az connectedk8s proxy` exited. | The local process encountered a runtime, capacity, configuration, network, credential, or endpoint-security failure. Use sanitized `--debug` output and local process-security events, then follow Cluster Connect troubleshooting. |
-| `AZK8S0805` `ClusterCredentialsGetFailed` | `az connectedk8s proxy` couldn't retrieve Cluster Connect credentials. | Authentication, Azure RBAC, disconnected agents, disabled Cluster Connect, or service health blocked retrieval. Verify authentication, the documented Azure roles, connected state, and feature enablement. |
+| `AZK8S0805` `ClusterCredentialsGetFailed` | `az connectedk8s proxy` couldn't retrieve Cluster Connect credentials. | Authentication, Azure RBAC, disconnected agents, disabled Cluster Connect, or service health blocked retrieval. Verify authentication, the required Cluster Connect roles, connected state, and feature enablement. |
 
 ## Contact support
 
