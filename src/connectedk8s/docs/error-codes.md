@@ -24,23 +24,29 @@ services, are directed to the relevant documentation or administrator.
 
 The code identifies the connectedk8s operation or failure category. The text
 after the code carries the specific resource, endpoint, operation, or source
-error. Keep both when investigating or escalating the failure.
+error. Record both when investigating or reporting the failure.
 
 `AZK8S0001` doesn't by itself identify whether the problem originated in Azure,
 Kubernetes, or the local computer.
 
-### Multiple and nonfatal codes
+### Multiple error codes
 
-Use the most specific code first. During onboarding, keep a specific
+Prioritize the most specific code. During onboarding, keep a specific
 `AZK8S0300`-series DNS or outbound result together with the later
 `AZK8S0600`-series result. The specific code identifies the failed check; the
 `AZK8S0600`-series code indicates that the diagnostic command didn't complete.
-The summary code must not replace the specific result.
+Include both codes when troubleshooting or contacting support.
 
-Some codes are nonfatal. `AZK8S0308` means an endpoint returned an
-HTTP response, which proves network reachability but not operation success.
-`AZK8S0701` can mean a mixed feature request continued without Custom
-Locations. Use the final command result and all reported codes together.
+### Nonfatal error codes
+
+The following codes might not cause the command to fail:
+
+- `AZK8S0308`: The endpoint responded, but the requested operation might not
+  have succeeded.
+- `AZK8S0701`: The command might continue without Custom Locations when another
+  requested feature succeeds.
+
+Check the final command result and review all reported error codes.
 
 ### Local client proxy
 
@@ -69,8 +75,8 @@ and Cluster Connect service behavior, use the linked Cluster Connect guidance.
 
 ### Kubernetes access
 
-Start with the cluster administrator or Kubernetes provider for these errors.
-Use the same kubeconfig and context as the failing command.
+Contact the cluster administrator or Kubernetes provider for assistance with
+these errors. Use the same kubeconfig and context as the failing command.
 
 | Code | Description | Possible cause |
 | --- | --- | --- |
@@ -134,7 +140,7 @@ Helm, scheduling, image pulls, and Arc agent health. Use
 | `AZK8S0505` `HelmReleaseListFailed` | Helm couldn't query release metadata. | Cluster access, Helm permissions, or release metadata retrieval failed. Restore cluster access and Helm permissions. |
 | `AZK8S0506` `AgentStateTimeout` | Azure didn't report whether the Arc agents became ready before timeout. | Arc agents remained unhealthy or disconnected, or Azure didn't receive their latest status. Check Arc agent health, then contact support if the agents are healthy. |
 | `AZK8S0507` `KeyPairGenerationFailed` | Local key generation failed. | The supported cryptography operation failed in the local process. Retry once on a supported platform; contact support if it repeats. |
-| `AZK8S0508` `ReleaseNamespaceNotFound` | The Arc Helm release namespace wasn't found. | The wrong cluster is selected, the release is absent, or release metadata is inconsistent. Confirm the intended cluster and use the supported recovery path from platform troubleshooting. |
+| `AZK8S0508` `ReleaseNamespaceNotFound` | The Arc Helm release namespace wasn't found. | An unintended cluster is selected, the release is absent, or release metadata is inconsistent. Confirm the intended cluster and use the supported recovery path from platform troubleshooting. |
 | `AZK8S0509` `HelmValuesGetFailed` | Helm couldn't read the current release values. | Cluster access, Helm permissions, or release state prevented the query. Restore Helm release access. |
 | `AZK8S0510` `HelmNotInstalled` | A required local Helm client wasn't found. | Helm isn't installed or isn't available on `PATH` in an environment that requires it. Install the supported Helm version for the environment. |
 | `AZK8S0511` `HelmVersionTooOld` | The Helm major version is below 3. | The selected Helm executable is an unsupported older version. Upgrade to Helm 3 or later. |

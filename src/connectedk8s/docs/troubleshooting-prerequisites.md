@@ -3,8 +3,8 @@
 Complete these checks before using the
 [connectedk8s error-code reference](error-codes.md). They establish the local
 tool, Azure, Kubernetes, and network context used by the failing command.
-For infrastructure outside the connectedk8s CLI, start with the administrator
-or provider identified below.
+For issues involving infrastructure outside the connectedk8s CLI, contact the
+appropriate administrator or provider.
 
 ## Supported environment
 
@@ -23,8 +23,8 @@ kubectl version --client
 ```
 
 Confirm that Azure CLI is using the intended tenant and subscription. Update
-Azure CLI or the extension before investigating behavior already corrected in
-a newer supported release.
+Azure CLI and the extension before troubleshooting an issue that might be
+resolved in a newer supported release.
 
 ## Kubernetes access
 
@@ -57,12 +57,13 @@ Azure and Kubernetes permissions are separate:
 - **Kubernetes:** use an approved onboarding identity with
   [`cluster-admin`](https://learn.microsoft.com/azure/architecture/hybrid/arc-hybrid-kubernetes#cluster-registration),
   or an organization-defined equivalent that can create the resources in the
-  Arc agent chart. Don't grant permanent `cluster-admin` access solely for
-  troubleshooting.
+  Arc agent chart. Don't retain `cluster-admin` access after troubleshooting.
 
-Update, delete, Cluster Connect, Custom Locations, and other features can
-require different permissions. Follow the relevant feature documentation
-instead of reusing the onboarding role generically.
+Permissions vary by operation. Check the documentation before assigning roles
+for [`az connectedk8s update`](https://learn.microsoft.com/cli/azure/connectedk8s#az-connectedk8s-update),
+[`az connectedk8s delete`](https://learn.microsoft.com/cli/azure/connectedk8s#az-connectedk8s-delete),
+[Cluster Connect](https://learn.microsoft.com/azure/azure-arc/kubernetes/cluster-connect),
+or [Custom Locations](https://learn.microsoft.com/azure/azure-arc/kubernetes/custom-locations).
 
 ## Network and existing-cluster readiness
 
@@ -81,16 +82,6 @@ Use [Azure Arc platform troubleshooting](https://learn.microsoft.com/azure/azure
 for Arc agent and service issues. Use
 [Diagnose connection issues](https://learn.microsoft.com/azure/azure-arc/kubernetes/diagnose-connection-issues)
 for the supported diagnostic collection workflow.
-
-## Where to get help
-
-| Failure area | Start with | Escalate to Azure support when |
-| --- | --- | --- |
-| Kubeconfig, context, API access, or Kubernetes RBAC | Cluster administrator or Kubernetes provider | The provider-generated access path and required permissions are correct, but connectedk8s still fails. |
-| DNS, outbound access, firewall, outbound proxy, or private routing | Cluster and network administrators | Required endpoints and routes are allowed, but the same Arc diagnostic still fails. |
-| Azure subscription, provider registration, resource state, or Azure RBAC | Azure subscription or resource administrator | Account scope, resource state, registration, and required role are correct, but Azure still rejects the request. |
-| Pod scheduling, image pull, Helm release, or Arc agent health | Cluster operator | Kubernetes events and platform troubleshooting don't identify a customer-controlled cause. |
-| Connectedk8s error reporting, diagnostic workflow, or client-proxy lifecycle | Azure support | All prerequisite checks pass and the same error persists. |
 
 ## Protect diagnostic data
 
