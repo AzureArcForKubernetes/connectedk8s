@@ -94,7 +94,7 @@ owned by the linked Cluster Connect guidance.
 | `AZK8S0104` `InvalidLocation` | The requested Azure location isn't supported. | **Possible cause:** The location name is invalid or isn't available for connected clusters. Select a location returned for `Microsoft.Kubernetes/connectedClusters`. |
 | `AZK8S0105` `PrivateLinkScopeLocationMismatch` | The connected cluster and Azure Arc Private Link Scope locations differ. | **Possible cause:** The selected Private Link Scope was created in a different Azure location. Use matching locations as required by [Azure Arc Private Link](https://learn.microsoft.com/azure/azure-arc/kubernetes/private-link). |
 | `AZK8S0106` `InvalidGatewayArmId` | The gateway resource ID is invalid or identifies the wrong resource type. | **Possible cause:** The ID is malformed, the resource doesn't exist, or it isn't a `Microsoft.HybridCompute/gateways` resource. Supply an existing `Microsoft.HybridCompute/gateways` resource ID. |
-| `AZK8S0107` `ProxyBypassStateInvalid` | Saved proxy-bypass ownership doesn't match the Helm configuration. | **Possible cause:** Proxy bypass values were changed outside the CLI or the saved ownership state is unreadable. Don't guess ownership or edit Helm state manually. Contact support with sanitized Helm values. |
+| `AZK8S0107` `ProxyBypassStateInvalid` | Saved proxy-bypass ownership doesn't match the Helm configuration. | **Possible cause:** Proxy bypass values were changed outside the CLI or the saved ownership state is unreadable. Contact support with sanitized Helm values. |
 
 ### Kubernetes access
 
