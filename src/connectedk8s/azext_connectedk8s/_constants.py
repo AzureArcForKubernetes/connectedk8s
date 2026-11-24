@@ -716,6 +716,7 @@ Unsupported_Operation_Provisioned_Cluster_Fault_Type = (
 )
 Gateway_ArmId_Is_Invalid_Fault_Type = "invalid-gateway-arm-id"
 Linux_Node_Not_Exists_Fault_Type = Linux_Node_Not_Exists
+Linux_Node_Not_Ready_Fault_Type = "linux-node-not-ready"
 Release_Namespace_Not_Found_Fault_Type = Release_Namespace_Not_Found
 Get_Helm_Values_Failed_Fault_Type = Get_Helm_Values_Failed
 DNS_NXDomain_Fault_Type = "prediagnostics-dns-nxdomain"
